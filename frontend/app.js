@@ -23,70 +23,38 @@ function initCarte() {
   markersLayer = L.layerGroup().addTo(map);
 }
 
-async function chargerDepartementsOccitanie() {
+async function chargerContourOccitanie() {
   try {
     const response = await fetch("/departements-occitanie.geojson");
-console.log(departements.features[0].properties);
+
     if (!response.ok) {
       throw new Error(
-        `Erreur HTTP ${response.status} : impossible de charger les contours des départements de l'Occitanie.`
+        `Erreur HTTP ${response.status} : impossible de charger le fichier GeoJSON`
       );
     }
 
-    const departements = await response.json();
+    const occitanie = await response.json();
 
-    L.geoJSON(departements, {
+    L.geoJSON(occitanie, {
       style: {
         color: "#3388ff",
-        weight: 2,
+        weight: 3,
         opacity: 1,
-        fillOpacity: 0.2
-      },
-
-      onEachFeature: (feature, layer) => {
-        const nomDepartement =
-          feature.properties?.nom ||
-          feature.properties?.NOM ||
-          feature.properties?.name ||
-          "Département inconnu";
-
-        layer.bindTooltip(nomDepartement, {
-          permanent: false,
-          direction: "center",
-          className: "tooltip-departement"
-        });
-
-        layer.on({
-          mouseover: (event) => {
-            event.target.setStyle({
-              weight: 3,
-              fillOpacity: 0.4
-            });
-
-            event.target.bringToFront();
-          },
-
-          mouseout: (event) => {
-            event.target.setStyle({
-              color: "#3388ff",
-              weight: 2,
-              opacity: 1,
-              fillOpacity: 0.2
-            });
-          }
-        });
+        fillOpacity: 0
       }
     }).addTo(map);
 
   } catch (error) {
     console.error(
-      "Erreur lors du chargement des départements :",
+      "Erreur lors du chargement du contour de l’Occitanie :",
       error
     );
   }
 }
 
-chargerDepartementsOccitanie();
+chargerContourOccitanie();
+
+
 
 
 

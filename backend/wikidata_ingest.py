@@ -52,7 +52,7 @@ HEADERS = {
 
 SPARQL_QUERY = f"""
 SELECT DISTINCT ?film ?filmLabel ?filmDescription ?tmdbMovie ?tmdbTv
-       ?location ?locationLabel ?coord ?communeLabel ?departementLabel
+       ?location ?locationLabel ?coord ?communeLabel ?departementLabel ?photo
 WHERE {{
   ?film wdt:P915 ?location .
   ?location wdt:P131* wd:{QID_OCCITANIE} .
@@ -60,6 +60,7 @@ WHERE {{
   OPTIONAL {{ ?film wdt:P4983 ?tmdbTv . }}
   OPTIONAL {{ ?location wdt:P625 ?coord . }}
   OPTIONAL {{ ?location wdt:P131 ?commune . }}
+  OPTIONAL {{ ?location wdt:P18 ?photo . }}
   # Remonte la hiérarchie administrative jusqu'à trouver le département
   # (type Q6465 dans Wikidata) — un même lieu a plusieurs parents P131
   # (canton, arrondissement...), on veut spécifiquement celui-là.
@@ -108,6 +109,8 @@ def charger_depuis_csv(chemin: str) -> list[dict]:
                 "tmdb_movie_id": row.get("tmdbMovie") or None,
                 "tmdb_tv_id": row.get("tmdbTv") or None,
                 "lieu_nom": row.get("locationLabel") or "Lieu inconnu",
+                "lieu_qid": (row.get("location") or "").rsplit("/", 1)[-1] or None,
+                "photo_url": row.get("photo") or None,
                 "commune": row.get("communeLabel") or None,
                 "departement": row.get("departementLabel") or None,
                 "latitude": lat,
@@ -150,6 +153,8 @@ async def query_wikidata() -> list[dict]:
             "tmdb_movie_id": b.get("tmdbMovie", {}).get("value"),
             "tmdb_tv_id": b.get("tmdbTv", {}).get("value"),
             "lieu_nom": b.get("locationLabel", {}).get("value", "Lieu inconnu"),
+            "lieu_qid": b.get("location", {}).get("value", "").rsplit("/", 1)[-1] or None,
+            "photo_url": b.get("photo", {}).get("value"),
             "commune": b.get("communeLabel", {}).get("value"),
             "departement": b.get("departementLabel", {}).get("value"),
             "latitude": lat,
@@ -235,7 +240,7 @@ async def inserer_en_base(ligne: dict) -> None:
 
     existe = await fetch_one(
         """
-        SELECT id FROM lieux_tournage
+        SELECT id, wikidata_qid, photo_url FROM lieux_tournage
         WHERE film_id = %s AND ABS(latitude - %s) < 0.0001 AND ABS(longitude - %s) < 0.0001
         """,
         (film_id, ligne["latitude"], ligne["longitude"]),
@@ -244,13 +249,22 @@ async def inserer_en_base(ligne: dict) -> None:
         await execute(
             """
             INSERT INTO lieux_tournage
-                (film_id, nom, commune, departement, latitude, longitude)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (film_id, nom, commune, departement, latitude, longitude,
+                 wikidata_qid, photo_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (film_id, ligne["lieu_nom"], ligne.get("commune"), ligne.get("departement"),
-             ligne["latitude"], ligne["longitude"]),
+             ligne["latitude"], ligne["longitude"],
+             ligne.get("lieu_qid"), ligne.get("photo_url")),
         )
         print(f"    ↳ Lieu ajouté: {ligne['lieu_nom']}", flush=True)
+    elif not existe.get("wikidata_qid") and ligne.get("lieu_qid"):
+        # Lieu déjà importé avant qu'on capture QID/photo (rétro-complétion,
+        # ne modifie rien d'autre — ne touche pas nom/commune déjà validés).
+        await execute(
+            "UPDATE lieux_tournage SET wikidata_qid = %s, photo_url = COALESCE(photo_url, %s) WHERE id = %s",
+            (ligne.get("lieu_qid"), ligne.get("photo_url"), existe["id"]),
+        )
 
 
 def _sql_echap(valeur) -> str:
@@ -370,7 +384,8 @@ async def main(dry_run: bool, sql_file: str | None, from_csv: str | None):
 
     print(
         "\nTerminé. Tous les films sont en statut 'brouillon' — "
-        "vérifie-les dans phpMyAdmin (poster/synopsis présents, "
+        "vérifie-les dans l'éditeur SQL de Neon (dashboard Neon > SQL Editor) "
+        "ou avec un client Postgres (poster/synopsis présents, "
         "media_type correct) avant de passer statut='publie'.",
         flush=True,
     )

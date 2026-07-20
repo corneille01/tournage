@@ -10,27 +10,47 @@
 <meta name="theme-color" content="#0f1115">
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.css">
+<link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.Default.css">
 </head>
 <body>
 
 <div id="app">
 
-  <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + cartes scrollables ═══ -->
+  <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + filtres + cartes scrollables ═══ -->
   <aside id="sidebar">
     <header id="sidebar-header">
       <h1>CinéTour</h1>
       <p class="sous-titre">Lieux de tournage en Occitanie</p>
+
+      <div id="recherche-zone">
+        <input type="search" id="recherche-input" placeholder="Chercher un film, une série…">
+      </div>
+
       <div id="filtres">
         <button class="filtre-btn active" data-type="">Tout</button>
         <button class="filtre-btn" data-type="movie">Films</button>
         <button class="filtre-btn" data-type="tv">Séries</button>
-       
+        <button class="filtre-btn" data-type="anime">Animés</button>
       </div>
+
+      <div id="filtres-avances">
+        <select id="filtre-annee"><option value="">Année</option></select>
+        <select id="filtre-departement"><option value="">Département</option></select>
+        <select id="filtre-commune"><option value="">Commune</option></select>
+      </div>
+
+      <button id="stats-toggle" aria-expanded="false">📊 Statistiques de la base</button>
     </header>
+
+    <div id="stats-panel" class="hidden">
+      <div id="stats-contenu"><!-- rempli par app.js --></div>
+    </div>
 
     <div id="cartes-scroll">
       <div id="cartes-liste"><!-- rempli par app.js --></div>
       <div id="cartes-loading" class="hidden">Chargement…</div>
+      <div id="cartes-vide" class="hidden">Aucun résultat pour ces filtres.</div>
     </div>
   </aside>
 
@@ -48,26 +68,33 @@
     <img id="popup-poster" src="" alt="">
     <div id="popup-contenu">
       <h2 id="popup-titre"></h2>
+
+      <div id="popup-plateformes"><!-- logos streaming, rempli par app.js --></div>
+
       <div id="popup-synopsis" class="scrollable"></div>
 
-      <div id="popup-boutons">
-        <button data-categorie="hebergement">🏨 Où dormir</button>
-        <button data-categorie="restaurant">🍽️ Où manger</button>
-        <button data-categorie="office_tourisme">ℹ️ Office de tourisme</button>
-        <button data-categorie="parking">🅿️ Se garer</button>
-        <button data-categorie="gare">🚉 Gare la plus proche</button>
-        <button data-categorie="aeroport">✈️ Aéroport le plus proche</button>
-        <button data-categorie="arret_bus">🚌 Arrêt de bus</button>
-        <button data-categorie="police">🚓 Police / gendarmerie</button>
-        <button data-categorie="hopital">🏥 Hôpital</button>
-      </div>
+      <div id="popup-photos-lieu"><!-- photo actuelle du lieu, si dispo --></div>
+
+      <p class="popup-intro-visite">Vous voulez visiter ce lieu ? Voici ce qu'il vous faut savoir :</p>
+
+      <div id="popup-boutons"><!-- rempli dynamiquement avec icônes/couleurs par app.js --></div>
 
       <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
+
+      <div id="popup-actions-globales">
+        <button id="btn-activites">🎡 Que faire aux alentours ?</button>
+        <button id="btn-trace">🎬 Sur les traces de ce film…</button>
+      </div>
+
+      <div id="popup-pub-slot" class="pub-slot">
+        <!-- Emplacement réservé — affiliation Awin (hébergement partenaire, location de voiture, etc.) -->
+      </div>
     </div>
   </div>
 </div>
 
 <script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/vendor/markercluster/leaflet.markercluster.js"></script>
 <script src="/app.js" defer></script>
 </body>
 </html>

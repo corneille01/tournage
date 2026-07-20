@@ -26,12 +26,33 @@ _CATEGORY_TAGS = {
     "aeroport":         ['aeroway=aerodrome'],
     "arret_bus":        ['highway=bus_stop'],
     "parking":          ['amenity=parking'],
+    # "Que faire aux alentours" — rayon plus large, tags orientés loisirs/visite
+    "activite":         ['tourism=attraction', 'tourism=museum', 'tourism=viewpoint',
+                          'tourism=artwork', 'leisure=park', 'historic=castle',
+                          'historic=monument', 'historic=ruins'],
 }
 
 RAYON_RECHERCHE_M = {
     "hebergement": 15000, "restaurant": 8000, "office_tourisme": 20000,
     "police": 20000, "hopital": 25000, "gare": 30000,
     "aeroport": 60000, "arret_bus": 2000, "parking": 5000,
+    "activite": 15000,
+}
+
+# Icône + couleur par catégorie, utilisées côté frontend pour les
+# marqueurs et le popup (le plus proche de chaque catégorie est mis en
+# évidence avec une bordure de cette couleur, plus vive que les autres).
+ICONES_CATEGORIE = {
+    "hebergement":     {"emoji": "🏨", "couleur": "#2a9d8f"},
+    "restaurant":      {"emoji": "🍽️", "couleur": "#e76f51"},
+    "office_tourisme": {"emoji": "ℹ️", "couleur": "#264653"},
+    "police":          {"emoji": "🚓", "couleur": "#023e8a"},
+    "hopital":         {"emoji": "🏥", "couleur": "#d00000"},
+    "gare":             {"emoji": "🚉", "couleur": "#6a4c93"},
+    "aeroport":        {"emoji": "✈️", "couleur": "#4361ee"},
+    "arret_bus":       {"emoji": "🚌", "couleur": "#f4a261"},
+    "parking":         {"emoji": "🅿️", "couleur": "#3a3a3a"},
+    "activite":        {"emoji": "🎡", "couleur": "#9b5de5"},
 }
 
 

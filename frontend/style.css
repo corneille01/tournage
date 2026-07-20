@@ -331,12 +331,175 @@ body.page-film-ssr {
   color: var(--couleur-texte-muted);
 }
 .ssr-lien-retour a { color: var(--couleur-accent); }
-.tooltip-departement {
-  background: white;
-  color: #222;
-  border: none;
-  border-radius: 6px;
-  padding: 6px 10px;
+
+/* ═══════════════════════════════════════════════════════════════
+   V2 — filtres, stats, cartes enrichies, popup enrichi
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Barre de recherche ── */
+#recherche-zone { margin-top: 10px; }
+#recherche-input {
+  width: 100%;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+#recherche-input::placeholder { color: var(--couleur-texte-muted); }
+
+/* ── Filtres avancés (année/département/commune) ── */
+#filtres-avances {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+#filtres-avances select {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 7px 4px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  min-width: 0;
+}
+
+/* ── Bouton statistiques + panneau ── */
+#stats-toggle {
+  width: 100%;
+  margin-top: 10px;
+  background: none;
+  border: 1px dashed #3a3d45;
+  color: var(--couleur-texte-muted);
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+#stats-panel {
+  flex: 0 0 auto;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2d35;
+  font-size: 0.78rem;
+}
+#stats-panel.hidden { display: none; }
+.stats-ligne-titre { font-weight: 700; margin: 8px 0 4px; color: var(--couleur-accent); }
+.stats-ligne { display: flex; justify-content: space-between; color: var(--couleur-texte-muted); padding: 2px 0; }
+.stats-ligne b { color: var(--couleur-texte); }
+
+#cartes-vide { color: var(--couleur-texte-muted); padding: 20px 10px; text-align: center; font-size: 0.85rem; }
+
+/* ── Carte film enrichie : badge nb lieux + bouton voir sur carte ── */
+.carte-film { flex-wrap: wrap; }
+.carte-film .infos { flex: 1 1 auto; }
+.carte-film .badge-lieux {
+  font-size: 0.72rem;
+  color: var(--couleur-accent);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.carte-film .btn-voir-carte {
+  flex: 0 0 100%;
+  margin-top: 6px;
+  background: rgba(230,57,70,0.12);
+  border: 1px solid var(--couleur-accent);
+  color: var(--couleur-accent);
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* ── Boutons commodités dynamiques (icône + couleur par catégorie) ── */
+#popup-boutons { grid-template-columns: repeat(2, 1fr); }
+#popup-boutons button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-width: 2px;
+}
+#popup-boutons button .icone-btn { font-size: 1rem; }
+
+.resultat-item.plus-proche {
+  border-width: 2px; /* couleur posée dynamiquement en inline-style par catégorie */
+}
+
+/* ── Plateformes de streaming ── */
+#popup-plateformes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.plateforme-logo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--couleur-carte);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  text-decoration: none;
+  color: var(--couleur-texte);
+}
+.plateforme-logo img { width: 20px; height: 20px; border-radius: 4px; }
+
+/* ── Photo(s) du lieu ── */
+#popup-photos-lieu { margin-bottom: 12px; }
+#popup-photos-lieu img {
+  width: 100%;
+  border-radius: 10px;
+  max-height: 180px;
+  object-fit: cover;
+}
+.popup-intro-visite {
+  font-size: 0.85rem;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  margin: 10px 0 8px;
+}
+
+/* ── Actions globales (activités / tracé) ── */
+#popup-actions-globales {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+#popup-actions-globales button {
+  background: var(--couleur-accent);
+  color: #fff;
+  border: none;
+  padding: 11px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#btn-activites { background: #6a4c93; }
+
+/* ── Emplacement publicité/affiliation ── */
+.pub-slot {
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px dashed #3a3d45;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--couleur-texte-muted);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pub-slot:empty::before { content: "Emplacement partenaire"; }
+
+/* ── Mobile : filtres avancés passent en scroll horizontal sous 360px ── */
+@media (max-width: 360px) {
+  #filtres-avances { grid-template-columns: 1fr; }
 }

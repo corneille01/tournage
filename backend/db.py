@@ -29,11 +29,7 @@ def _dsn() -> str:
         # asyncpg n'accepte pas le préfixe "postgres://" retourné par
         # certains hébergeurs sous cette forme — on le normalise.
         return url.replace("postgres://", "postgresql://", 1)
-    return (
-        f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-        f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}"
-        f"/{os.getenv('DB_NAME', 'cinetour')}"
-    )
+   
 
 
 def _convertir_placeholders(query: str, params: tuple) -> str:

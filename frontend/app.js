@@ -10,6 +10,7 @@ const state = {
   amenitiesParLieu: {},   // cache local pendant la session : { lieuId: {amenities, phrases} }
 };
 
+
 let map, markersLayer;
 
 // ── Initialisation carte Leaflet ─────────────────────────────────
@@ -21,6 +22,74 @@ function initCarte() {
   }).addTo(map);
   markersLayer = L.layerGroup().addTo(map);
 }
+
+async function chargerDepartementsOccitanie() {
+  try {
+    const response = await fetch("/departements-occitanie.geojson");
+console.log(departements.features[0].properties);
+    if (!response.ok) {
+      throw new Error(
+        `Erreur HTTP ${response.status} : impossible de charger les contours des départements de l'Occitanie.`
+      );
+    }
+
+    const departements = await response.json();
+
+    L.geoJSON(departements, {
+      style: {
+        color: "#3388ff",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.2
+      },
+
+      onEachFeature: (feature, layer) => {
+        const nomDepartement =
+          feature.properties?.nom ||
+          feature.properties?.NOM ||
+          feature.properties?.name ||
+          "Département inconnu";
+
+        layer.bindTooltip(nomDepartement, {
+          permanent: false,
+          direction: "center",
+          className: "tooltip-departement"
+        });
+
+        layer.on({
+          mouseover: (event) => {
+            event.target.setStyle({
+              weight: 3,
+              fillOpacity: 0.4
+            });
+
+            event.target.bringToFront();
+          },
+
+          mouseout: (event) => {
+            event.target.setStyle({
+              color: "#3388ff",
+              weight: 2,
+              opacity: 1,
+              fillOpacity: 0.2
+            });
+          }
+        });
+      }
+    }).addTo(map);
+
+  } catch (error) {
+    console.error(
+      "Erreur lors du chargement des départements :",
+      error
+    );
+  }
+}
+
+chargerDepartementsOccitanie();
+
+
+
 
 // ── Chargement de la liste des films (sidebar) ───────────────────
 async function chargerFilms() {

@@ -257,11 +257,26 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
                 "lien_affilie": "",  # à remplir : lien Awin/partenaire pour ce provider
             })
 
-    await execute(
-        "UPDATE films SET plateformes_json = %s, plateformes_maj = %s WHERE id = %s",
-        (json.dumps(plateformes), datetime.now(timezone.utc), film["id"]),
-    )
+    await _sauvegarder_plateformes_cache(film["id"], plateformes)
     return plateformes
+
+
+async def _sauvegarder_plateformes_cache(film_id: int, plateformes: list[dict]) -> None:
+    """
+    Isolé dans sa propre fonction avec gestion d'erreur : si l'écriture
+    du cache échoue (mismatch de type, base indisponible...), la page
+    doit quand même s'afficher avec les plateformes fraîchement
+    récupérées — juste sans les mettre en cache cette fois-ci. Ne
+    JAMAIS laisser un souci de cache secondaire faire planter la fiche
+    film entière (c'est ce qui causait le 500 sur tous les films).
+    """
+    try:
+        await execute(
+            "UPDATE films SET plateformes_json = %s, plateformes_maj = %s WHERE id = %s",
+            (json.dumps(plateformes), datetime.now(timezone.utc), film_id),
+        )
+    except Exception as e:
+        print(f"⚠️ Cache plateformes non sauvegardé pour film {film_id}: {e}", flush=True)
 
 
 @app.get("/api/films/{film_id}")

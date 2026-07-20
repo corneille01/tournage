@@ -1,0 +1,333 @@
+:root {
+  --sidebar-width: 380px;
+  --header-height: auto;
+  --couleur-fond: #0f1115;
+  --couleur-carte: #1a1d24;
+  --couleur-accent: #e63946;
+  --couleur-texte: #f2f2f2;
+  --couleur-texte-muted: #9a9ea8;
+  --rayon: 12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--couleur-fond);
+  color: var(--couleur-texte);
+  overflow: hidden; /* on gère le scroll nous-mêmes dans #cartes-scroll et #map */
+}
+
+#app {
+  display: flex;
+  flex-direction: column;   /* mobile : sidebar au-dessus, carte en dessous */
+  height: 100vh;
+  height: 100dvh;           /* évite le décalage de la barre d'adresse mobile */
+}
+
+/* ═══ SIDEBAR ═══ */
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--couleur-fond);
+  flex: 0 0 45%;            /* mobile : sidebar prend 45% de la hauteur */
+  min-height: 0;             /* indispensable pour que le scroll enfant fonctionne */
+}
+
+#sidebar-header {
+  flex: 0 0 auto;            /* en-tête à hauteur fixe, ne bouge jamais */
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid #2a2d35;
+}
+
+#sidebar-header h1 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--couleur-accent);
+}
+
+.sous-titre {
+  font-size: 0.8rem;
+  color: var(--couleur-texte-muted);
+  margin-top: 2px;
+}
+
+#filtres {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.filtre-btn {
+  flex: 0 0 auto;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte-muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.filtre-btn.active {
+  background: var(--couleur-accent);
+  color: #fff;
+  border-color: var(--couleur-accent);
+}
+
+/* ── Zone scrollable des cartes films, hauteur fixe sous l'en-tête ── */
+#cartes-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px;
+}
+
+#cartes-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.carte-film {
+  display: flex;
+  gap: 10px;
+  background: var(--couleur-carte);
+  border-radius: var(--rayon);
+  padding: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.carte-film:hover,
+.carte-film.selectionnee {
+  border-color: var(--couleur-accent);
+}
+
+.carte-film img {
+  width: 56px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  background: #2a2d35;
+}
+
+.carte-film .infos {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.carte-film .infos h3 {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carte-film .infos .meta {
+  font-size: 0.75rem;
+  color: var(--couleur-texte-muted);
+  margin-top: 4px;
+}
+
+/* ═══ CARTE (map) ═══ */
+#carte-zone {
+  flex: 1 1 55%;
+  position: relative;
+  min-height: 0;
+}
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Icône pancarte de tournage sur la carte */
+.icone-tournage {
+  font-size: 28px;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+}
+
+/* ═══ POPUP LIEU ═══ */
+#popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: flex-end;    /* mobile : popup remonte du bas */
+  justify-content: center;
+  z-index: 1000;
+}
+#popup-overlay.hidden { display: none; }
+
+#popup-lieu {
+  background: var(--couleur-fond);
+  width: 100%;
+  max-height: 85vh;
+  border-radius: 16px 16px 0 0;
+  overflow-y: auto;
+  position: relative;
+  padding-bottom: 20px;
+}
+
+#popup-fermer {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  font-size: 1rem;
+  z-index: 2;
+}
+
+#popup-poster {
+  width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+  display: block;
+}
+
+#popup-contenu { padding: 16px; }
+
+#popup-titre { font-size: 1.2rem; margin-bottom: 8px; }
+
+#popup-synopsis.scrollable {
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  color: var(--couleur-texte-muted);
+  line-height: 1.4;
+  padding-right: 4px;
+  margin-bottom: 14px;
+}
+
+#popup-boutons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+#popup-boutons button {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 10px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+}
+#popup-boutons button.actif {
+  border-color: var(--couleur-accent);
+}
+
+#popup-resultats { display: flex; flex-direction: column; gap: 10px; }
+
+.resultat-item {
+  background: var(--couleur-carte);
+  border-radius: 10px;
+  padding: 10px;
+}
+.resultat-item .nom { font-weight: 600; font-size: 0.9rem; }
+.resultat-item .distance { color: var(--couleur-accent); font-size: 0.8rem; margin-top: 2px; }
+.resultat-item .adresse { color: var(--couleur-texte-muted); font-size: 0.78rem; margin-top: 4px; }
+.resultat-item.plus-proche { border: 1px solid var(--couleur-accent); }
+.phrase-recommandation {
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--couleur-texte);
+  background: rgba(230,57,70,0.12);
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.hidden { display: none !important; }
+
+/* ═══ BREAKPOINT TABLETTE / DESKTOP ═══ */
+@media (min-width: 768px) {
+  #app { flex-direction: row; }
+
+  #sidebar {
+    flex: 0 0 var(--sidebar-width);
+    height: 100%;
+    border-right: 1px solid #2a2d35;
+  }
+
+  #carte-zone { flex: 1 1 auto; }
+
+  #popup-overlay { align-items: center; }
+  #popup-lieu {
+    width: 480px;
+    max-height: 80vh;
+    border-radius: 16px;
+  }
+}
+
+/* ═══ PAGE FILM SSR (/films/{slug}) ═══ */
+body.page-film-ssr {
+  overflow-y: auto;
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+.ssr-header { padding: 16px; }
+.ssr-logo {
+  color: var(--couleur-accent);
+  font-weight: 800;
+  font-size: 1.2rem;
+  text-decoration: none;
+}
+
+.ssr-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 16px;
+}
+.ssr-hero img {
+  width: 160px;
+  border-radius: var(--rayon);
+  align-self: center;
+}
+.ssr-hero h1 { font-size: 1.5rem; margin-bottom: 4px; }
+.ssr-meta { color: var(--couleur-texte-muted); font-size: 0.85rem; margin-bottom: 10px; }
+.ssr-synopsis { line-height: 1.5; margin-bottom: 16px; }
+
+.ssr-cta {
+  display: inline-block;
+  background: var(--couleur-accent);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.ssr-lieux { padding: 24px 16px; }
+.ssr-lieux h2 { font-size: 1.1rem; margin-bottom: 14px; }
+
+.ssr-lieu-card {
+  background: var(--couleur-carte);
+  border-radius: var(--rayon);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.ssr-lieu-card h3 { font-size: 1rem; margin-bottom: 6px; }
+.ssr-lieu-card p { color: var(--couleur-texte-muted); font-size: 0.85rem; margin-bottom: 8px; }
+.ssr-lieu-card a { color: var(--couleur-accent); font-size: 0.85rem; text-decoration: none; }
+
+.ssr-lien-retour {
+  padding: 20px 16px;
+  border-top: 1px solid #2a2d35;
+  font-size: 0.85rem;
+  color: var(--couleur-texte-muted);
+}
+.ssr-lien-retour a { color: var(--couleur-accent); }

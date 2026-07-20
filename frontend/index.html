@@ -1,83 +1,73 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <title>CinéTour — Visitez les lieux de tournage en Occitanie</title>
-    <meta
-      name="description"
-      content="Découvrez où ont été tournés vos films, séries et animés préférés en Occitanie, et tout ce qu'il faut pour visiter : hébergements, restaurants, offices de tourisme, transports."
-    />
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CinéTour — Visitez les lieux de tournage en Occitanie</title>
+<meta name="description" content="Découvrez où ont été tournés vos films, séries et animés préférés en Occitanie, et tout ce qu'il faut pour visiter : hébergements, restaurants, offices de tourisme, transports.">
 
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0f1115" />
-    <link rel="stylesheet" href="/style.css" />
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/[email protected]/dist/leaflet.css"
-    />
-  </head>
-  <body>
-    <div id="app">
-      <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + cartes scrollables ═══ -->
-      <aside id="sidebar">
-        <header id="sidebar-header">
-          <h1>CinéTour</h1>
-          <p class="sous-titre">Lieux de tournage en Occitanie</p>
-          <div id="filtres">
-            <button class="filtre-btn active" data-type="">Tout</button>
-            <button class="filtre-btn" data-type="movie">Films</button>
-            <button class="filtre-btn" data-type="tv">Séries</button>
-            <button class="filtre-btn" data-type="anime">Animés</button>
-          </div>
-        </header>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0f1115">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+</head>
+<body>
 
-        <div id="cartes-scroll">
-          <div id="cartes-liste"><!-- rempli par app.js --></div>
-          <div id="cartes-loading" class="hidden">Chargement…</div>
-        </div>
-      </aside>
+<div id="app">
 
-      <!-- ═══ CARTE (à droite) ═══ -->
-      <main id="carte-zone">
-        <div id="map"></div>
-      </main>
-    </div>
-
-    <!-- ═══ POPUP LIEU DE TOURNAGE ═══ -->
-    <div id="popup-overlay" class="hidden">
-      <div id="popup-lieu">
-        <button id="popup-fermer" aria-label="Fermer">✕</button>
-        <img id="popup-poster" src="" alt="" />
-        <div id="popup-contenu">
-          <h2 id="popup-titre"></h2>
-          <div id="popup-synopsis" class="scrollable"></div>
-
-          <div id="popup-boutons">
-            <button data-categorie="hebergement">🏨 Où dormir</button>
-            <button data-categorie="restaurant">🍽️ Où manger</button>
-            <button data-categorie="office_tourisme">
-              ℹ️ Office de tourisme
-            </button>
-            <button data-categorie="parking">🅿️ Se garer</button>
-            <button data-categorie="gare">🚉 Gare la plus proche</button>
-            <button data-categorie="aeroport">
-              ✈️ Aéroport le plus proche
-            </button>
-            <button data-categorie="arret_bus">🚌 Arrêt de bus</button>
-            <button data-categorie="police">🚓 Police / gendarmerie</button>
-            <button data-categorie="hopital">🏥 Hôpital</button>
-          </div>
-
-          <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
-        </div>
+  <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + cartes scrollables ═══ -->
+  <aside id="sidebar">
+    <header id="sidebar-header">
+      <h1>CinéTour</h1>
+      <p class="sous-titre">Lieux de tournage en Occitanie</p>
+      <div id="filtres">
+        <button class="filtre-btn active" data-type="">Tout</button>
+        <button class="filtre-btn" data-type="movie">Films</button>
+        <button class="filtre-btn" data-type="tv">Séries</button>
+       
       </div>
-    </div>
+    </header>
 
-    <script src="https://unpkg.com/[email protected]/dist/leaflet.js"></script>
-    <script src="/app.js" defer></script>
-  </body>
+    <div id="cartes-scroll">
+      <div id="cartes-liste"><!-- rempli par app.js --></div>
+      <div id="cartes-loading" class="hidden">Chargement…</div>
+    </div>
+  </aside>
+
+  <!-- ═══ CARTE (à droite) ═══ -->
+  <main id="carte-zone">
+    <div id="map"></div>
+  </main>
+
+</div>
+
+<!-- ═══ POPUP LIEU DE TOURNAGE ═══ -->
+<div id="popup-overlay" class="hidden">
+  <div id="popup-lieu">
+    <button id="popup-fermer" aria-label="Fermer">✕</button>
+    <img id="popup-poster" src="" alt="">
+    <div id="popup-contenu">
+      <h2 id="popup-titre"></h2>
+      <div id="popup-synopsis" class="scrollable"></div>
+
+      <div id="popup-boutons">
+        <button data-categorie="hebergement">🏨 Où dormir</button>
+        <button data-categorie="restaurant">🍽️ Où manger</button>
+        <button data-categorie="office_tourisme">ℹ️ Office de tourisme</button>
+        <button data-categorie="parking">🅿️ Se garer</button>
+        <button data-categorie="gare">🚉 Gare la plus proche</button>
+        <button data-categorie="aeroport">✈️ Aéroport le plus proche</button>
+        <button data-categorie="arret_bus">🚌 Arrêt de bus</button>
+        <button data-categorie="police">🚓 Police / gendarmerie</button>
+        <button data-categorie="hopital">🏥 Hôpital</button>
+      </div>
+
+      <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
+    </div>
+  </div>
+</div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/app.js" defer></script>
+</body>
 </html>

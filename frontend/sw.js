@@ -4,7 +4,7 @@
 
 const CACHE_NAME = "cinetour-static-v1";
 const ASSETS_STATIQUES = [
-  "/", "/style.css", "/app.js", "/manifest.webmanifest",
+  "/", "/style.css", "/app.js", "/manifest.json",
   "/placeholder-poster.png",
 ];
 

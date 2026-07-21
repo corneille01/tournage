@@ -503,3 +503,18 @@ body.page-film-ssr {
 @media (max-width: 360px) {
   #filtres-avances { grid-template-columns: 1fr; }
 }
+
+.resume-recherche {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  color: #333;
+  background: #f5f7fa;
+  border-left: 4px solid #3388ff;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.resume-recherche strong {
+  color: #111;
+}

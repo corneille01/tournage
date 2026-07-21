@@ -5,16 +5,71 @@ const API_BASE = "";
 
 // Doit rester synchronisé avec ICONES_CATEGORIE dans backend/overpass.py
 const ICONES_CATEGORIE = {
-  hebergement:      { emoji: "🏨", couleur: "#2a9d8f", label: "Où dormir" },
-  restaurant:       { emoji: "🍽️", couleur: "#e76f51", label: "Où manger" },
-  office_tourisme:  { emoji: "ℹ️", couleur: "#264653", label: "Office de tourisme" },
-  parking:          { emoji: "🅿️", couleur: "#3a3a3a", label: "Se garer" },
-  gare:             { emoji: "🚉", couleur: "#6a4c93", label: "Gare la plus proche" },
-  aeroport:         { emoji: "✈️", couleur: "#4361ee", label: "Aéroport le plus proche" },
-  arret_bus:        { emoji: "🚌", couleur: "#f4a261", label: "Arrêt de bus" },
-  police:           { emoji: "🚓", couleur: "#023e8a", label: "Police / gendarmerie" },
-  hopital:          { emoji: "🏥", couleur: "#d00000", label: "Hôpital" },
-  activite:         { emoji: "🎡", couleur: "#9b5de5", label: "Activités à proximité" },
+  hebergement: {
+    emoji: "🏨",
+    couleur: "#2a9d8f",
+    label: "Où dormir"
+  },
+
+  refuge: {
+    emoji: "🥾",
+    couleur: "#588157",
+    label: "Refuges"
+  },
+
+  restaurant: {
+    emoji: "🍽️",
+    couleur: "#e76f51",
+    label: "Où manger"
+  },
+
+  office_tourisme: {
+    emoji: "ℹ️",
+    couleur: "#264653",
+    label: "Office de tourisme"
+  },
+
+  parking: {
+    emoji: "🅿️",
+    couleur: "#3a3a3a",
+    label: "Se garer"
+  },
+
+  gare: {
+    emoji: "🚉",
+    couleur: "#6a4c93",
+    label: "Gare la plus proche"
+  },
+
+  aeroport: {
+    emoji: "✈️",
+    couleur: "#4361ee",
+    label: "Aéroport le plus proche"
+  },
+
+  arret_bus: {
+    emoji: "🚌",
+    couleur: "#f4a261",
+    label: "Arrêt de bus"
+  },
+
+  police: {
+    emoji: "🚓",
+    couleur: "#023e8a",
+    label: "Police / gendarmerie"
+  },
+
+  hopital: {
+    emoji: "🏥",
+    couleur: "#d00000",
+    label: "Hôpital"
+  },
+
+  activite: {
+    emoji: "🎡",
+    couleur: "#9b5de5",
+    label: "Activités à proximité"
+  }
 };
 
 const state = {
@@ -44,6 +99,35 @@ function initCarte() {
   });
   map.addLayer(clusterGroup);
 }
+async function chargerContourOccitanie() {
+  try {
+    const response = await fetch("/contour-occitanie.geojson");
+
+    if (!response.ok) {
+      throw new Error(
+        `Erreur HTTP ${response.status} : impossible de charger le fichier GeoJSON`
+      );
+    }
+
+    const occitanie = await response.json();
+
+    L.geoJSON(occitanie, {
+      style: {
+        color: "#3388ff",
+        weight: 3,
+        opacity: 1,
+        fillOpacity: 0
+      }
+    }).addTo(map);
+
+  } catch (error) {
+    console.error(
+      "Erreur lors du chargement du contour de l’Occitanie :",
+      error
+    );
+  }
+}
+
 
 // ── Filtres avancés : peupler les menus déroulants depuis l'API ──
 async function chargerOptionsFiltres() {
@@ -157,7 +241,7 @@ function afficherCartesFilms(films) {
 }
 
 function labelMediaType(type) {
-  return { movie: "Film", tv: "Série", anime: "Animé" }[type] || type;
+  return { movie: "Film", tv: "Série"}[type] || type;
 }
 
 // ── Sélection d'un film → charge ses lieux et les affiche sur la carte ──
@@ -253,68 +337,270 @@ async function _recupererAmenities(lieuId) {
 
 // ── Clic sur un bouton catégorie (hébergement, resto, etc.) ──────
 async function afficherCategorie(categorie) {
-  const lieuId = document.getElementById("popup-overlay").dataset.lieuId;
-  if (!lieuId) return;
+  const popupOverlay = document.getElementById("popup-overlay");
+  const lieuId = popupOverlay.dataset.lieuId;
 
-  document.querySelectorAll("#popup-boutons button").forEach((b) => {
-    b.classList.toggle("actif", b.dataset.categorie === categorie);
+  if (!lieuId) {
+    return;
+  }
+
+  document.querySelectorAll("#popup-boutons button").forEach((bouton) => {
+    bouton.classList.toggle(
+      "actif",
+      bouton.dataset.categorie === categorie
+    );
   });
 
   const conteneur = document.getElementById("popup-resultats");
-  conteneur.innerHTML = `<p style="color:#9a9ea8;">Chargement…</p>`;
+
+  conteneur.innerHTML = `
+    <p style="color:#9a9ea8;">
+      Chargement…
+    </p>
+  `;
 
   const data = await _recupererAmenities(lieuId);
+
   if (!data) {
-    conteneur.innerHTML = `<p style="color:#9a9ea8;">Indisponible pour ce lieu.</p>`;
+    conteneur.innerHTML = `
+      <p style="color:#9a9ea8;">
+        Données indisponibles pour ce lieu.
+      </p>
+    `;
     return;
   }
 
-  const items = data.amenities[categorie] || [];
-  const phrase = data.phrases_recommandation[categorie];
-  const couleur = (ICONES_CATEGORIE[categorie] || {}).couleur || "#e63946";
+  const items = data.amenities?.[categorie] || [];
+  const stats = data.stats?.[categorie] || null;
+  const phrase = data.phrases_recommandation?.[categorie];
+
+  const informationsCategorie =
+    ICONES_CATEGORIE[categorie] || {};
+
+  const couleur =
+    informationsCategorie.couleur || "#e63946";
+
+  const resume = creerResumeRecherche(
+    stats,
+    items.length
+  );
 
   if (!items.length) {
-    conteneur.innerHTML = `<p style="color:#9a9ea8;">Aucun résultat trouvé à proximité.</p>`;
+    conteneur.innerHTML =
+      resume +
+      `
+        <p style="color:#9a9ea8;">
+          Aucun résultat nommé trouvé à proximité.
+        </p>
+      `;
+
     return;
   }
 
-  conteneur.innerHTML =
-    (phrase ? `<div class="phrase-recommandation">${phrase}</div>` : "") +
-    items.map((item, i) => `
-      <div class="resultat-item ${i === 0 ? "plus-proche" : ""}"
-           style="${i === 0 ? `border-color:${couleur};` : ""}">
-        <div class="nom">${i === 0 ? "⭐ " : ""}${item.nom}</div>
-        <div class="distance">${formatDistance(item.distance_metres)}</div>
-        ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
+  const liste = items.map((item, index) => {
+    const estPlusProche = index === 0;
+
+    return `
+      <div
+        class="resultat-item ${estPlusProche ? "plus-proche" : ""}"
+        style="${estPlusProche ? `border-color:${couleur};` : ""}"
+      >
+        <div class="nom">
+          ${estPlusProche ? "⭐ " : ""}
+          ${item.nom}
+        </div>
+
+        <div class="distance">
+          ${formatDistance(item.distance_metres)}
+        </div>
+
+        ${
+          item.adresse
+            ? `<div class="adresse">${item.adresse}</div>`
+            : ""
+        }
+
+        ${
+          item.telephone
+            ? `
+              <div class="telephone">
+                📞 ${item.telephone}
+              </div>
+            `
+            : ""
+        }
+
+        ${
+          item.site_web
+            ? `
+              <div class="site-web">
+                <a
+                  href="${item.site_web}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Voir le site
+                </a>
+              </div>
+            `
+            : ""
+        }
       </div>
-    `).join("");
+    `;
+  }).join("");
+
+  conteneur.innerHTML =
+    resume +
+    (
+      phrase
+        ? `<div class="phrase-recommandation">${phrase}</div>`
+        : ""
+    ) +
+    liste;
+}
+
+function creerResumeRecherche(stats, nombreAffiche) {
+  if (!stats) {
+    return "";
+  }
+
+  const total = Number(stats.nombre_total || 0);
+  const rayon = formatDistance(stats.rayon_metres || 0);
+  const reellementAffiches = Math.min(nombreAffiche, total);
+
+  return `
+    <div class="resume-recherche">
+      <strong>${reellementAffiches}</strong>
+      lieu${reellementAffiches > 1 ? "x" : ""} affiché${reellementAffiches > 1 ? "s" : ""}
+      sur
+      <strong>${total}</strong>
+      trouvé${total > 1 ? "s" : ""}
+      dans un rayon de
+      <strong>${rayon}</strong>.
+    </div>
+  `;
 }
 
 // ── "Que faire aux alentours" : affiche les points d'activité sur la carte ──
 async function afficherActivites() {
-  const lieuId = document.getElementById("popup-overlay").dataset.lieuId;
-  if (!lieuId) return;
-  const lieu = state.lieuxCourants.find((l) => l.id === Number(lieuId));
+  const popupOverlay = document.getElementById("popup-overlay");
+  const lieuId = popupOverlay.dataset.lieuId;
+
+  if (!lieuId) {
+    return;
+  }
+
+  const lieu = state.lieuxCourants.find(
+    (element) => element.id === Number(lieuId)
+  );
+
   const data = await _recupererAmenities(lieuId);
-  if (!data) return;
 
-  const items = data.amenities["activite"] || [];
+  if (!data) {
+    return;
+  }
+
+  const items = data.amenities?.activite || [];
+  const stats = data.stats?.activite || null;
+
   fermerPopup();
-
   clusterGroup.clearLayers();
+
   const bounds = [];
-  if (lieu) bounds.push([lieu.latitude, lieu.longitude]);
+
+  if (lieu) {
+    bounds.push([
+      lieu.latitude,
+      lieu.longitude
+    ]);
+
+    const iconeTournage = L.divIcon({
+      html: '<div class="icone-tournage">🎬</div>',
+      className: "",
+      iconSize: [32, 32],
+      iconAnchor: [16, 30]
+    });
+
+    const marqueurTournage = L.marker(
+      [lieu.latitude, lieu.longitude],
+      { icon: iconeTournage }
+    ).bindPopup(`
+      <b>${lieu.nom}</b><br>
+      Lieu de tournage
+    `);
+
+    clusterGroup.addLayer(marqueurTournage);
+  }
+
   items.forEach((item) => {
     const icone = L.divIcon({
-      html: `<div class="icone-tournage" style="color:${ICONES_CATEGORIE.activite.couleur}">🎡</div>`,
-      className: "", iconSize: [28, 28], iconAnchor: [14, 26],
+      html: `
+        <div
+          class="icone-tournage"
+          style="color:${ICONES_CATEGORIE.activite.couleur}"
+        >
+          🎡
+        </div>
+      `,
+      className: "",
+      iconSize: [28, 28],
+      iconAnchor: [14, 26]
     });
-    const marker = L.marker([item.latitude, item.longitude], { icon: icone })
-      .bindPopup(`<b>${item.nom}</b><br>${formatDistance(item.distance_metres)} du lieu de tournage`);
+
+    const marker = L.marker(
+      [item.latitude, item.longitude],
+      { icon: icone }
+    ).bindPopup(`
+      <b>${item.nom}</b><br>
+      ${formatDistance(item.distance_metres)}
+      du lieu de tournage
+      ${
+        item.adresse
+          ? `<br>${item.adresse}`
+          : ""
+      }
+    `);
+
     clusterGroup.addLayer(marker);
-    bounds.push([item.latitude, item.longitude]);
+
+    bounds.push([
+      item.latitude,
+      item.longitude
+    ]);
   });
-  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, {
+      padding: [40, 40],
+      maxZoom: 14
+    });
+  }
+
+  const total = stats?.nombre_total ?? items.length;
+  const rayon = stats?.rayon_metres
+    ? formatDistance(stats.rayon_metres)
+    : null;
+
+  if (lieu) {
+    L.popup({
+      closeButton: true,
+      autoClose: false
+    })
+      .setLatLng([
+        lieu.latitude,
+        lieu.longitude
+      ])
+      .setContent(`
+        <strong>${items.length}</strong>
+        activité${items.length > 1 ? "s" : ""}
+        affichée${items.length > 1 ? "s" : ""}
+        sur
+        <strong>${total}</strong>
+        trouvée${total > 1 ? "s" : ""}
+        ${rayon ? `dans un rayon de <strong>${rayon}</strong>` : ""}.
+      `)
+      .openOn(map);
+  }
 }
 
 // ── "Sur les traces de {film}" : itinéraire réel entre tous les lieux ──
@@ -367,6 +653,7 @@ function formatDistance(m) {
 // ── Écouteurs d'événements ────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
+  chargerContourOccitanie();
   chargerOptionsFiltres();
   chargerFilms();
 

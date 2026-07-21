@@ -83,7 +83,11 @@ async def refresh_lieu(lieu: dict) -> None:
         )
 
         # Overpass est un service public partagé — on ne le sature pas
-        await asyncio.sleep(1)
+        # Overpass est un service public partagé, et on vient d'ajouter
+        # des tentatives automatiques sur 429/503/504 — mais mieux vaut
+        # aussi ralentir le rythme de base pour déclencher ces erreurs
+        # moins souvent (3s plutôt que 1s entre chaque catégorie).
+        await asyncio.sleep(3)
 
 
 async def main(lieu_id: int | None):

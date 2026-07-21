@@ -10,6 +10,7 @@ Cela permet de tenir la charge sans dépendre de la disponibilité ou
 des limites d'Overpass au moment où les visiteurs utilisent le site.
 """
 
+import asyncio
 import math
 
 import httpx
@@ -277,6 +278,48 @@ out center;
 """
 
 
+async def _appeler_overpass_avec_retry(
+    query: str,
+    timeout: httpx.Timeout,
+    tentatives_max: int = 4,
+) -> dict:
+    """
+    Le serveur public overpass-api.de limite le débit (429) et time out
+    parfois sous charge (503/504) — normal pour un service public
+    gratuit et partagé. On réessaie avec un délai croissant plutôt que
+    d'abandonner immédiatement, ce qui évite de perdre des lieux entiers
+    juste parce qu'Overpass était temporairement occupé.
+    """
+    derniere_erreur = None
+    for tentative in range(1, tentatives_max + 1):
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                headers=OVERPASS_HEADERS,
+            ) as client:
+                response = await client.post(
+                    OVERPASS_URL,
+                    data={"data": query},
+                )
+                if response.status_code in (429, 503, 504):
+                    raise httpx.HTTPStatusError(
+                        f"{response.status_code}", request=response.request, response=response
+                    )
+                response.raise_for_status()
+                return response.json()
+        except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
+            derniere_erreur = e
+            if tentative < tentatives_max:
+                attente = 10 * tentative  # 10s, 20s, 30s...
+                print(
+                    f"  ⏳ Overpass indisponible (tentative {tentative}/{tentatives_max}), "
+                    f"nouvelle tentative dans {attente}s…",
+                    flush=True,
+                )
+                await asyncio.sleep(attente)
+    raise derniere_erreur
+
+
 async def find_nearby(
     lat: float,
     lon: float,
@@ -313,6 +356,13 @@ async def find_nearby(
     if top_n < 1:
         raise ValueError("top_n doit être supérieur ou égal à 1")
 
+    # Postgres (via asyncpg) renvoie les colonnes DECIMAL sous forme de
+    # decimal.Decimal, pas de float — soustraire un Decimal et un float
+    # (coordonnées venant d'Overpass, en JSON donc déjà float) lève une
+    # TypeError. On normalise ici, à l'entrée, une fois pour toutes.
+    lat = float(lat)
+    lon = float(lon)
+
     rayon = RAYON_RECHERCHE_M[categorie]
     query = _build_query(lat, lon, categorie)
 
@@ -321,17 +371,7 @@ async def find_nearby(
         connect=15.0,
     )
 
-    async with httpx.AsyncClient(
-        timeout=timeout,
-        headers=OVERPASS_HEADERS,
-    ) as client:
-        response = await client.post(
-            OVERPASS_URL,
-            data={"data": query},
-        )
-
-        response.raise_for_status()
-        data = response.json()
+    data = await _appeler_overpass_avec_retry(query, timeout)
 
     tous: list[dict] = []
 

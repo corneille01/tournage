@@ -17,7 +17,7 @@ on:
 jobs:
   remplissage:
     runs-on: ubuntu-latest
-    timeout-minutes: 300 # 5h de marge (le job réel prend ~2-3h)
+    timeout-minutes: 350 # marge max côté GitHub-hosted (les tentatives + pauses rallongent un peu)
     defaults:
       run:
         working-directory: backend

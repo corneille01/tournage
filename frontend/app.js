@@ -35,39 +35,15 @@ function initCarte() {
     attribution: "© OpenStreetMap",
     maxZoom: 19,
   }).addTo(map);
-  clusterGroup = L.markerClusterGroup({ maxClusterRadius: 40 });
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 40,
+    // Au-delà du zoom 15 (rue/quartier), plus de clustering du tout —
+    // à ce niveau de zoom, l'utilisateur veut cliquer un lieu précis,
+    // pas encore zoomer sur une bulle de regroupement.
+    disableClusteringAtZoom: 15,
+  });
   map.addLayer(clusterGroup);
 }
-async function chargerContourOccitanie() {
-  try {
-    const response = await fetch("/contour-occitanie.geojson");
-
-    if (!response.ok) {
-      throw new Error(
-        `Erreur HTTP ${response.status} : impossible de charger le fichier GeoJSON`
-      );
-    }
-
-    const occitanie = await response.json();
-
-    L.geoJSON(occitanie, {
-      style: {
-        color: "#3388ff",
-        weight: 3,
-        opacity: 1,
-        fillOpacity: 0
-      }
-    }).addTo(map);
-
-  } catch (error) {
-    console.error(
-      "Erreur lors du chargement du contour de l’Occitanie :",
-      error
-    );
-  }
-}
-
-chargerContourOccitanie();
 
 // ── Filtres avancés : peupler les menus déroulants depuis l'API ──
 async function chargerOptionsFiltres() {
@@ -200,8 +176,6 @@ async function selectionnerFilm(filmId, elementCarte) {
   effacerTrace();
   afficherLieuxSurCarte(data.film, data.lieux);
 }
-
-
 
 function afficherLieuxSurCarte(film, lieux) {
   clusterGroup.clearLayers();

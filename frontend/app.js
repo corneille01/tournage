@@ -73,15 +73,16 @@ const ICONES_CATEGORIE = {
 };
 
 const state = {
-  filtres: { mediaType: "", annee: "", departement: "", commune: "", q: "" },
+  filtres: { mediaType: "", annee: "", departement: "", commune: "", q: "", tri: "titre" },
   filmSelectionne: null,
   lieuxCourants: [],
   amenitiesParLieu: {},
   traceLayer: null,
   debounceRecherche: null,
+  dernierBounds: null,
 };
 
-let map, clusterGroup;
+let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
@@ -97,8 +98,30 @@ function initCarte() {
     // pas encore zoomer sur une bulle de regroupement.
     disableClusteringAtZoom: 15,
   });
+  // Groupe SÉPARÉ pour les activités "que faire aux alentours" : ne
+  // doit jamais se mélanger dans la même bulle que les lieux de
+  // tournage, sinon cliquer sur un lieu de tournage peut ouvrir un
+  // cluster d'activités par erreur.
+  clusterActivites = L.markerClusterGroup({ maxClusterRadius: 40, disableClusteringAtZoom: 15 });
+
   map.addLayer(clusterGroup);
+  map.addLayer(clusterActivites);
+
+  // N'importe quel clic sur une bulle de regroupement change la vue —
+  // propose de revenir à la vue initiale du film sélectionné.
+  clusterGroup.on("clusterclick", afficherBoutonRecentrer);
+  clusterActivites.on("clusterclick", afficherBoutonRecentrer);
 }
+
+function afficherBoutonRecentrer() {
+  if (state.dernierBounds) document.getElementById("btn-recentrer").classList.remove("hidden");
+}
+
+function recentrerCarte() {
+  if (state.dernierBounds) map.fitBounds(state.dernierBounds, { padding: [40, 40], maxZoom: 14 });
+  document.getElementById("btn-recentrer").classList.add("hidden");
+}
+
 async function chargerContourOccitanie() {
   try {
     const response = await fetch("/contour-occitanie.geojson");
@@ -148,46 +171,6 @@ function remplirSelect(id, valeurs, labelDefaut) {
   select.value = valeurCourante;
 }
 
-// ── Panneau statistiques ──────────────────────────────────────────
-let statsChargees = false;
-async function toggleStats() {
-  const panel = document.getElementById("stats-panel");
-  const btn = document.getElementById("stats-toggle");
-  const ouvert = panel.classList.contains("hidden");
-  panel.classList.toggle("hidden");
-  btn.setAttribute("aria-expanded", String(ouvert));
-  if (ouvert && !statsChargees) {
-    await chargerStats();
-    statsChargees = true;
-  }
-}
-
-async function chargerStats() {
-  const conteneur = document.getElementById("stats-contenu");
-  conteneur.innerHTML = "Chargement…";
-  try {
-    const res = await fetch(`${API_BASE}/api/stats`);
-    const data = await res.json();
-    const t = data.totaux;
-    let html = `
-      <div class="stats-ligne"><span>Films/séries publiés</span><b>${t.nb_films}</b></div>
-      <div class="stats-ligne"><span>Lieux de tournage</span><b>${t.nb_lieux}</b></div>
-      <div class="stats-ligne"><span>En attente de validation</span><b>${t.nb_en_attente}</b></div>
-      <div class="stats-ligne-titre">Par département</div>
-    `;
-    data.par_departement.forEach((d) => {
-      html += `<div class="stats-ligne"><span>${d.departement}</span><b>${d.nb_lieux} lieux · ${d.nb_films} œuvres</b></div>`;
-    });
-    html += `<div class="stats-ligne-titre">Par type</div>`;
-    data.par_media_type.forEach((m) => {
-      html += `<div class="stats-ligne"><span>${labelMediaType(m.media_type)}</span><b>${m.nb}</b></div>`;
-    });
-    conteneur.innerHTML = html;
-  } catch (e) {
-    conteneur.innerHTML = "Statistiques indisponibles.";
-  }
-}
-
 // ── Chargement de la liste des films (sidebar), avec filtres ─────
 async function chargerFilms() {
   document.getElementById("cartes-loading").classList.remove("hidden");
@@ -199,6 +182,7 @@ async function chargerFilms() {
   if (state.filtres.departement) params.set("departement", state.filtres.departement);
   if (state.filtres.commune) params.set("commune", state.filtres.commune);
   if (state.filtres.q) params.set("q", state.filtres.q);
+  if (state.filtres.tri) params.set("tri", state.filtres.tri);
 
   try {
     const res = await fetch(`${API_BASE}/api/films?${params}`);
@@ -241,7 +225,7 @@ function afficherCartesFilms(films) {
 }
 
 function labelMediaType(type) {
-  return { movie: "Film", tv: "Série"}[type] || type;
+  return { movie: "Film", tv: "Série", anime: "Animé" }[type] || type;
 }
 
 // ── Sélection d'un film → charge ses lieux et les affiche sur la carte ──
@@ -263,6 +247,8 @@ async function selectionnerFilm(filmId, elementCarte) {
 
 function afficherLieuxSurCarte(film, lieux) {
   clusterGroup.clearLayers();
+  clusterActivites.clearLayers();
+  document.getElementById("btn-recentrer").classList.add("hidden");
   if (!lieux.length) return;
 
   const bounds = [];
@@ -279,13 +265,18 @@ function afficherLieuxSurCarte(film, lieux) {
     bounds.push([lieu.latitude, lieu.longitude]);
   });
 
+  state.dernierBounds = bounds;
   map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
 }
 
 // ── Popup lieu de tournage ────────────────────────────────────────
 function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
-  document.getElementById("popup-titre").textContent = `${film.titre} — ${lieu.nom}`;
+  document.getElementById("popup-titre").textContent = film.titre;
+  document.getElementById("popup-meta").textContent =
+    `${labelMediaType(film.media_type)} · ${film.annee || "année inconnue"}`;
+  document.getElementById("popup-adresse").textContent =
+    [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
   document.getElementById("popup-synopsis").textContent =
     lieu.description || film.synopsis || "Aucune description disponible.";
   document.getElementById("popup-resultats").innerHTML = "";
@@ -306,10 +297,12 @@ function ouvrirPopupLieu(film, lieu) {
     </a>
   `).join("");
 
-  // Boutons commodités, générés dynamiquement (icône + couleur par catégorie)
+  // Boutons commodités, générés dynamiquement (icône + couleur par
+  // catégorie) — "activite" suit exactement les mêmes règles que les
+  // autres (liste, plus proche en évidence, total dans le rayon) ; en
+  // plus de la liste, elle affiche aussi les points sur la carte.
   const conteneurBoutons = document.getElementById("popup-boutons");
   conteneurBoutons.innerHTML = Object.entries(ICONES_CATEGORIE)
-    .filter(([cle]) => cle !== "activite") // activité a son propre bouton dédié plus bas
     .map(([cle, info]) => `
       <button data-categorie="${cle}" style="border-color:${info.couleur}">
         <span class="icone-btn">${info.emoji}</span> ${info.label}
@@ -457,6 +450,41 @@ async function afficherCategorie(categorie) {
         : ""
     ) +
     liste;
+
+  if (categorie === "activite") {
+    afficherActivitesSurCarte(items);
+  }
+}
+
+// ── Affiche les points "activité" sur la carte (calque séparé des
+// lieux de tournage), avec l'icône propre à la catégorie et un clic
+// qui montre les infos du point, comme pour les autres commodités ──
+function afficherActivitesSurCarte(items) {
+  clusterActivites.clearLayers();
+  const lieuActuel = state.lieuxCourants.find(
+    (l) => l.id === Number(document.getElementById("popup-overlay").dataset.lieuId)
+  );
+
+  const bounds = lieuActuel ? [[lieuActuel.latitude, lieuActuel.longitude]] : [];
+
+  items.forEach((item) => {
+    const icone = L.divIcon({
+      html: `<div class="icone-commodite" style="color:${ICONES_CATEGORIE.activite.couleur}">🎡</div>`,
+      className: "", iconSize: [26, 26], iconAnchor: [13, 24],
+    });
+    const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
+      <b>${item.nom}</b><br>
+      ${formatDistance(item.distance_metres)} du lieu de tournage
+      ${item.adresse ? `<br>${item.adresse}` : ""}
+      ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
+      ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
+    `);
+    clusterActivites.addLayer(marker);
+    bounds.push([item.latitude, item.longitude]);
+  });
+
+  if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+  if (state.dernierBounds) document.getElementById("btn-recentrer").classList.remove("hidden");
 }
 
 function creerResumeRecherche(stats, nombreAffiche) {
@@ -479,128 +507,6 @@ function creerResumeRecherche(stats, nombreAffiche) {
       <strong>${rayon}</strong>.
     </div>
   `;
-}
-
-// ── "Que faire aux alentours" : affiche les points d'activité sur la carte ──
-async function afficherActivites() {
-  const popupOverlay = document.getElementById("popup-overlay");
-  const lieuId = popupOverlay.dataset.lieuId;
-
-  if (!lieuId) {
-    return;
-  }
-
-  const lieu = state.lieuxCourants.find(
-    (element) => element.id === Number(lieuId)
-  );
-
-  const data = await _recupererAmenities(lieuId);
-
-  if (!data) {
-    return;
-  }
-
-  const items = data.amenities?.activite || [];
-  const stats = data.stats?.activite || null;
-
-  fermerPopup();
-  clusterGroup.clearLayers();
-
-  const bounds = [];
-
-  if (lieu) {
-    bounds.push([
-      lieu.latitude,
-      lieu.longitude
-    ]);
-
-    const iconeTournage = L.divIcon({
-      html: '<div class="icone-tournage">🎬</div>',
-      className: "",
-      iconSize: [32, 32],
-      iconAnchor: [16, 30]
-    });
-
-    const marqueurTournage = L.marker(
-      [lieu.latitude, lieu.longitude],
-      { icon: iconeTournage }
-    ).bindPopup(`
-      <b>${lieu.nom}</b><br>
-      Lieu de tournage
-    `);
-
-    clusterGroup.addLayer(marqueurTournage);
-  }
-
-  items.forEach((item) => {
-    const icone = L.divIcon({
-      html: `
-        <div
-          class="icone-tournage"
-          style="color:${ICONES_CATEGORIE.activite.couleur}"
-        >
-          🎡
-        </div>
-      `,
-      className: "",
-      iconSize: [28, 28],
-      iconAnchor: [14, 26]
-    });
-
-    const marker = L.marker(
-      [item.latitude, item.longitude],
-      { icon: icone }
-    ).bindPopup(`
-      <b>${item.nom}</b><br>
-      ${formatDistance(item.distance_metres)}
-      du lieu de tournage
-      ${
-        item.adresse
-          ? `<br>${item.adresse}`
-          : ""
-      }
-    `);
-
-    clusterGroup.addLayer(marker);
-
-    bounds.push([
-      item.latitude,
-      item.longitude
-    ]);
-  });
-
-  if (bounds.length) {
-    map.fitBounds(bounds, {
-      padding: [40, 40],
-      maxZoom: 14
-    });
-  }
-
-  const total = stats?.nombre_total ?? items.length;
-  const rayon = stats?.rayon_metres
-    ? formatDistance(stats.rayon_metres)
-    : null;
-
-  if (lieu) {
-    L.popup({
-      closeButton: true,
-      autoClose: false
-    })
-      .setLatLng([
-        lieu.latitude,
-        lieu.longitude
-      ])
-      .setContent(`
-        <strong>${items.length}</strong>
-        activité${items.length > 1 ? "s" : ""}
-        affichée${items.length > 1 ? "s" : ""}
-        sur
-        <strong>${total}</strong>
-        trouvée${total > 1 ? "s" : ""}
-        ${rayon ? `dans un rayon de <strong>${rayon}</strong>` : ""}.
-      `)
-      .openOn(map);
-  }
 }
 
 // ── "Sur les traces de {film}" : itinéraire réel entre tous les lieux ──
@@ -650,6 +556,96 @@ function formatDistance(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
+// ── Choroplèthe départements + carte de chaleur ──────────────────
+let coucheChoroplethe = null;
+let coucheChaleur = null;
+let analyseCache = null;
+
+function _echelleCouleur(valeur, max) {
+  // 5 paliers, du plus clair (peu de lieux) au plus intense (le plus sollicité)
+  const ratio = max > 0 ? valeur / max : 0;
+  if (ratio > 0.8) return "#7f1d1d";
+  if (ratio > 0.6) return "#c1272d";
+  if (ratio > 0.4) return "#e63946";
+  if (ratio > 0.2) return "#f4a3a8";
+  return "#3a3d45";
+}
+
+async function _recupererAnalyse() {
+  if (!analyseCache) {
+    const res = await fetch(`${API_BASE}/api/analyse`);
+    analyseCache = await res.json();
+  }
+  return analyseCache;
+}
+
+async function toggleChoroplethe() {
+  const btn = document.getElementById("btn-choroplethe");
+  if (coucheChoroplethe) {
+    map.removeLayer(coucheChoroplethe);
+    coucheChoroplethe = null;
+    btn.dataset.actif = "false";
+    return;
+  }
+
+  const [geojsonRes, analyse] = await Promise.all([
+    fetch("/departements-occitanie.geojson").then((r) => r.json()),
+    _recupererAnalyse(),
+  ]);
+
+  const statsParDept = {};
+  analyse.par_departement.forEach((d) => { statsParDept[d.departement] = d; });
+  const maxLieux = Math.max(...analyse.par_departement.map((d) => d.nb_lieux), 1);
+
+  coucheChoroplethe = L.geoJSON(geojsonRes, {
+    style: (feature) => {
+      const nom = feature.properties.dep_name?.[0];
+      const stat = statsParDept[nom];
+      return {
+        color: "#0f1115",
+        weight: 1,
+        fillColor: _echelleCouleur(stat ? stat.nb_lieux : 0, maxLieux),
+        fillOpacity: 0.55,
+      };
+    },
+    onEachFeature: (feature, layer) => {
+      const nom = feature.properties.dep_name?.[0];
+      const stat = statsParDept[nom];
+      layer.on("click", () => {
+        const contenu = stat ? `
+          <div class="popup-departement">
+            <h3>${nom}</h3>
+            <div class="ligne"><span>Films/séries</span><b>${stat.nb_films}</b></div>
+            <div class="ligne"><span>Lieux de tournage</span><b>${stat.nb_lieux}</b></div>
+            <div class="ligne"><span>Hébergements (moy.)</span><b>${stat.moy_hebergement ?? "—"}</b></div>
+            <div class="ligne"><span>Restaurants (moy.)</span><b>${stat.moy_restaurant ?? "—"}</b></div>
+            <div class="ligne"><span>Lieux isolés</span><b>${stat.lieux_sans_hebergement_5km ?? 0}</b></div>
+            <div class="recommandation">${stat.recommandation}</div>
+          </div>
+        ` : `<div class="popup-departement"><h3>${nom}</h3>Aucune donnée pour ce département.</div>`;
+        L.popup().setLatLng(layer.getBounds().getCenter()).setContent(contenu).openOn(map);
+      });
+    },
+  }).addTo(map);
+
+  document.getElementById("btn-choroplethe").dataset.actif = "true";
+}
+
+async function toggleChaleur() {
+  const btn = document.getElementById("btn-chaleur");
+  if (coucheChaleur) {
+    map.removeLayer(coucheChaleur);
+    coucheChaleur = null;
+    btn.dataset.actif = "false";
+    return;
+  }
+
+  const res = await fetch(`${API_BASE}/api/lieux/tous-points`);
+  const data = await res.json();
+  coucheChaleur = L.heatLayer(data.points, { radius: 22, blur: 18, maxZoom: 10 }).addTo(map);
+  btn.dataset.actif = "true";
+}
+
 // ── Écouteurs d'événements ────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
@@ -682,15 +678,21 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 350); // évite un appel API à chaque frappe
   });
 
-  document.getElementById("stats-toggle").addEventListener("click", toggleStats);
-
   document.getElementById("popup-fermer").addEventListener("click", fermerPopup);
   document.getElementById("popup-overlay").addEventListener("click", (e) => {
     if (e.target.id === "popup-overlay") fermerPopup();
   });
 
-  document.getElementById("btn-activites").addEventListener("click", afficherActivites);
   document.getElementById("btn-trace").addEventListener("click", afficherTraceFilm);
+  document.getElementById("btn-recentrer").addEventListener("click", recentrerCarte);
+  document.getElementById("btn-choroplethe").addEventListener("click", toggleChoroplethe);
+  document.getElementById("btn-chaleur").addEventListener("click", toggleChaleur);
+
+  document.getElementById("filtre-notoriete").addEventListener("click", (e) => {
+    const actif = e.target.classList.toggle("active");
+    state.filtres.tri = actif ? "popularite" : "titre";
+    chargerFilms();
+  });
 
   const params = new URLSearchParams(window.location.search);
   const filmParam = params.get("film");

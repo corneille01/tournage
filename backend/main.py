@@ -36,6 +36,7 @@ _LABELS_CATEGORIE = {
     "aeroport":        "L'aéroport",
     "arret_bus":       "L'arrêt de bus",
     "parking":         "Le parking",
+    "refuge":          "Le refuge",
     "activite":        "L'activité",
 }
 
@@ -66,6 +67,7 @@ async def liste_films(
     departement: str | None = Query(None),
     commune: str | None = Query(None),
     q: str | None = Query(None, description="Recherche par titre"),
+    tri: str = Query("titre", description="titre ou popularite"),
     page: int = Query(1, ge=1),
     par_page: int = Query(60, le=200),
 ):
@@ -101,15 +103,18 @@ async def liste_films(
             params.append(commune)
 
     where = " AND ".join(conditions)
+    # Whitelist stricte : on n'insère jamais le paramètre "tri" tel
+    # quel dans le SQL (protection contre l'injection).
+    ordre_sql = "f.popularite DESC NULLS LAST, f.titre ASC" if tri == "popularite" else "f.titre ASC"
     films = await fetch_all(
         f"""
         SELECT f.id, f.titre, f.titre_original, f.media_type, f.annee, f.poster_url,
-               COUNT(lt.id) AS nb_lieux
+               f.popularite, COUNT(lt.id) AS nb_lieux
         FROM films f
         LEFT JOIN lieux_tournage lt ON lt.film_id = f.id
         WHERE {where}
         GROUP BY f.id
-        ORDER BY f.titre ASC
+        ORDER BY {ordre_sql}
         LIMIT %s OFFSET %s
         """,
         (*params, par_page, offset),
@@ -146,6 +151,13 @@ async def options_filtres(region: str = Query("Occitanie")):
         SELECT DISTINCT lt.commune FROM lieux_tournage lt
         JOIN films f ON f.id = lt.film_id
         WHERE f.region = %s AND f.statut = 'publie' AND lt.commune IS NOT NULL
+          -- Wikidata résout parfois le lieu directement au niveau du
+          -- département plutôt que de la commune précise — on exclut
+          -- ces valeurs du filtre "commune" pour ne pas les dupliquer
+          -- avec le filtre "département".
+          AND lt.commune NOT IN (
+              SELECT DISTINCT departement FROM lieux_tournage WHERE departement IS NOT NULL
+          )
         ORDER BY lt.commune ASC
         """,
         (region,),
@@ -208,6 +220,100 @@ async def stats_globales(region: str = Query("Occitanie")):
         "par_media_type": par_media_type,
         "par_decennie": par_decennie,
     }
+
+
+def _recommandation_departement(d: dict) -> str:
+    """
+    Traduction en texte des indicateurs bruts, dans l'esprit "outil
+    d'aide à la décision" plutôt que "carte sympa" : quelques règles
+    simples plutôt qu'un score composite arbitraire, faciles à
+    expliquer et à faire évoluer avec l'Agence Unique.
+    """
+    nb_lieux = d["nb_lieux"] or 0
+    moy_heberg = d["moy_hebergement"] or 0
+    moy_resto = d["moy_restaurant"] or 0
+    lieux_isoles = d["lieux_sans_hebergement_5km"] or 0
+
+    if nb_lieux == 0:
+        return "Aucune donnée suffisante pour ce département."
+    if moy_heberg >= 3 and moy_resto >= 3:
+        return "Bien équipé en moyenne — valorisation immédiate possible (circuit ciné-touristique)."
+    if lieux_isoles > nb_lieux / 2:
+        return "Plus de la moitié des lieux sont isolés (aucun hébergement à moins de 5 km) — aménagement ou signalétique à prévoir avant toute promotion."
+    if moy_heberg < 1:
+        return "Faible densité d'hébergement — potentiel réel mais nécessite des partenariats avec des hébergeurs avant une valorisation touristique large."
+    return "Équipement intermédiaire — à évaluer au cas par cas selon les lieux les plus emblématiques."
+
+
+@app.get("/api/lieux/tous-points")
+async def tous_les_points(region: str = Query("Occitanie")):
+    """
+    Coordonnées de tous les lieux de tournage publiés, sans détail —
+    juste de quoi alimenter la carte de chaleur (densité visuelle des
+    zones les plus sollicitées, en complément de la choroplèthe par
+    département qui raisonne au niveau administratif).
+    """
+    points = await fetch_all(
+        """
+        SELECT lt.latitude, lt.longitude
+        FROM lieux_tournage lt
+        JOIN films f ON f.id = lt.film_id
+        WHERE f.region = %s AND f.statut = 'publie'
+        """,
+        (region,),
+    )
+    return {"points": [[float(p["latitude"]), float(p["longitude"])] for p in points]}
+
+
+@app.get("/api/analyse")
+async def analyse_territoriale(region: str = Query("Occitanie")):
+    """
+    Version approfondie de /api/stats, pensée pour la page d'analyse
+    territoriale : compare les départements sur des indicateurs
+    d'équipement réel (pas seulement le nombre de films), avec une
+    recommandation textuelle par département.
+    """
+    par_departement = await fetch_all(
+        """
+        SELECT
+            lt.departement,
+            COUNT(DISTINCT lt.film_id) AS nb_films,
+            COUNT(DISTINCT lt.id) AS nb_lieux,
+            ROUND(AVG(hs.nombre_total) FILTER (WHERE hs.categorie = 'hebergement')::numeric, 1) AS moy_hebergement,
+            ROUND(AVG(hs.nombre_total) FILTER (WHERE hs.categorie = 'restaurant')::numeric, 1) AS moy_restaurant,
+            COUNT(DISTINCT hs.lieu_tournage_id) FILTER (
+                WHERE hs.categorie = 'hebergement' AND hs.nombre_total = 0
+            ) AS lieux_sans_hebergement_5km
+        FROM lieux_tournage lt
+        JOIN films f ON f.id = lt.film_id
+        LEFT JOIN amenity_stats hs ON hs.lieu_tournage_id = lt.id
+        WHERE f.region = %s AND f.statut = 'publie' AND lt.departement IS NOT NULL
+        GROUP BY lt.departement
+        ORDER BY nb_lieux DESC
+        """,
+        (region,),
+    )
+
+    resultat = []
+    for d in par_departement:
+        d = dict(d)
+        d["recommandation"] = _recommandation_departement(d)
+        resultat.append(d)
+
+    # Films sans coordonnées / sans image / non validés — complétude
+    # des données, utile pour prioriser le travail éditorial restant.
+    completude = await fetch_one(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM films WHERE region = %s AND statut = 'brouillon') AS brouillons,
+            (SELECT COUNT(*) FROM films WHERE region = %s AND statut = 'publie' AND poster_url IS NULL) AS sans_poster,
+            (SELECT COUNT(*) FROM lieux_tournage lt JOIN films f ON f.id = lt.film_id
+                WHERE f.region = %s AND lt.photo_url IS NULL) AS lieux_sans_photo
+        """,
+        (region, region, region),
+    )
+
+    return {"par_departement": resultat, "completude": completude}
 
 
 # ── Détail d'un film + ses lieux de tournage ─────────────────────

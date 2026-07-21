@@ -24,46 +24,13 @@
   </head>
   <body>
     <div id="app">
-      <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + filtres + cartes scrollables ═══ -->
+      <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + cartes scrollables ═══ -->
       <aside id="sidebar">
         <header id="sidebar-header">
           <h1>CinéTour</h1>
           <p class="sous-titre">Lieux de tournage en Occitanie</p>
-
-          <div id="recherche-zone">
-            <input
-              type="search"
-              id="recherche-input"
-              placeholder="Chercher un film, une série…"
-            />
-          </div>
-
-          <div id="filtres">
-            <button class="filtre-btn active" data-type="">Tout</button>
-            <button class="filtre-btn" data-type="movie">Films</button>
-            <button class="filtre-btn" data-type="tv">Séries</button>
-          </div>
-
-          <div id="filtres-avances">
-            <select id="filtre-annee">
-              <option value="">Année</option>
-            </select>
-            <select id="filtre-departement">
-              <option value="">Département</option>
-            </select>
-            <select id="filtre-commune">
-              <option value="">Commune</option>
-            </select>
-          </div>
-
-          <button id="stats-toggle" aria-expanded="false">
-            📊 Statistiques de la base
-          </button>
+          <a href="/analyse.html" id="stats-toggle">📊 Analyse territoriale complète</a>
         </header>
-
-        <div id="stats-panel" class="hidden">
-          <div id="stats-contenu"><!-- rempli par app.js --></div>
-        </div>
 
         <div id="cartes-scroll">
           <div id="cartes-liste"><!-- rempli par app.js --></div>
@@ -76,6 +43,40 @@
 
       <!-- ═══ CARTE (à droite) ═══ -->
       <main id="carte-zone">
+        <!-- Filtres flottants, au-dessus de la carte, même niveau que les
+             boutons de zoom Leaflet (z-index partagé) -->
+        <div id="filtres-carte">
+          <input
+            type="search"
+            id="recherche-input"
+            placeholder="Chercher un film, une série…"
+          />
+          <div id="filtres-ligne2">
+            <div id="filtres">
+              <button class="filtre-btn active" data-type="">Tout</button>
+              <button class="filtre-btn" data-type="movie">Films</button>
+              <button class="filtre-btn" data-type="tv">Séries</button>
+            </div>
+            <button id="filtre-notoriete" class="filtre-btn" data-tri="titre">
+              ⭐ Les plus connus
+            </button>
+          </div>
+          <div id="filtres-avances">
+            <select id="filtre-annee"><option value="">Année</option></select>
+            <select id="filtre-departement"><option value="">Département</option></select>
+            <select id="filtre-commune"><option value="">Commune</option></select>
+          </div>
+        </div>
+
+        <button id="btn-recentrer" class="hidden" title="Revenir à la vue initiale">
+          ⟲ Recentrer
+        </button>
+
+        <div id="calques-carte">
+          <button id="btn-choroplethe" data-actif="false">🗺️ Départements</button>
+          <button id="btn-chaleur" data-actif="false">🔥 Carte de chaleur</button>
+        </div>
+
         <div id="map"></div>
       </main>
     </div>
@@ -87,6 +88,8 @@
         <img id="popup-poster" src="" alt="" />
         <div id="popup-contenu">
           <h2 id="popup-titre"></h2>
+          <p id="popup-meta"></p>
+          <p id="popup-adresse"></p>
 
           <div id="popup-synopsis" class="scrollable"></div>
           <div id="popup-plateformes">
@@ -102,13 +105,12 @@
           </p>
 
           <div id="popup-boutons">
-            <!-- rempli dynamiquement avec icônes/couleurs par app.js -->
+            <!-- rempli dynamiquement avec icônes/couleurs par app.js, activité incluse -->
           </div>
 
           <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
 
           <div id="popup-actions-globales">
-            <button id="btn-activites">🎡 Que faire aux alentours ?</button>
             <button id="btn-trace">🎬 Sur les traces de ce film…</button>
           </div>
 
@@ -121,6 +123,7 @@
 
     <script src="/vendor/leaflet/leaflet.js"></script>
     <script src="/vendor/markercluster/leaflet.markercluster.js"></script>
+    <script src="/vendor/leaflet-heat/leaflet-heat.js"></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

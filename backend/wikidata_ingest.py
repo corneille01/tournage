@@ -202,6 +202,7 @@ async def enrichir_tmdb(ligne: dict) -> dict:
     ligne["synopsis"] = d.get("overview") or ligne.get("description")
     date = d.get("release_date") or d.get("first_air_date") or ""
     ligne["annee"] = int(date[:4]) if date[:4].isdigit() else None
+    ligne["popularite"] = d.get("popularity")
     poster = d.get("poster_path")
     ligne["poster_url"] = f"https://image.tmdb.org/t/p/w500{poster}" if poster else None
     return ligne
@@ -226,14 +227,14 @@ async def inserer_en_base(ligne: dict) -> None:
             """
             INSERT INTO films
                 (tmdb_id, wikidata_qid, titre, titre_original, media_type,
-                 annee, synopsis, poster_url, region, source_donnee, statut)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Occitanie', 'wikidata', 'brouillon')
+                 annee, synopsis, poster_url, popularite, region, source_donnee, statut)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'Occitanie', 'wikidata', 'brouillon')
             RETURNING id
             """,
             (
                 ligne["tmdb_id"], ligne["wikidata_qid"], ligne["titre"],
                 ligne["titre_original"], ligne["media_type"], ligne["annee"],
-                ligne["synopsis"], ligne["poster_url"],
+                ligne["synopsis"], ligne["poster_url"], ligne.get("popularite"),
             ),
         )
         print(f"  + Film créé: {ligne['titre']} (id={film_id})", flush=True)

@@ -1,0 +1,85 @@
+body.page-analyse {
+  background: var(--couleur-fond);
+  color: var(--couleur-texte);
+  overflow-y: auto;
+  padding-bottom: 40px;
+}
+
+.analyse-header {
+  padding: 20px 16px;
+  border-bottom: 1px solid #2a2d35;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.analyse-header .ssr-logo {
+  color: var(--couleur-accent);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.analyse-header h1 { font-size: 1.4rem; margin: 8px 0 4px; }
+.analyse-header .sous-titre { color: var(--couleur-texte-muted); font-size: 0.85rem; max-width: 600px; }
+
+#analyse-contenu { max-width: 1000px; margin: 0 auto; padding: 0 16px; }
+.analyse-section { margin-top: 28px; }
+.analyse-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
+
+.analyse-note {
+  font-size: 0.75rem;
+  color: var(--couleur-texte-muted);
+  background: var(--couleur-carte);
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+#totaux-cartes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.totaux-carte {
+  background: var(--couleur-carte);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+.totaux-carte .valeur { font-size: 1.6rem; font-weight: 800; color: var(--couleur-accent); }
+.totaux-carte .label { font-size: 0.72rem; color: var(--couleur-texte-muted); margin-top: 4px; }
+
+.table-scroll { overflow-x: auto; }
+#table-departements {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  min-width: 640px;
+}
+#table-departements th, #table-departements td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #2a2d35;
+}
+#table-departements th { color: var(--couleur-texte-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
+#table-departements td.recommandation { font-size: 0.75rem; color: var(--couleur-texte-muted); max-width: 260px; }
+#table-departements tr:hover { background: rgba(255,255,255,0.03); }
+
+canvas { max-width: 100%; }
+
+#completude-contenu {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.carte-a-venir {
+  border: 1px dashed #3a3d45;
+  border-radius: 10px;
+  padding: 16px;
+  color: var(--couleur-texte-muted);
+  font-size: 0.85rem;
+}
+.carte-a-venir h2 { color: var(--couleur-texte); }
+
+@media (max-width: 600px) {
+  .analyse-header h1 { font-size: 1.2rem; }
+}

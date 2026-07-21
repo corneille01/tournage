@@ -86,7 +86,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);

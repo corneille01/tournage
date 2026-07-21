@@ -90,13 +90,18 @@ async def refresh_lieu(lieu: dict) -> None:
         await asyncio.sleep(3)
 
 
-async def main(lieu_id: int | None):
+async def main(lieu_id: int | None, departement: str | None):
     await init_db_pool()
     try:
         if lieu_id:
             lieux = await fetch_all(
                 "SELECT id, nom, latitude, longitude FROM lieux_tournage WHERE id = %s",
                 (lieu_id,),
+            )
+        elif departement:
+            lieux = await fetch_all(
+                "SELECT id, nom, latitude, longitude FROM lieux_tournage WHERE departement = %s",
+                (departement,),
             )
         else:
             lieux = await fetch_all(
@@ -113,5 +118,6 @@ async def main(lieu_id: int | None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--lieu-id", type=int, default=None)
+    parser.add_argument("--departement", type=str, default=None)
     args = parser.parse_args()
-    asyncio.run(main(args.lieu_id))
+    asyncio.run(main(args.lieu_id, args.departement))

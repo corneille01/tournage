@@ -1,42 +1,70 @@
 name: Remplissage du cache Overpass (hébergements, restaurants, etc.)
 
-# Long (~2-3h pour ~264 lieux × 11 catégories) — tourne sur les
-# serveurs GitHub, pas sur ton PC. Se lance uniquement à la demande
-# (bouton "Run workflow") : contrairement à Wikidata, ça n'a pas besoin
-# d'un rafraîchissement hebdomadaire automatique — les commerces autour
-# d'un lieu changent rarement d'une semaine à l'autre. Relance-le
-# manuellement une fois par mois ou deux suffit largement.
+# Deux modes :
+# 1. Un "lieu_id" est fourni → traite UNIQUEMENT ce lieu (test rapide, ~30s)
+# 2. Rien n'est fourni → lance les 13 départements d'Occitanie EN
+#    PARALLÈLE (matrice), chacun dans son propre job (~20-30 min au
+#    lieu d'un seul run de plusieurs heures en série, et si un
+#    département échoue, les 12 autres ne sont pas affectés).
 on:
   workflow_dispatch:
     inputs:
       lieu_id:
-        description: "ID d'un seul lieu à tester (laisser vide pour tout traiter)"
+        description: "ID d'un seul lieu à tester (laisser vide pour tout traiter, par département, en parallèle)"
         required: false
         default: ""
 
 jobs:
-  remplissage:
+  test-un-lieu:
+    if: ${{ github.event.inputs.lieu_id != '' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # marge max côté GitHub-hosted (les tentatives + pauses rallongent un peu)
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Installer les dépendances
-        run: pip install asyncpg httpx python-dotenv
-
-      - name: Remplir amenity_cache / amenity_stats depuis Overpass
+          python-version: "3.12"
+      - run: pip install asyncpg httpx python-dotenv
+      - name: Remplir un seul lieu (test)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
-            python refresh_cache.py --lieu-id ${{ github.event.inputs.lieu_id }}
-          else
-            python refresh_cache.py
-          fi
+        run: python refresh_cache.py --lieu-id ${{ github.event.inputs.lieu_id }}
+
+  remplissage-par-departement:
+    if: ${{ github.event.inputs.lieu_id == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90 # large marge par département (~20-30 min attendues)
+    strategy:
+      fail-fast: false # un département qui échoue n'arrête pas les autres
+      max-parallel: 6 # évite de saturer overpass-api.de d'un coup avec 13 requêtes simultanées
+      matrix:
+        departement:
+          - "Ariège"
+          - "Aude"
+          - "Aveyron"
+          - "Gard"
+          - "Haute-Garonne"
+          - "Gers"
+          - "Hérault"
+          - "Lot"
+          - "Lozère"
+          - "Hautes-Pyrénées"
+          - "Pyrénées-Orientales"
+          - "Tarn"
+          - "Tarn-et-Garonne"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg httpx python-dotenv
+      - name: Remplir amenity_cache / amenity_stats — ${{ matrix.departement }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python refresh_cache.py --departement "${{ matrix.departement }}"

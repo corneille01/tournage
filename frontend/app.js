@@ -171,7 +171,7 @@ async function selectionnerFilm(filmId, elementCarte) {
 
   state.filmSelectionne = data.film;
   state.lieuxCourants = data.lieux;
-  state.plateformesCourantes = data.plateformes || [];
+  state.plateformesCourantes = Array.isArray(data.plateformes) ? data.plateformes : [];
 
   effacerTrace();
   afficherLieuxSurCarte(data.film, data.lieux);

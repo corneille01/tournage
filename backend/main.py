@@ -226,14 +226,28 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
     if not film.get("tmdb_id"):
         return []
 
+    def _parser_cache(valeur) -> list:
+        """asyncpg ne décode pas automatiquement JSONB : selon le driver
+        et la version, on peut recevoir soit déjà une liste, soit une
+        chaîne JSON brute. On gère les deux pour ne jamais planter le
+        frontend avec un .map() sur une chaîne."""
+        if not valeur:
+            return []
+        if isinstance(valeur, str):
+            try:
+                return json.loads(valeur)
+            except (json.JSONDecodeError, TypeError):
+                return []
+        return valeur
+
     dernier_maj = film.get("plateformes_maj")
     if film.get("plateformes_json") and dernier_maj:
         age_jours = (datetime.now(timezone.utc) - dernier_maj.replace(tzinfo=timezone.utc)).days
         if age_jours < PLATEFORMES_CACHE_JOURS:
-            return film["plateformes_json"]
+            return _parser_cache(film["plateformes_json"])
 
     if not TMDB_API_KEY:
-        return film.get("plateformes_json") or []
+        return _parser_cache(film.get("plateformes_json"))
 
     endpoint = "movie" if film["media_type"] == "movie" else "tv"
     try:
@@ -245,7 +259,7 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
             resp.raise_for_status()
             data = resp.json().get("results", {}).get("FR", {})
     except Exception:
-        return film.get("plateformes_json") or []
+        return _parser_cache(film.get("plateformes_json"))
 
     plateformes = []
     for categorie in ("flatrate", "rent", "buy"):

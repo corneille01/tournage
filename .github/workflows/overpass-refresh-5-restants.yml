@@ -1,0 +1,37 @@
+name: Remplissage Overpass — 5 départements restants (temporaire)
+
+# Fichier temporaire : ne traite QUE les 5 départements coupés par le
+# timeout la dernière fois (avant le correctif de regroupement par
+# coordonnées). Le fichier "overpass-refresh.yml" (13 départements)
+# n'est pas touché — une fois ces 5 terminés, supprime simplement ce
+# fichier, pas besoin de "remettre" quoi que ce soit ailleurs.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  remplissage-5-departements:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        departement:
+          - "Pyrénées-Orientales"
+          - "Aude"
+          - "Haute-Garonne"
+          - "Gard"
+          - "Hérault"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg httpx python-dotenv
+      - name: Remplir amenity_cache / amenity_stats — ${{ matrix.departement }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python refresh_cache.py --departement "${{ matrix.departement }}"

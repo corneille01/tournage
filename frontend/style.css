@@ -668,3 +668,10 @@ body.page-film-ssr {
 .popup-departement h3 { margin-bottom: 6px; font-size: 0.95rem; }
 .popup-departement .ligne { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
 .popup-departement .recommandation { margin-top: 6px; font-style: italic; color: #555; font-size: 0.78rem; }
+
+.plateformes-intro {
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--couleur-texte-muted);
+  margin-bottom: 4px;
+}

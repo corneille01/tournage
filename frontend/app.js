@@ -86,7 +86,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -251,6 +251,8 @@ async function selectionnerFilm(filmId, elementCarte) {
 function afficherLieuxSurCarte(film, lieux) {
   clusterGroup.clearLayers();
   clusterActivites.clearLayers();
+  if (coucheCercleRayon) { map.removeLayer(coucheCercleRayon); coucheCercleRayon = null; }
+  if (coucheTraitPlusProche) { map.removeLayer(coucheTraitPlusProche); coucheTraitPlusProche = null; }
   document.getElementById("btn-recentrer").classList.add("hidden");
   if (!lieux.length) return;
 
@@ -273,6 +275,22 @@ function afficherLieuxSurCarte(film, lieux) {
 }
 
 // ── Popup lieu de tournage ────────────────────────────────────────
+// Ordre de priorité (partenariats affiliation les plus probables en
+// premier) — le reste garde son ordre d'arrivée (déjà trié par TMDB
+// par pertinence), tronqué à 5 au total.
+const PRIORITE_PLATEFORMES = ["amazon prime", "prime video", "rakuten", "netflix"];
+
+function _trierEtLimiterPlateformes(plateformes) {
+  const rang = (nom) => {
+    const n = nom.toLowerCase();
+    const i = PRIORITE_PLATEFORMES.findIndex((p) => n.includes(p));
+    return i === -1 ? PRIORITE_PLATEFORMES.length : i;
+  };
+  return [...plateformes]
+    .sort((a, b) => rang(a.nom) - rang(b.nom))
+    .slice(0, 5);
+}
+
 function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = film.titre;
@@ -292,13 +310,19 @@ function ouvrirPopupLieu(film, lieu) {
     ? `<img src="${lieu.photo_url}" alt="Photo actuelle de ${lieu.nom}" loading="lazy">`
     : "";
 
-  // Plateformes de streaming
+  // Plateformes de streaming — priorité à Amazon Prime / Rakuten /
+  // Netflix (partenariats affiliation les plus probables), puis le
+  // reste, limité à 5 au total pour ne pas surcharger le popup.
   const conteneurPlateformes = document.getElementById("popup-plateformes");
-  conteneurPlateformes.innerHTML = (state.plateformesCourantes || []).map((p) => `
-    <a class="plateforme-logo" href="${p.lien_affilie || '#'}" target="_blank" rel="noopener sponsored">
-      <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
-    </a>
-  `).join("");
+  const plateformesTriees = _trierEtLimiterPlateformes(state.plateformesCourantes || []);
+  conteneurPlateformes.innerHTML = plateformesTriees.length ? (
+    `<p class="plateformes-intro">Disponible sur :</p>` +
+    plateformesTriees.map((p) => `
+      <a class="plateforme-logo" href="${p.lien_affilie || '#'}" target="_blank" rel="noopener sponsored">
+        <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
+      </a>
+    `).join("")
+  ) : "";
 
   // Boutons commodités, générés dynamiquement (icône + couleur par
   // catégorie) — "activite" suit exactement les mêmes règles que les
@@ -454,34 +478,89 @@ async function afficherCategorie(categorie) {
     ) +
     liste;
 
-  if (categorie === "activite") {
-    afficherActivitesSurCarte(items);
-  }
+  // Toutes les catégories affichent désormais leurs points sur la
+  // carte (avant, seule "activité" le faisait) — même comportement
+  // partout, comme demandé.
+  afficherCommoditesSurCarte(categorie, items, stats);
 }
 
 // ── Affiche les points "activité" sur la carte (calque séparé des
 // lieux de tournage), avec l'icône propre à la catégorie et un clic
 // qui montre les infos du point, comme pour les autres commodités ──
-function afficherActivitesSurCarte(items) {
+let coucheCercleRayon = null;
+let coucheTraitPlusProche = null;
+let contexteAudio = null;
+
+function _jouerSon() {
+  // Petit "ping" synthétisé (pas de fichier audio à héberger/charger).
+  try {
+    contexteAudio = contexteAudio || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = contexteAudio.createOscillator();
+    const gain = contexteAudio.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, contexteAudio.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, contexteAudio.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, contexteAudio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, contexteAudio.currentTime + 0.2);
+    osc.connect(gain).connect(contexteAudio.destination);
+    osc.start();
+    osc.stop(contexteAudio.currentTime + 0.2);
+  } catch (e) { /* audio non disponible (autoplay bloqué, etc.) — silencieux */ }
+}
+
+function afficherCommoditesSurCarte(categorie, items, stats) {
   clusterActivites.clearLayers();
+  if (coucheCercleRayon) { map.removeLayer(coucheCercleRayon); coucheCercleRayon = null; }
+  if (coucheTraitPlusProche) { map.removeLayer(coucheTraitPlusProche); coucheTraitPlusProche = null; }
+
   const lieuActuel = state.lieuxCourants.find(
     (l) => l.id === Number(document.getElementById("popup-overlay").dataset.lieuId)
   );
-
+  const infoCategorie = ICONES_CATEGORIE[categorie] || {};
   const bounds = lieuActuel ? [[lieuActuel.latitude, lieuActuel.longitude]] : [];
 
-  items.forEach((item) => {
+  // Cercle Turf.js autour du lieu de tournage, rayon = celui utilisé
+  // pour la recherche de cette catégorie (visualise concrètement la
+  // zone dans laquelle les commodités ont été cherchées).
+  if (lieuActuel && stats?.rayon_metres) {
+    const centre = turf.point([lieuActuel.longitude, lieuActuel.latitude]);
+    const cercle = turf.circle(centre, stats.rayon_metres / 1000, { units: "kilometers", steps: 64 });
+    coucheCercleRayon = L.geoJSON(cercle, {
+      style: { color: infoCategorie.couleur || "#e63946", weight: 1, fillOpacity: 0.06, dashArray: "4 4" },
+    }).addTo(map);
+  }
+
+  items.forEach((item, index) => {
+    const estPlusProche = index === 0;
+    const couleurIcone = estPlusProche ? "#ffd60a" : (infoCategorie.couleur || "#e63946");
     const icone = L.divIcon({
-      html: `<div class="icone-commodite" style="color:${ICONES_CATEGORIE.activite.couleur}">🎡</div>`,
-      className: "", iconSize: [26, 26], iconAnchor: [13, 24],
+      html: `<div class="icone-commodite" style="color:${couleurIcone};${estPlusProche ? "font-size:30px;filter:drop-shadow(0 0 4px #ffd60a);" : ""}">${infoCategorie.emoji || "📍"}</div>`,
+      className: "", iconSize: estPlusProche ? [32, 32] : [24, 24], iconAnchor: estPlusProche ? [16, 30] : [12, 22],
     });
     const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
-      <b>${item.nom}</b><br>
+      <b>${estPlusProche ? "⭐ " : ""}${item.nom}</b><br>
       ${formatDistance(item.distance_metres)} du lieu de tournage
       ${item.adresse ? `<br>${item.adresse}` : ""}
       ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
       ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
     `);
+
+    // Le plus proche a un comportement spécial au clic : trait vers le
+    // lieu de tournage (via Turf, pour la cohérence géographique) + son.
+    if (estPlusProche && lieuActuel) {
+      marker.on("click", () => {
+        if (coucheTraitPlusProche) map.removeLayer(coucheTraitPlusProche);
+        const trait = turf.lineString([
+          [lieuActuel.longitude, lieuActuel.latitude],
+          [item.longitude, item.latitude],
+        ]);
+        coucheTraitPlusProche = L.geoJSON(trait, {
+          style: { color: "#ffd60a", weight: 3, dashArray: "6 6" },
+        }).addTo(map);
+        _jouerSon();
+      });
+    }
+
     clusterActivites.addLayer(marker);
     bounds.push([item.latitude, item.longitude]);
   });

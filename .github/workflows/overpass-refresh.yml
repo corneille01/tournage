@@ -1,0 +1,42 @@
+name: Remplissage du cache Overpass (hébergements, restaurants, etc.)
+
+# Long (~2-3h pour ~264 lieux × 11 catégories) — tourne sur les
+# serveurs GitHub, pas sur ton PC. Se lance uniquement à la demande
+# (bouton "Run workflow") : contrairement à Wikidata, ça n'a pas besoin
+# d'un rafraîchissement hebdomadaire automatique — les commerces autour
+# d'un lieu changent rarement d'une semaine à l'autre. Relance-le
+# manuellement une fois par mois ou deux suffit largement.
+on:
+  workflow_dispatch:
+    inputs:
+      lieu_id:
+        description: "ID d'un seul lieu à tester (laisser vide pour tout traiter)"
+        required: false
+        default: ""
+
+jobs:
+  remplissage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300 # 5h de marge (le job réel prend ~2-3h)
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install asyncpg httpx python-dotenv
+
+      - name: Remplir amenity_cache / amenity_stats depuis Overpass
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
+            python refresh_cache.py --lieu-id ${{ github.event.inputs.lieu_id }}
+          else
+            python refresh_cache.py
+          fi

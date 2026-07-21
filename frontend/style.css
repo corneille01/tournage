@@ -538,69 +538,63 @@ body.page-film-ssr {
   font-weight: 600;
 }
 
-/* ── Filtres flottants au-dessus de la carte ── */
+/* ── Recherche + type, dans la sidebar ── */
+#sidebar-header input#recherche-input {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+#sidebar-header input#recherche-input::placeholder { color: var(--couleur-texte-muted); }
+
+/* ── Filtres flottants au-dessus de la carte : horizontal, ne chevauche
+   plus le zoom (déplacé à droite dans app.js) ── */
 #carte-zone { position: relative; }
 
 #filtres-carte {
   position: absolute;
   top: 10px;
   left: 10px;
-  right: 60px; /* laisse la place aux boutons de zoom Leaflet, en haut à droite */
-  z-index: 1000; /* même niveau que .leaflet-control par défaut */
+  right: 50px; /* place réservée aux boutons de zoom, désormais à droite */
+  z-index: 1000;
   background: rgba(15,17,21,0.92);
   backdrop-filter: blur(4px);
   border-radius: 12px;
   padding: 8px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 6px;
-  max-width: 520px;
+  align-items: center;
 }
 
-#filtres-carte #recherche-input {
-  width: 100%;
+#filtres-carte select {
+  flex: 1 1 120px;
   background: var(--couleur-carte);
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
-  padding: 8px 10px;
+  padding: 7px 6px;
   border-radius: 8px;
-  font-size: 0.82rem;
-}
-
-#filtres-ligne2 {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  font-size: 0.75rem;
+  min-width: 0;
 }
 
 #filtre-notoriete {
+  flex: 0 0 auto;
   background: var(--couleur-carte);
   border: 1px solid #2a2d35;
   color: var(--couleur-texte-muted);
-  padding: 6px 10px;
+  padding: 7px 12px;
   border-radius: 999px;
   font-size: 0.75rem;
   cursor: pointer;
   white-space: nowrap;
 }
 #filtre-notoriete.active { background: var(--couleur-accent); color: #fff; border-color: var(--couleur-accent); }
-
-#filtres-avances {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-#filtres-avances select {
-  background: var(--couleur-carte);
-  border: 1px solid #2a2d35;
-  color: var(--couleur-texte);
-  padding: 6px 4px;
-  border-radius: 8px;
-  font-size: 0.72rem;
-  min-width: 0;
-}
 
 /* ── Bouton recentrer (apparaît après avoir zoomé dans un cluster / activités) ── */
 #btn-recentrer {
@@ -638,9 +632,8 @@ body.page-film-ssr {
 
 /* ── Mobile : filtres flottants passent en pleine largeur ── */
 @media (max-width: 600px) {
-  #filtres-carte { left: 6px; right: 6px; max-width: none; }
-  #filtres-avances { grid-template-columns: 1fr 1fr; }
-  #filtres-avances select:nth-child(3) { grid-column: span 2; }
+  #filtres-carte { left: 6px; right: 6px; }
+  #filtres-carte select { flex: 1 1 90px; }
 }
 
 /* ── Calques carte (choroplèthe départements / carte de chaleur) ── */

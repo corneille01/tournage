@@ -24,12 +24,27 @@
   </head>
   <body>
     <div id="app">
-      <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + cartes scrollables ═══ -->
+      <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + recherche + type + cartes ═══ -->
       <aside id="sidebar">
         <header id="sidebar-header">
           <h1>CinéTour</h1>
           <p class="sous-titre">Lieux de tournage en Occitanie</p>
-          <a href="/analyse.html" id="stats-toggle">📊 Analyse territoriale complète</a>
+
+          <input
+            type="search"
+            id="recherche-input"
+            placeholder="Chercher un film, une série…"
+          />
+
+          <div id="filtres">
+            <button class="filtre-btn active" data-type="">Tout</button>
+            <button class="filtre-btn" data-type="movie">Films</button>
+            <button class="filtre-btn" data-type="tv">Séries</button>
+          </div>
+
+          <a href="/analyse.html" id="stats-toggle"
+            >📊 Analyse territoriale complète</a
+          >
         </header>
 
         <div id="cartes-scroll">
@@ -43,38 +58,39 @@
 
       <!-- ═══ CARTE (à droite) ═══ -->
       <main id="carte-zone">
-        <!-- Filtres flottants, au-dessus de la carte, même niveau que les
-             boutons de zoom Leaflet (z-index partagé) -->
+        <!-- Filtres avancés, en barre horizontale au-dessus de la carte —
+             le zoom Leaflet est déplacé à droite (voir app.js) pour ne
+             plus se chevaucher avec cette barre. -->
         <div id="filtres-carte">
-          <input
-            type="search"
-            id="recherche-input"
-            placeholder="Chercher un film, une série…"
-          />
-          <div id="filtres-ligne2">
-            <div id="filtres">
-              <button class="filtre-btn active" data-type="">Tout</button>
-              <button class="filtre-btn" data-type="movie">Films</button>
-              <button class="filtre-btn" data-type="tv">Séries</button>
-            </div>
-            <button id="filtre-notoriete" class="filtre-btn" data-tri="titre">
-              ⭐ Les plus connus
-            </button>
-          </div>
-          <div id="filtres-avances">
-            <select id="filtre-annee"><option value="">Année</option></select>
-            <select id="filtre-departement"><option value="">Département</option></select>
-            <select id="filtre-commune"><option value="">Commune</option></select>
-          </div>
+          <select id="filtre-annee">
+            <option value="">Année</option>
+          </select>
+          <select id="filtre-departement">
+            <option value="">Département</option>
+          </select>
+          <select id="filtre-commune">
+            <option value="">Commune</option>
+          </select>
+          <button id="filtre-notoriete" class="filtre-btn" data-tri="titre">
+            ⭐ Les plus connus
+          </button>
         </div>
 
-        <button id="btn-recentrer" class="hidden" title="Revenir à la vue initiale">
+        <button
+          id="btn-recentrer"
+          class="hidden"
+          title="Revenir à la vue initiale"
+        >
           ⟲ Recentrer
         </button>
 
         <div id="calques-carte">
-          <button id="btn-choroplethe" data-actif="false">🗺️ Départements</button>
-          <button id="btn-chaleur" data-actif="false">🔥 Carte de chaleur</button>
+          <button id="btn-choroplethe" data-actif="false">
+            🗺️ Départements
+          </button>
+          <button id="btn-chaleur" data-actif="false">
+            🔥 Carte de chaleur
+          </button>
         </div>
 
         <div id="map"></div>

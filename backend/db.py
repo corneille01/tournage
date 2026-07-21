@@ -29,7 +29,11 @@ def _dsn() -> str:
         # asyncpg n'accepte pas le préfixe "postgres://" retourné par
         # certains hébergeurs sous cette forme — on le normalise.
         return url.replace("postgres://", "postgresql://", 1)
-   
+    return (
+        f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+        f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}"
+        f"/{os.getenv('DB_NAME', 'cinetour')}"
+    )
 
 
 def _convertir_placeholders(query: str, params: tuple) -> str:
@@ -50,7 +54,17 @@ async def init_db_pool() -> None:
     # de se connecter, pour repérer immédiatement un .env vide/mal rempli.
     host_visible = re.sub(r"://[^@]+@", "://***:***@", dsn)
     print(f"Connexion à : {host_visible}", flush=True)
-    _pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=15, timeout=15)
+    _pool = await asyncpg.create_pool(
+        dsn=dsn, min_size=2, max_size=15, timeout=15,
+        # Neon route les connexions via un pooler façon PgBouncer. Le
+        # cache de requêtes préparées d'asyncpg (par connexion) devient
+        # invalide dès que le schéma change pendant qu'une connexion du
+        # pool est encore vivante — d'où "InvalidCachedStatementError"
+        # qui plantait toutes les fiches film après nos migrations.
+        # statement_cache_size=0 désactive ce cache : légèrement moins
+        # rapide par requête, mais élimine ce plantage définitivement.
+        statement_cache_size=0,
+    )
 
 
 async def close_db_pool() -> None:

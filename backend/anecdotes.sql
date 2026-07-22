@@ -1,16 +1,4 @@
--- Château de Ferrières (issu du .sql généré, propre tel quel)
-UPDATE lieux_tournage SET anecdote = 'France :
-Seine-et Marne
-Château de Ferrières, Ferrières-en-Brie
+-- Généré par wikipedia_anecdotes_local.py — à importer dans Neon
+UPDATE lieux_tournage SET anecdote = 'Le film a été tourné pour une partie en région Occitanie à Saint-Denis-lès-Martel dans le Lot. Une partie du film a été tournée dans la gare de Saint-Denis-près-Martel qui conserve encore des signaux mécaniques qui correspondent à l''époque du film. Pour les besoins de la production, un poste d''aiguillage a été recréé au sud de la gare. Il est encore en état. L''aspect régional du récit disparaît tout à fait à l''écran, tant dans les paysages que dans les dialogues. Beaucoup d''autres scènes ont été tournées à Pélussin (Loire). Il s''agit du village que l''on voit à plusieurs reprises à l''écran. Certaines scènes ont été tournées à la carrière de Terre Blanche de Larnage. Le réalisateur s''est rapproché de la société Fayol pour aménager la carrière, en y creusant une fosse dans laquelle les acteurs se retrouvent piégés.
 
-(Source : Wikipédia, CC BY-SA)' WHERE id = 237;
-
--- Tout nous sépare (Sète + Perpignan, même texte pour les deux lieux)
-UPDATE lieux_tournage 
-SET anecdote = 'Le film a été tourné entre juin et juillet 2016. Les scènes ont été essentiellement tournées à Sète et à Perpignan où Thierry Kilfa et l''équipe du tournage se sont rendus physiquement. (Source : Wikipédia, CC BY-SA)' 
-WHERE id IN (80, 138);
-
--- Le Pacte des loups — cathédrale de Lectoure (reformulé à la main, pas la liste brute)
-UPDATE lieux_tournage 
-SET anecdote = 'La cathédrale Saint-Gervais-Saint-Protais de Lectoure, dans le Gers, et ses remparts ont servi de décor lors du tournage du Pacte des loups. (Source : Wikipédia, CC BY-SA)' 
-WHERE id = 188;
+(Source : Wikipédia, CC BY-SA)' WHERE id = 228;

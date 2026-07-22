@@ -411,7 +411,7 @@ async def detail_film(film_id: int):
     lieux = await fetch_all(
         """
         SELECT id, nom, description, commune, departement,
-               latitude, longitude, photo_url, anecdote
+               latitude, longitude, photo_url, anecdote, description_wikipedia
         FROM lieux_tournage
         WHERE film_id = %s
         """,
@@ -492,24 +492,71 @@ OSRM_URL = "https://router.project-osrm.org"
 _OSRM_PROFILS = {"foot-walking": "foot", "driving-car": "driving"}
 
 
-async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str) -> dict | None:
+_TRADUCTION_MANOEUVRES = {
+    ("turn", "left"): "Tournez à gauche",
+    ("turn", "right"): "Tournez à droite",
+    ("turn", "slight left"): "Serrez légèrement à gauche",
+    ("turn", "slight right"): "Serrez légèrement à droite",
+    ("turn", "sharp left"): "Tournez fortement à gauche",
+    ("turn", "sharp right"): "Tournez fortement à droite",
+    ("turn", "straight"): "Continuez tout droit",
+    ("turn", "uturn"): "Faites demi-tour",
+    ("depart", None): "Départ",
+    ("arrive", None): "Vous êtes arrivé à destination",
+    ("continue", None): "Continuez tout droit",
+    ("merge", None): "Rejoignez la voie",
+    ("roundabout", None): "Prenez le rond-point",
+    ("new name", None): "Continuez",
+}
+
+
+def _traduire_manoeuvre(maneuver: dict, nom_rue: str | None) -> str:
+    type_ = maneuver.get("type", "")
+    modifier = maneuver.get("modifier")
+    phrase = (
+        _TRADUCTION_MANOEUVRES.get((type_, modifier))
+        or _TRADUCTION_MANOEUVRES.get((type_, None))
+        or "Continuez"
+    )
+    if nom_rue and type_ not in ("arrive", "depart"):
+        phrase += f" sur {nom_rue}"
+    return phrase
+
+
+async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_etapes: bool = False) -> dict | None:
     profil = _OSRM_PROFILS.get(mode, "driving")
     chemin_coords = ";".join(f"{lon},{lat}" for lon, lat in coords_lonlat)
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 f"{OSRM_URL}/route/v1/{profil}/{chemin_coords}",
-                params={"overview": "full", "geometries": "geojson"},
+                params={
+                    "overview": "full", "geometries": "geojson",
+                    "steps": "true" if avec_etapes else "false",
+                },
             )
             resp.raise_for_status()
             data = resp.json()
         route = data["routes"][0]
-        return {
+        resultat = {
             "type": "route_reelle",
             "geometry": route["geometry"],
             "distance_metres": round(route["distance"]),
             "duree_secondes": round(route["duration"]),
         }
+        if avec_etapes:
+            etapes = []
+            for leg in route.get("legs", []):
+                for step in leg.get("steps", []):
+                    loc = step["maneuver"]["location"]  # [lon, lat]
+                    etapes.append({
+                        "instruction": _traduire_manoeuvre(step["maneuver"], step.get("name") or None),
+                        "distance_metres": round(step["distance"]),
+                        "latitude": loc[1],
+                        "longitude": loc[0],
+                    })
+            resultat["etapes_navigation"] = etapes
+        return resultat
     except Exception as e:
         print(f"⚠️ OSRM indisponible: {e}", flush=True)
         return None
@@ -544,19 +591,20 @@ async def itineraire_point_a_point(
     arrivee_lat: float = Query(...),
     arrivee_lon: float = Query(...),
     mode: str = Query("foot-walking", description="foot-walking ou driving-car"),
+    etapes: bool = Query(False, description="Renvoyer aussi les instructions de navigation pas à pas"),
 ):
     """
-    Itinéraire entre le lieu de tournage et UNE commodité précise
-    (utilisé par les icônes 🚶/🚗 sur chaque résultat). Même logique de
-    repli que /trace : ligne droite clairement annoncée comme
-    estimation si OpenRouteService est indisponible ou pas configuré.
+    Itinéraire entre deux points (lieu de tournage ↔ commodité, ou
+    position GPS réelle ↔ destination pour la navigation guidée).
+    Même logique de repli que /trace : ligne droite clairement
+    annoncée comme estimation si OSRM/OpenRouteService indisponibles.
     """
     if mode not in ("foot-walking", "driving-car"):
         raise HTTPException(400, "mode doit être 'foot-walking' ou 'driving-car'")
 
     coords = [[depart_lon, depart_lat], [arrivee_lon, arrivee_lat]]
 
-    resultat_osrm = await _itineraire_osrm(coords, mode)
+    resultat_osrm = await _itineraire_osrm(coords, mode, avec_etapes=etapes)
     if resultat_osrm:
         return resultat_osrm
 

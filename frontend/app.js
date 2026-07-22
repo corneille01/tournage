@@ -312,6 +312,11 @@ function ouvrirPopupLieu(film, lieu) {
     ? `<p class="anecdote-titre">🎬 Anecdote de tournage</p><p class="anecdote-texte">${lieu.anecdote}</p>`
     : "";
 
+  const conteneurDescriptionLieu = document.getElementById("popup-description-lieu");
+  conteneurDescriptionLieu.innerHTML = lieu.description_wikipedia
+    ? `<p class="anecdote-titre">📍 À propos de ce lieu</p><p class="anecdote-texte">${lieu.description_wikipedia}</p>`
+    : "";
+
   document.getElementById("popup-resultats").innerHTML = "";
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;
@@ -514,7 +519,7 @@ async function afficherCategorie(categorie) {
 
 let coucheItineraireCommodite = null;
 
-async function afficherItineraireVersCommodite(bouton) {
+async function afficherItineraireVersCommodite(bouton, idConteneurOverride) {
   const lieuId = document.getElementById("popup-overlay").dataset.lieuId;
   const lieu = state.lieuxCourants.find((l) => l.id === Number(lieuId));
   if (!lieu) return;
@@ -522,7 +527,9 @@ async function afficherItineraireVersCommodite(bouton) {
   const mode = bouton.dataset.mode;
   const arriveeLat = parseFloat(bouton.dataset.lat);
   const arriveeLon = parseFloat(bouton.dataset.lon);
-  const conteneurResultat = bouton.closest(".resultat-item").querySelector(".itineraire-resultat");
+  const conteneurResultat = idConteneurOverride
+    ? document.getElementById(idConteneurOverride)
+    : bouton.closest(".resultat-item").querySelector(".itineraire-resultat");
   conteneurResultat.textContent = "Calcul de l'itinéraire…";
 
   try {
@@ -536,7 +543,17 @@ async function afficherItineraireVersCommodite(bouton) {
     const distanceTxt = formatDistance(data.distance_metres);
     const modeTexte = mode === "foot-walking" ? "à pied" : "en voiture";
     const precision = data.type === "route_reelle" ? "" : " (estimation à vol d'oiseau)";
-    conteneurResultat.textContent = `Itinéraire ${modeTexte} (${distanceTxt})${precision}`;
+    const dureeTxt = data.duree_secondes ? ` — ${formatDuree(data.duree_secondes)}` : "";
+
+    conteneurResultat.innerHTML = `
+      <div>Itinéraire ${modeTexte} (${distanceTxt}${dureeTxt})${precision}</div>
+      <button class="btn-demarrer-navigation" data-lat="${arriveeLat}" data-lon="${arriveeLon}" data-mode="${mode}">
+        🧭 Démarrer la navigation
+      </button>
+    `;
+    conteneurResultat.querySelector(".btn-demarrer-navigation").addEventListener("click", (e) => {
+      demarrerNavigation(parseFloat(e.target.dataset.lat), parseFloat(e.target.dataset.lon), e.target.dataset.mode);
+    });
 
     if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
     coucheItineraireCommodite = L.geoJSON(data.geometry, {
@@ -600,13 +617,29 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
       html: `<div class="icone-commodite" style="color:${couleurIcone};${estPlusProche ? "font-size:30px;filter:drop-shadow(0 0 4px #ffd60a);" : ""}">${infoCategorie.emoji || "📍"}</div>`,
       className: "", iconSize: estPlusProche ? [32, 32] : [24, 24], iconAnchor: estPlusProche ? [16, 30] : [12, 22],
     });
+    const idPopupItineraire = `itin-carte-${categorie}-${index}`;
     const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
       <b>${estPlusProche ? "⭐ " : ""}${item.nom}</b><br>
       ${formatDistance(item.distance_metres)} du lieu de tournage
       ${item.adresse ? `<br>${item.adresse}` : ""}
+      ${item.horaires ? `<br>🕒 ${item.horaires}` : ""}
       ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
       ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
+      <div class="boutons-itineraire" style="margin-top:6px;">
+        <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
+        <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
+      </div>
+      <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
     `);
+
+    // Leaflet reconstruit le contenu du popup à chaque ouverture — il
+    // faut rebrancher les écouteurs à ce moment-là (popupopen), pas à
+    // la création du marqueur (le DOM du popup n'existe pas encore).
+    marker.on("popupopen", (e) => {
+      e.popup.getElement().querySelectorAll(".btn-itineraire").forEach((btn) => {
+        btn.addEventListener("click", () => afficherItineraireVersCommodite(btn, idPopupItineraire));
+      });
+    });
 
     // Le plus proche a un comportement spécial au clic : trait vers le
     // lieu de tournage (via Turf, pour la cohérence géographique) + son.
@@ -699,6 +732,114 @@ async function afficherTraceFilm() {
 
 function formatDistance(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+}
+
+function formatDuree(secondes) {
+  const min = Math.round(secondes / 60);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const reste = min % 60;
+  return `${h}h${reste > 0 ? reste.toString().padStart(2, "0") : ""}`;
+}
+
+// ── Navigation guidée : géolocalisation réelle + instructions vocales ──
+// Limites honnêtes : pas de recalcul automatique d'itinéraire en cas
+// d'écart important (juste un avertissement), et les instructions
+// viennent d'OSRM (simples : gauche/droite/tout droit), pas aussi
+// riches qu'un GPS dédié. Fonctionne néanmoins pour un usage réel.
+let suiviPositionId = null;
+let etapesNavigationCourantes = [];
+let indexEtapeCourante = 0;
+
+function _parler(texte) {
+  if (!("speechSynthesis" in window)) return;
+  const enonce = new SpeechSynthesisUtterance(texte);
+  enonce.lang = "fr-FR";
+  window.speechSynthesis.speak(enonce);
+}
+
+async function demarrerNavigation(destLat, destLon, mode) {
+  if (!("geolocation" in navigator)) {
+    alert("La géolocalisation n'est pas disponible sur cet appareil.");
+    return;
+  }
+
+  const panneau = document.getElementById("panneau-navigation");
+  panneau.classList.remove("hidden");
+  panneau.querySelector(".nav-instruction").textContent = "Localisation en cours…";
+
+  navigator.geolocation.getCurrentPosition(async (position) => {
+    const departLat = position.coords.latitude;
+    const departLon = position.coords.longitude;
+
+    const params = new URLSearchParams({
+      depart_lat: departLat, depart_lon: departLon,
+      arrivee_lat: destLat, arrivee_lon: destLon, mode, etapes: "true",
+    });
+    const res = await fetch(`${API_BASE}/api/itineraire?${params}`);
+    const data = await res.json();
+
+    if (!data.etapes_navigation || !data.etapes_navigation.length) {
+      panneau.querySelector(".nav-instruction").textContent =
+        "Navigation détaillée indisponible (itinéraire en ligne droite uniquement).";
+      return;
+    }
+
+    etapesNavigationCourantes = data.etapes_navigation;
+    indexEtapeCourante = 0;
+
+    if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
+    coucheItineraireCommodite = L.geoJSON(data.geometry, {
+      style: { color: "#ffd60a", weight: 5, opacity: 0.9 },
+    }).addTo(map);
+
+    _parler(etapesNavigationCourantes[0].instruction);
+    panneau.querySelector(".nav-instruction").textContent = etapesNavigationCourantes[0].instruction;
+
+    if (suiviPositionId) navigator.geolocation.clearWatch(suiviPositionId);
+    suiviPositionId = navigator.geolocation.watchPosition(_surNouvellePosition, null, {
+      enableHighAccuracy: true, maximumAge: 2000, timeout: 10000,
+    });
+  }, () => {
+    panneau.querySelector(".nav-instruction").textContent = "Impossible d'obtenir ta position (autorisation refusée ?).";
+  }, { enableHighAccuracy: true });
+}
+
+function _surNouvellePosition(position) {
+  const { latitude, longitude } = position.coords;
+  const panneau = document.getElementById("panneau-navigation");
+  const etape = etapesNavigationCourantes[indexEtapeCourante];
+  if (!etape) return;
+
+  const distanceEtape = haversineApprox(latitude, longitude, etape.latitude, etape.longitude);
+  panneau.querySelector(".nav-distance").textContent = `Dans ${formatDistance(Math.round(distanceEtape))}`;
+
+  // Sous 25m de la manœuvre : on l'annonce et on passe à la suivante.
+  if (distanceEtape < 25 && indexEtapeCourante < etapesNavigationCourantes.length - 1) {
+    indexEtapeCourante += 1;
+    const suivante = etapesNavigationCourantes[indexEtapeCourante];
+    _parler(suivante.instruction);
+    panneau.querySelector(".nav-instruction").textContent = suivante.instruction;
+  } else if (distanceEtape < 15 && indexEtapeCourante === etapesNavigationCourantes.length - 1) {
+    _parler("Vous êtes arrivé à destination.");
+    panneau.querySelector(".nav-instruction").textContent = "Vous êtes arrivé à destination 🎉";
+    arreterNavigation();
+  }
+}
+
+function haversineApprox(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dphi = toRad(lat2 - lat1);
+  const dlambda = toRad(lon2 - lon1);
+  const a = Math.sin(dphi / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dlambda / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function arreterNavigation() {
+  if (suiviPositionId) navigator.geolocation.clearWatch(suiviPositionId);
+  suiviPositionId = null;
+  setTimeout(() => document.getElementById("panneau-navigation").classList.add("hidden"), 3000);
 }
 
 // ── Choroplèthe départements + carte de chaleur ──────────────────
@@ -830,6 +971,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btn-trace").addEventListener("click", afficherTraceFilm);
   document.getElementById("btn-recentrer").addEventListener("click", recentrerCarte);
+  document.getElementById("btn-arreter-navigation").addEventListener("click", () => {
+    arreterNavigation();
+    document.getElementById("panneau-navigation").classList.add("hidden");
+  });
   document.getElementById("btn-choroplethe").addEventListener("click", toggleChoroplethe);
   document.getElementById("btn-chaleur").addEventListener("click", toggleChaleur);
 

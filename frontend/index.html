@@ -42,9 +42,7 @@
             <button class="filtre-btn" data-type="tv">Séries</button>
           </div>
 
-          <a href="/analyse.html" id="stats-toggle"
-            >📊 Analyse territoriale complète</a
-          >
+          <a href="/analyse.html" id="stats-toggle">📊 Analyse territoriale complète</a>
         </header>
 
         <div id="cartes-scroll">
@@ -62,35 +60,27 @@
              le zoom Leaflet est déplacé à droite (voir app.js) pour ne
              plus se chevaucher avec cette barre. -->
         <div id="filtres-carte">
-          <select id="filtre-annee">
-            <option value="">Année</option>
-          </select>
-          <select id="filtre-departement">
-            <option value="">Département</option>
-          </select>
-          <select id="filtre-commune">
-            <option value="">Commune</option>
-          </select>
+          <select id="filtre-annee"><option value="">Année</option></select>
+          <select id="filtre-departement"><option value="">Département</option></select>
+          <select id="filtre-commune"><option value="">Commune</option></select>
           <button id="filtre-notoriete" data-tri="titre">
             ⭐ Les plus connus
           </button>
         </div>
 
-        <button
-          id="btn-recentrer"
-          class="hidden"
-          title="Revenir à la vue initiale"
-        >
+        <button id="btn-recentrer" class="hidden" title="Revenir à la vue initiale">
           ⟲ Recentrer
         </button>
 
+        <div id="panneau-navigation" class="hidden">
+          <div class="nav-instruction">—</div>
+          <div class="nav-distance"></div>
+          <button id="btn-arreter-navigation">✕ Arrêter la navigation</button>
+        </div>
+
         <div id="calques-carte">
-          <button id="btn-choroplethe" data-actif="false">
-            🗺️ Départements
-          </button>
-          <button id="btn-chaleur" data-actif="false">
-            🔥 Carte de chaleur
-          </button>
+          <button id="btn-choroplethe" data-actif="false">🗺️ Départements</button>
+          <button id="btn-chaleur" data-actif="false">🔥 Carte de chaleur</button>
         </div>
 
         <div id="map"></div>
@@ -108,9 +98,8 @@
           <p id="popup-adresse"></p>
 
           <div id="popup-synopsis" class="scrollable"></div>
-          <div id="popup-anecdote">
-            <!-- rempli par app.js si disponible -->
-          </div>
+          <div id="popup-anecdote"><!-- rempli par app.js si disponible --></div>
+          <div id="popup-description-lieu"><!-- rempli par app.js si disponible --></div>
           <div id="popup-plateformes">
             <!-- logos streaming, rempli par app.js -->
           </div>

@@ -718,3 +718,51 @@ body.page-film-ssr {
   color: var(--couleur-accent);
   margin-top: 4px;
 }
+
+/* ── Panneau de navigation guidée ── */
+#panneau-navigation {
+  position: absolute;
+  bottom: 24px;
+  left: 10px;
+  right: 10px;
+  z-index: 1100;
+  background: #1a1d24;
+  border: 2px solid #ffd60a;
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+}
+#panneau-navigation.hidden { display: none; }
+.nav-instruction { font-size: 1rem; font-weight: 700; color: #ffd60a; }
+.nav-distance { font-size: 0.85rem; color: var(--couleur-texte-muted); margin-top: 4px; }
+#btn-arreter-navigation {
+  margin-top: 10px;
+  background: var(--couleur-accent);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btn-demarrer-navigation {
+  margin-top: 6px;
+  background: #ffd60a;
+  color: #0f1115;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+}
+
+#popup-description-lieu:empty { display: none; }
+#popup-description-lieu {
+  background: rgba(42,157,143,0.08);
+  border-left: 3px solid #2a9d8f;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}

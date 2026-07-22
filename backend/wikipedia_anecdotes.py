@@ -1,15 +1,16 @@
 """
-backend/wikipedia_anecdotes.py — Aide à trouver des anecdotes de
-tournage, PAS à les publier automatiquement.
+backend/wikipedia_anecdotes.py — Anecdotes de tournage automatiques,
+depuis la section "Tournage" de Wikipédia (licence CC BY-SA, réemploi
+autorisé avec attribution — pas un souci de droit d'auteur).
 
-Pour chaque film publié, va chercher la page Wikipédia française liée
-(via le QID Wikidata déjà en base) et en extrait la section "Tournage"
-si elle existe. Affiche le texte brut à l'écran pour que tu le relises,
-le reformules avec tes propres mots (droits d'auteur — ne recopie pas
-Wikipédia mot pour mot dans le site public) et l'ajoutes toi-même en
-base via UPDATE.
+Automatisation complète pour les films à UN SEUL lieu de tournage (pas
+d'ambiguïté possible). Pour les films à PLUSIEURS lieux, affiche le
+texte pour attribution manuelle — la section Wikipédia parle souvent
+de plusieurs lieux mélangés dans un seul paragraphe, impossible à
+répartir automatiquement entre les bonnes lignes de la base.
 
-Ne modifie JAMAIS la base directement — c'est volontaire.
+Chaque anecdote publiée porte la mention "Source : Wikipédia" en fin
+de texte, comme l'exige la licence CC BY-SA.
 
 Usage :
     python wikipedia_anecdotes.py                  # tous les films publiés
@@ -22,9 +23,10 @@ import re
 
 import httpx
 
-from db import init_db_pool, close_db_pool, fetch_all
+from db import init_db_pool, close_db_pool, fetch_all, execute
 
 HEADERS = {"User-Agent": "CineTourBot/1.0 (contact: [email protected])"}
+MENTION_SOURCE = "\n\n(Source : Wikipédia, CC BY-SA)"
 
 
 async def _qid_vers_titre_wikipedia_fr(qid: str) -> str | None:
@@ -60,7 +62,6 @@ async def _extraire_section_tournage(titre_page: str) -> str | None:
     if not texte:
         return None
 
-    # Cherche une section "Tournage" (ou "Lieux de tournage") dans le texte brut
     match = re.search(
         r"(Tournage|Lieux de tournage)\s*\n(.+?)(?=\n[A-ZÉÈ][a-zéèêàA-Z ]{3,40}\s*\n|\Z)",
         texte, re.DOTALL,
@@ -72,6 +73,8 @@ async def _extraire_section_tournage(titre_page: str) -> str | None:
 
 async def main(film_id: int | None):
     await init_db_pool()
+    auto_publies = 0
+    a_traiter_manuellement = 0
     try:
         if film_id:
             films = await fetch_all(
@@ -90,15 +93,35 @@ async def main(film_id: int | None):
                 continue
 
             section = await _extraire_section_tournage(titre_page)
-            if section:
-                print(f"═══ {film['titre']} (id={film['id']}) — Wikipédia: {titre_page} ═══")
+            if not section:
+                await asyncio.sleep(1)
+                continue
+
+            lieux = await fetch_all(
+                "SELECT id, nom FROM lieux_tournage WHERE film_id = %s", (film["id"],)
+            )
+
+            if len(lieux) == 1:
+                # Aucune ambiguïté possible : publication automatique.
+                await execute(
+                    "UPDATE lieux_tournage SET anecdote = %s WHERE id = %s",
+                    (section + MENTION_SOURCE, lieux[0]["id"]),
+                )
+                auto_publies += 1
+                print(f"✓ {film['titre']} → publié automatiquement (lieu unique: {lieux[0]['nom']})", flush=True)
+            else:
+                a_traiter_manuellement += 1
+                print(f"\n═══ {film['titre']} (id={film['id']}) — {len(lieux)} lieux, à répartir toi-même ═══")
                 print(section)
+                print(f"Lieux disponibles : {', '.join(f'{l['nom']} (id={l['id']})' for l in lieux)}")
                 print(
-                    f"\n→ Si utilisable : reformule avec tes mots, puis en base :\n"
-                    f"  UPDATE lieux_tournage SET anecdote = '...' WHERE film_id = {film['id']} AND id = <lieu concerné>;\n"
+                    f"→ UPDATE lieux_tournage SET anecdote = '... (Source : Wikipédia, CC BY-SA)' "
+                    f"WHERE id = <lieu concerné parmi ceux ci-dessus>;\n"
                 )
 
             await asyncio.sleep(1)  # respecte l'API Wikipédia, service public partagé
+
+        print(f"\nTerminé : {auto_publies} publiée(s) automatiquement, {a_traiter_manuellement} à répartir toi-même.", flush=True)
     finally:
         await close_db_pool()
 

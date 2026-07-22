@@ -37,6 +37,7 @@ _LABELS_CATEGORIE = {
     "arret_bus":       "L'arrêt de bus",
     "parking":         "Le parking",
     "refuge":          "Le refuge",
+    "distributeur":    "Le distributeur",
     "activite":        "L'activité",
 }
 
@@ -433,7 +434,7 @@ async def amenities_proches(lieu_id: int):
     rows = await fetch_all(
         """
         SELECT categorie, nom, latitude, longitude, distance_metres,
-               adresse, telephone, site_web, rang
+               adresse, telephone, site_web, horaires, photo_url, rang
         FROM amenity_cache
         WHERE lieu_tournage_id = %s
         ORDER BY categorie, rang
@@ -482,6 +483,37 @@ async def amenities_proches(lieu_id: int):
 
 ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 
+# Serveur de démonstration OSRM (open source, sponsorisé par FOSSGIS) —
+# aucune clé requise. Usage non-commercial raisonnable, max 1 req/s,
+# aucune garantie de disponibilité : parfait pour la phase prototype,
+# mais à remplacer par un vrai service (ORS avec clé, ou auto-hébergement)
+# si le trafic monte vraiment en échelle.
+OSRM_URL = "https://router.project-osrm.org"
+_OSRM_PROFILS = {"foot-walking": "foot", "driving-car": "driving"}
+
+
+async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str) -> dict | None:
+    profil = _OSRM_PROFILS.get(mode, "driving")
+    chemin_coords = ";".join(f"{lon},{lat}" for lon, lat in coords_lonlat)
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{OSRM_URL}/route/v1/{profil}/{chemin_coords}",
+                params={"overview": "full", "geometries": "geojson"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        route = data["routes"][0]
+        return {
+            "type": "route_reelle",
+            "geometry": route["geometry"],
+            "distance_metres": round(route["distance"]),
+            "duree_secondes": round(route["duration"]),
+        }
+    except Exception as e:
+        print(f"⚠️ OSRM indisponible: {e}", flush=True)
+        return None
+
 
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     """Ordonne les lieux par plus proche voisin (heuristique simple,
@@ -505,6 +537,58 @@ def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     return ordre
 
 
+@app.get("/api/itineraire")
+async def itineraire_point_a_point(
+    depart_lat: float = Query(...),
+    depart_lon: float = Query(...),
+    arrivee_lat: float = Query(...),
+    arrivee_lon: float = Query(...),
+    mode: str = Query("foot-walking", description="foot-walking ou driving-car"),
+):
+    """
+    Itinéraire entre le lieu de tournage et UNE commodité précise
+    (utilisé par les icônes 🚶/🚗 sur chaque résultat). Même logique de
+    repli que /trace : ligne droite clairement annoncée comme
+    estimation si OpenRouteService est indisponible ou pas configuré.
+    """
+    if mode not in ("foot-walking", "driving-car"):
+        raise HTTPException(400, "mode doit être 'foot-walking' ou 'driving-car'")
+
+    coords = [[depart_lon, depart_lat], [arrivee_lon, arrivee_lat]]
+
+    resultat_osrm = await _itineraire_osrm(coords, mode)
+    if resultat_osrm:
+        return resultat_osrm
+
+    if ORS_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"https://api.openrouteservice.org/v2/directions/{mode}/geojson",
+                    headers={"Authorization": ORS_API_KEY},
+                    json={"coordinates": coords},
+                )
+                resp.raise_for_status()
+                geojson = resp.json()
+            feature = geojson["features"][0]
+            return {
+                "type": "route_reelle",
+                "geometry": feature["geometry"],
+                "distance_metres": round(feature["properties"]["summary"]["distance"]),
+                "duree_secondes": round(feature["properties"]["summary"]["duration"]),
+            }
+        except Exception as e:
+            print(f"⚠️ OpenRouteService indisponible: {e} → repli ligne droite", flush=True)
+
+    distance = haversine_metres(depart_lat, depart_lon, arrivee_lat, arrivee_lon)
+    return {
+        "type": "estimation_vol_oiseau",
+        "geometry": {"type": "LineString", "coordinates": coords},
+        "distance_metres": distance,
+        "duree_secondes": None,
+    }
+
+
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):
     """
@@ -523,6 +607,11 @@ async def trace_film(film_id: int):
 
     lieux_ordonnes = _ordre_plus_proche_voisin(lieux)
     coords_lonlat = [[float(l["longitude"]), float(l["latitude"])] for l in lieux_ordonnes]
+
+    resultat_osrm = await _itineraire_osrm(coords_lonlat, "driving-car")
+    if resultat_osrm:
+        resultat_osrm["etapes"] = lieux_ordonnes
+        return resultat_osrm
 
     if ORS_API_KEY:
         try:

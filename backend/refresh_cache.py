@@ -58,14 +58,14 @@ async def refresh_groupe(lieu_ids: list[int], lat: float, lon: float, nom: str) 
                     """
                     INSERT INTO amenity_cache
                         (lieu_tournage_id, categorie, nom, latitude, longitude,
-                         distance_metres, osm_id, adresse, telephone, site_web, rang)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         distance_metres, osm_id, adresse, telephone, site_web, horaires, rang)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         lieu_id, categorie, item["nom"],
                         item["latitude"], item["longitude"], item["distance_metres"],
                         item["osm_id"], item["adresse"], item["telephone"], item["site_web"],
-                        rang,
+                        item.get("horaires"), rang,
                     ),
                 )
 

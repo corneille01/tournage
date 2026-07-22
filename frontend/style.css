@@ -687,3 +687,34 @@ body.page-film-ssr {
 }
 .anecdote-titre { font-size: 0.78rem; font-weight: 700; margin-bottom: 4px; }
 .anecdote-texte { font-size: 0.82rem; line-height: 1.4; color: var(--couleur-texte); }
+
+/* ── Photo, horaires et itinéraires par commodité ── */
+.resultat-photo {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+.horaires { font-size: 0.75rem; color: var(--couleur-texte-muted); margin-top: 2px; }
+
+.boutons-itineraire {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.btn-itineraire {
+  flex: 1;
+  background: var(--couleur-fond);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.itineraire-resultat {
+  font-size: 0.75rem;
+  color: var(--couleur-accent);
+  margin-top: 4px;
+}

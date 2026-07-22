@@ -25,6 +25,23 @@ OVERPASS_HEADERS = {
 
 
 # Tags OpenStreetMap correspondant à chaque catégorie affichée.
+# Libellé affiché quand une commodité n'a pas de nom OSM — mieux vaut
+# publier le point avec une étiquette générique que de le perdre.
+_LABEL_GENERIQUE = {
+    "hebergement": "Hébergement",
+    "refuge": "Refuge",
+    "restaurant": "Restaurant",
+    "office_tourisme": "Office de tourisme",
+    "police": "Police / gendarmerie",
+    "hopital": "Établissement de santé",
+    "gare": "Gare",
+    "aeroport": "Aéroport",
+    "arret_bus": "Arrêt de transport",
+    "parking": "Parking",
+    "distributeur": "Distributeur / banque",
+    "activite": "Point d'intérêt",
+}
+
 _CATEGORY_TAGS = {
     "hebergement": [
         # Hébergements classiques
@@ -84,6 +101,11 @@ _CATEGORY_TAGS = {
         "amenity=parking",
     ],
 
+    "distributeur": [
+        "amenity=atm",
+        "amenity=bank",
+    ],
+
     # Que faire aux alentours
     "activite": [
         # Lieux touristiques
@@ -128,6 +150,7 @@ RAYON_RECHERCHE_M = {
     "aeroport": 60_000,
     "arret_bus": 2_000,
     "parking": 5_000,
+    "distributeur": 3_000,
     "activite": 15_000,
 }
 
@@ -183,6 +206,11 @@ ICONES_CATEGORIE = {
     "parking": {
         "emoji": "🅿️",
         "couleur": "#3a3a3a",
+    },
+
+    "distributeur": {
+        "emoji": "🏧",
+        "couleur": "#06923e",
     },
 
     "activite": {
@@ -414,11 +442,15 @@ async def find_nearby(
             tags.get("name:fr")
             or tags.get("name")
             or tags.get("official_name")
+            or tags.get("brand")
         )
 
-        # Un lieu sans nom est difficilement exploitable dans l'interface.
+        # Un lieu sans nom reste utile (au moins sa position) — on lui
+        # donne un intitulé générique plutôt que de l'exclure, comme
+        # demandé : mieux vaut afficher "Distributeur" sans nom propre
+        # que de perdre le point entièrement.
         if not nom:
-            continue
+            nom = f"{_LABEL_GENERIQUE.get(categorie, 'Point')} (sans nom)"
 
         distance = haversine_metres(
             lat,
@@ -444,6 +476,7 @@ async def find_nearby(
                 or tags.get("contact:website")
                 or tags.get("url")
             ),
+            "horaires": tags.get("opening_hours"),
         })
 
     # Classement du plus proche au plus éloigné.

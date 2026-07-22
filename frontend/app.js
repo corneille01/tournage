@@ -35,6 +35,12 @@ const ICONES_CATEGORIE = {
     label: "Se garer"
   },
 
+  distributeur: {
+    emoji: "🏧",
+    couleur: "#06923e",
+    label: "Distributeur / banque"
+  },
+
   gare: {
     emoji: "🚉",
     couleur: "#6a4c93",
@@ -431,6 +437,8 @@ async function afficherCategorie(categorie) {
         class="resultat-item ${estPlusProche ? "plus-proche" : ""}"
         style="${estPlusProche ? `border-color:${couleur};` : ""}"
       >
+        ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
+
         <div class="nom">
           ${estPlusProche ? "⭐ " : ""}
           ${item.nom}
@@ -445,6 +453,8 @@ async function afficherCategorie(categorie) {
             ? `<div class="adresse">${item.adresse}</div>`
             : ""
         }
+
+        ${item.horaires ? `<div class="horaires">🕒 ${item.horaires}</div>` : ""}
 
         ${
           item.telephone
@@ -471,6 +481,14 @@ async function afficherCategorie(categorie) {
             `
             : ""
         }
+
+        <div class="boutons-itineraire">
+          <button class="btn-itineraire" data-mode="foot-walking"
+                  data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
+          <button class="btn-itineraire" data-mode="driving-car"
+                  data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
+        </div>
+        <div class="itineraire-resultat"></div>
       </div>
     `;
   }).join("");
@@ -484,10 +502,49 @@ async function afficherCategorie(categorie) {
     ) +
     liste;
 
+  conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
+    btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
+  });
+
   // Toutes les catégories affichent désormais leurs points sur la
   // carte (avant, seule "activité" le faisait) — même comportement
   // partout, comme demandé.
   afficherCommoditesSurCarte(categorie, items, stats);
+}
+
+let coucheItineraireCommodite = null;
+
+async function afficherItineraireVersCommodite(bouton) {
+  const lieuId = document.getElementById("popup-overlay").dataset.lieuId;
+  const lieu = state.lieuxCourants.find((l) => l.id === Number(lieuId));
+  if (!lieu) return;
+
+  const mode = bouton.dataset.mode;
+  const arriveeLat = parseFloat(bouton.dataset.lat);
+  const arriveeLon = parseFloat(bouton.dataset.lon);
+  const conteneurResultat = bouton.closest(".resultat-item").querySelector(".itineraire-resultat");
+  conteneurResultat.textContent = "Calcul de l'itinéraire…";
+
+  try {
+    const params = new URLSearchParams({
+      depart_lat: lieu.latitude, depart_lon: lieu.longitude,
+      arrivee_lat: arriveeLat, arrivee_lon: arriveeLon, mode,
+    });
+    const res = await fetch(`${API_BASE}/api/itineraire?${params}`);
+    const data = await res.json();
+
+    const distanceTxt = formatDistance(data.distance_metres);
+    const modeTexte = mode === "foot-walking" ? "à pied" : "en voiture";
+    const precision = data.type === "route_reelle" ? "" : " (estimation à vol d'oiseau)";
+    conteneurResultat.textContent = `Itinéraire ${modeTexte} (${distanceTxt})${precision}`;
+
+    if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
+    coucheItineraireCommodite = L.geoJSON(data.geometry, {
+      style: { color: mode === "foot-walking" ? "#2a9d8f" : "#4361ee", weight: 4, opacity: 0.8 },
+    }).addTo(map);
+  } catch (e) {
+    conteneurResultat.textContent = "Itinéraire indisponible.";
+  }
 }
 
 // ── Affiche les points "activité" sur la carte (calque séparé des

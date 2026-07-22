@@ -22,8 +22,7 @@ async def main():
     await init_db_pool()
     try:
         films = await fetch_all(
-            "SELECT id, titre, wikidata_qid FROM films "
-            "WHERE statut = 'publie' AND wikidata_qid IS NOT NULL"
+            "SELECT id, titre, wikidata_qid FROM films WHERE statut = 'publie'"
         )
         resultat = []
         for film in films:

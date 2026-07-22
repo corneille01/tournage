@@ -27,7 +27,10 @@ import re
 
 import httpx
 
-HEADERS = {"User-Agent": "CineTourBot/1.0 (contact: [email protected])"}
+HEADERS = {
+    "User-Agent": "CineTourBot/1.0 (https://github.com/corneille01/tournage; contact: [email protected]) httpx",
+    "Accept": "application/json",
+}
 MENTION_SOURCE = "\n\n(Source : Wikipédia, CC BY-SA)"
 
 
@@ -35,24 +38,29 @@ def _echapper_sql(texte: str) -> str:
     return texte.replace("\\", "\\\\").replace("'", "''")
 
 
-async def _qid_vers_titre_wikipedia_fr(qid: str) -> str | None:
+async def _chercher_page_wikipedia(titre_film: str) -> str | None:
+    """
+    Cherche directement sur Wikipédia FR à partir du titre du film
+    (déjà connu, pas besoin de Wikidata pour ça) — évite complètement
+    www.wikidata.org/w/api.php, qui bloque nos requêtes en 403 alors
+    que fr.wikipedia.org/w/api.php (utilisé juste après) ne bloque pas.
+    """
     async with httpx.AsyncClient(timeout=15, headers=HEADERS) as client:
         resp = await client.get(
-            "https://www.wikidata.org/w/api.php",
+            "https://fr.wikipedia.org/w/api.php",
             params={
-                "action": "wbgetentities", "ids": qid, "props": "sitelinks",
-                "sitefilter": "frwiki", "format": "json",
+                "action": "query", "list": "search", "srsearch": titre_film,
+                "srlimit": 1, "format": "json",
             },
         )
         try:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            print(f"  ⚠️ Wikidata indisponible pour {qid}: {e} — ignoré", flush=True)
+            print(f"  ⚠️ Recherche Wikipédia indisponible pour '{titre_film}': {e} — ignoré", flush=True)
             return None
-        entite = data.get("entities", {}).get(qid, {})
-        sitelink = entite.get("sitelinks", {}).get("frwiki")
-        return sitelink["title"] if sitelink else None
+        resultats = data.get("query", {}).get("search", [])
+        return resultats[0]["title"] if resultats else None
 
 
 async def _extraire_section_tournage(titre_page: str) -> str | None:
@@ -77,12 +85,30 @@ async def _extraire_section_tournage(titre_page: str) -> str | None:
         return None
 
     match = re.search(
-        r"(Tournage|Lieux de tournage)\s*\n(.+?)(?=\n[A-ZÉÈ][a-zéèêàA-Z ]{3,40}\s*\n|\Z)",
+        r"==\s*(Tournage|Lieux de tournage)\s*==\s*\n(.*?)(?=\n==|\Z)",
         texte, re.DOTALL,
     )
     if not match:
         return None
     return match.group(2).strip()[:1500]
+
+
+def _ressemble_a_une_liste(texte: str) -> bool:
+    """
+    Certaines sections 'Tournage' Wikipédia sont une liste brute de
+    lieux (un par ligne, style "Commune (détail)") plutôt qu'un texte
+    narratif — publier ça tel quel sur un seul lieu de notre base
+    serait trompeur (ça mélange des dizaines d'endroits sans rapport
+    direct). On détecte ce cas et on le traite comme "à vérifier",
+    même si le film n'a qu'un seul lieu chez nous.
+    """
+    lignes = [l for l in texte.split("\n") if l.strip()]
+    if len(lignes) < 5:
+        return False
+    lignes_courtes_sans_ponctuation = sum(
+        1 for l in lignes if len(l) < 80 and not l.strip().endswith((".", "!", "?"))
+    )
+    return lignes_courtes_sans_ponctuation / len(lignes) > 0.6
 
 
 async def main():
@@ -106,7 +132,7 @@ async def main():
 
     for film in films:
         try:
-            titre_page = await _qid_vers_titre_wikipedia_fr(film["wikidata_qid"])
+            titre_page = await _chercher_page_wikipedia(film["titre"])
             if not titre_page:
                 continue
 
@@ -117,7 +143,7 @@ async def main():
 
             lieux = film["lieux"]
 
-            if len(lieux) == 1:
+            if len(lieux) == 1 and not _ressemble_a_une_liste(section):
                 texte = _echapper_sql(section + MENTION_SOURCE)
                 lignes_sql.append(
                     f"UPDATE lieux_tournage SET anecdote = '{texte}' WHERE id = {lieux[0]['id']};"

@@ -27,7 +27,10 @@ import httpx
 
 from db import init_db_pool, close_db_pool, fetch_all, execute
 
-HEADERS = {"User-Agent": "CineTourBot/1.0 (contact: [email protected])"}
+HEADERS = {
+    "User-Agent": "CineTourBot/1.0 (https://github.com/corneille01/tournage; contact: [email protected]) httpx",
+    "Accept": "application/json",
+}
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 
 
@@ -45,7 +48,12 @@ async def _chercher_photo_commons(lat: float, lon: float) -> str | None:
             "iiprop": "url",
             "format": "json",
         })
-        data = resp.json()
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"  ⚠️ Commons indisponible: {e}", flush=True)
+            return None
         pages = data.get("query", {}).get("pages", {})
         if not pages:
             return None

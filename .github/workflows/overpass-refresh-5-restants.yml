@@ -1,27 +1,24 @@
-name: Remplissage Overpass — 5 départements restants (temporaire)
+name: Remplissage Overpass — 2 départements restants (temporaire)
 
-# Fichier temporaire : ne traite QUE les 5 départements coupés par le
-# timeout la dernière fois (avant le correctif de regroupement par
-# coordonnées). Le fichier "overpass-refresh.yml" (13 départements)
-# n'est pas touché — une fois ces 5 terminés, supprime simplement ce
-# fichier, pas besoin de "remettre" quoi que ce soit ailleurs.
+# Ne reste que Pyrénées-Orientales et Gard — les 3 autres (Aude,
+# Haute-Garonne, Hérault) ont fini avec succès la dernière fois. Le
+# regroupement par coordonnées a bien aidé (Gard était à 20/21 lieux
+# quand le timeout a coupé) mais ces deux départements restent trop
+# volumineux pour 90 min — timeout remonté à 180 min pour être large.
 on:
   workflow_dispatch: {}
 
 jobs:
-  remplissage-5-departements:
+  remplissage-2-departements:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
-      max-parallel: 5
+      max-parallel: 2
       matrix:
         departement:
           - "Pyrénées-Orientales"
-          - "Aude"
-          - "Haute-Garonne"
           - "Gard"
-          - "Hérault"
     defaults:
       run:
         working-directory: backend

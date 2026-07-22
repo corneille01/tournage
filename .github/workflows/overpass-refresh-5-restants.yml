@@ -1,24 +1,16 @@
-name: Remplissage Overpass — 2 départements restants (temporaire)
+name: Remplissage Overpass — Pyrénées-Orientales seul (temporaire)
 
-# Ne reste que Pyrénées-Orientales et Gard — les 3 autres (Aude,
-# Haute-Garonne, Hérault) ont fini avec succès la dernière fois. Le
-# regroupement par coordonnées a bien aidé (Gard était à 20/21 lieux
-# quand le timeout a coupé) mais ces deux départements restent trop
-# volumineux pour 90 min — timeout remonté à 180 min pour être large.
+# Dernier département bloquant. Lancé SEUL (pas en parallèle avec un
+# autre) pour ne pas doubler la pression sur Overpass au même moment,
+# avec un timeout large (300 min, proche du maximum GitHub) vu le
+# volume de tentatives 429/504 observées sur ce département précis.
 on:
   workflow_dispatch: {}
 
 jobs:
-  remplissage-2-departements:
+  remplissage-pyrenees-orientales:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        departement:
-          - "Pyrénées-Orientales"
-          - "Gard"
+    timeout-minutes: 300
     defaults:
       run:
         working-directory: backend
@@ -28,8 +20,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install asyncpg httpx python-dotenv
-      - name: Remplir amenity_cache / amenity_stats — ${{ matrix.departement }}
+      - name: Remplir amenity_cache / amenity_stats — Pyrénées-Orientales
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python refresh_cache.py --departement "${{ matrix.departement }}"
-
+        run: python refresh_cache.py --departement "Pyrénées-Orientales"

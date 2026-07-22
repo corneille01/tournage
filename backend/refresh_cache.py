@@ -99,8 +99,8 @@ async def refresh_groupe(lieu_ids: list[int], lat: float, lon: float, nom: str) 
         # Overpass est un service public partagé, et on a déjà des
         # tentatives automatiques sur 429/503/504 — mais mieux vaut
         # aussi ralentir le rythme de base pour déclencher ces erreurs
-        # moins souvent (3s entre chaque catégorie).
-        await asyncio.sleep(3)
+        # moins souvent (5s entre chaque catégorie).
+        await asyncio.sleep(5)
 
 
 def _grouper_par_coordonnees(lieux: list[dict]) -> list[tuple[list[int], float, float, str]]:

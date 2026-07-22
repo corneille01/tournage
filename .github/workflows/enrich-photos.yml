@@ -1,22 +1,30 @@
 name: Enrichissement photos des commodités (Wikimedia Commons)
 
-# Léger et séparé du remplissage Overpass — ne cherche une photo que
-# pour les commodités "rang 1" (la plus proche par catégorie) qui n'en
-# ont pas encore. Se relance sans risque (ne retraite que celles qui
-# manquent encore), donc pas besoin d'automatisation régulière : à la
-# demande, après chaque nouveau remplissage Overpass.
+# Léger et séparé du remplissage Overpass. Deux cibles possibles :
+# "commodites" (rang 1 par catégorie, en complément d'Overpass) ou
+# "lieux" (lieux_tournage, en complément de wikidata_ingest.py). Se
+# relance sans risque (ne retraite que ce qui manque encore).
 on:
   workflow_dispatch:
     inputs:
       lieu_id:
-        description: "ID d'un seul lieu à traiter (laisser vide pour tous)"
+        description: "ID d'un seul élément à traiter (laisser vide pour tous)"
         required: false
         default: ""
+      cible:
+        description: "Quoi traiter"
+        required: true
+        type: choice
+        default: "commodites"
+        options:
+          - commodites
+          - lieux
+          - tous
 
 jobs:
   enrichissement-photos:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: backend
@@ -35,7 +43,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
-            python enrich_photos.py --lieu-id ${{ github.event.inputs.lieu_id }}
+            python enrich_photos.py --lieu-id ${{ github.event.inputs.lieu_id }} --cible ${{ github.event.inputs.cible }}
           else
-            python enrich_photos.py
+            python enrich_photos.py --cible ${{ github.event.inputs.cible }}
           fi

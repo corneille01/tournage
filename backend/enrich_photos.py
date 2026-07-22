@@ -1,23 +1,24 @@
 """
-backend/enrich_photos.py — Ajoute une photo à certaines commodités,
-depuis Wikimedia Commons (gratuit, légal, pas de clé API).
+backend/enrich_photos.py — Ajoute une photo depuis Wikimedia Commons
+(gratuit, légal, pas de clé API), pour deux cibles possibles :
 
-Volontairement SÉPARÉ de refresh_cache.py : ajouter un appel photo
-pour chacune des ~10 commodités × 12 catégories aurait multiplié par
-10 le nombre d'appels réseau déjà tendu avec Overpass (c'est ce qui
-causait les timeouts sur les gros départements). Ici, on ne cherche
-une photo QUE pour le rang 1 (le plus proche) de chaque catégorie —
-c'est lui qui est mis en avant dans l'interface, donc le plus rentable
-à illustrer.
+  - "commodites" : le rang 1 (le plus proche) de chaque catégorie
+    d'amenity_cache. Volontairement limité à ça (pas les 10 par
+    catégorie) pour ne pas aggraver les temps déjà tendus avec
+    Overpass ailleurs dans le projet.
+  - "lieux" : les lieux_tournage qui n'ont pas de photo — en
+    complément de wikidata_ingest.py (propriété P18), qui couvre mal
+    les lieux ruraux précis. Sert de repli, pas de remplacement.
 
 Une recherche géographique dans un rayon de 75m autour du point ne
-trouve pas toujours de photo (Commons est loin d'être exhaustif sur
-les petits commerces) — c'est normal, pas un bug, ne pas s'attendre à
-100% de couverture.
+trouve pas toujours de photo (Commons est loin d'être exhaustif) —
+c'est normal, pas un bug, ne pas s'attendre à 100% de couverture.
 
 Usage :
-    python enrich_photos.py                       # tous les "rang 1" sans photo
-    python enrich_photos.py --lieu-id 42           # un seul lieu
+    python enrich_photos.py                        # commodités, tous
+    python enrich_photos.py --cible lieux           # lieux de tournage, tous
+    python enrich_photos.py --cible tous            # les deux
+    python enrich_photos.py --lieu-id 42            # un seul (commodités par défaut)
 """
 
 import argparse
@@ -62,43 +63,57 @@ async def _chercher_photo_commons(lat: float, lon: float) -> str | None:
         return imageinfo[0]["url"] if imageinfo else None
 
 
-async def main(lieu_id: int | None):
+async def _traiter(elements: list[dict], table: str) -> int:
+    trouvees = 0
+    for e in elements:
+        try:
+            url = await _chercher_photo_commons(float(e["latitude"]), float(e["longitude"]))
+        except Exception as ex:
+            print(f"  ⚠️ {e['nom']}: {ex}", flush=True)
+            await asyncio.sleep(1)
+            continue
+
+        if url:
+            await execute(f"UPDATE {table} SET photo_url = %s WHERE id = %s", (url, e["id"]))
+            trouvees += 1
+            print(f"  ✓ {e['nom']}: photo trouvée", flush=True)
+        else:
+            print(f"  · {e['nom']}: aucune photo à proximité", flush=True)
+
+        await asyncio.sleep(1)  # Wikimedia est un service public partagé
+    return trouvees
+
+
+async def main(lieu_id: int | None, cible: str):
     await init_db_pool()
     try:
-        conditions = "rang = 1 AND photo_url IS NULL"
-        params: tuple = ()
-        if lieu_id:
-            conditions += " AND lieu_tournage_id = %s"
-            params = (lieu_id,)
+        if cible in ("commodites", "tous"):
+            conditions = "rang = 1 AND photo_url IS NULL"
+            params: tuple = ()
+            if lieu_id:
+                conditions += " AND lieu_tournage_id = %s"
+                params = (lieu_id,)
+            commodites = await fetch_all(
+                f"SELECT id, nom, latitude, longitude FROM amenity_cache WHERE {conditions}",
+                params,
+            )
+            print(f"{len(commodites)} commodité(s) 'plus proche' sans photo à traiter", flush=True)
+            trouvees = await _traiter(commodites, "amenity_cache")
+            print(f"Terminé (commodités) : {trouvees}/{len(commodites)} avec une photo trouvée.\n", flush=True)
 
-        commodites = await fetch_all(
-            f"SELECT id, nom, latitude, longitude FROM amenity_cache WHERE {conditions}",
-            params,
-        )
-        print(f"{len(commodites)} commodité(s) 'plus proche' sans photo à traiter", flush=True)
-
-        trouvees = 0
-        for c in commodites:
-            try:
-                url = await _chercher_photo_commons(float(c["latitude"]), float(c["longitude"]))
-            except Exception as e:
-                print(f"  ⚠️ {c['nom']}: {e}", flush=True)
-                await asyncio.sleep(1)
-                continue
-
-            if url:
-                await execute(
-                    "UPDATE amenity_cache SET photo_url = %s WHERE id = %s",
-                    (url, c["id"]),
-                )
-                trouvees += 1
-                print(f"  ✓ {c['nom']}: photo trouvée", flush=True)
-            else:
-                print(f"  · {c['nom']}: aucune photo à proximité", flush=True)
-
-            await asyncio.sleep(1)  # Wikimedia est un service public partagé
-
-        print(f"\nTerminé : {trouvees}/{len(commodites)} avec une photo trouvée.", flush=True)
+        if cible in ("lieux", "tous"):
+            conditions = "photo_url IS NULL"
+            params = ()
+            if lieu_id:
+                conditions += " AND id = %s"
+                params = (lieu_id,)
+            lieux = await fetch_all(
+                f"SELECT id, nom, latitude, longitude FROM lieux_tournage WHERE {conditions}",
+                params,
+            )
+            print(f"{len(lieux)} lieu(x) de tournage sans photo à traiter", flush=True)
+            trouvees = await _traiter(lieux, "lieux_tournage")
+            print(f"Terminé (lieux) : {trouvees}/{len(lieux)} avec une photo trouvée.", flush=True)
     finally:
         await close_db_pool()
 
@@ -106,5 +121,6 @@ async def main(lieu_id: int | None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--lieu-id", type=int, default=None)
+    parser.add_argument("--cible", choices=["commodites", "lieux", "tous"], default="commodites")
     args = parser.parse_args()
-    asyncio.run(main(args.lieu_id))
+    asyncio.run(main(args.lieu_id, args.cible))

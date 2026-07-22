@@ -39,7 +39,12 @@ async def _qid_vers_titre_wikipedia_fr(qid: str) -> str | None:
                 "sitefilter": "frwiki", "format": "json",
             },
         )
-        data = resp.json()
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"  ⚠️ Wikidata indisponible pour {qid}: {e} — ignoré", flush=True)
+            return None
         entite = data.get("entities", {}).get(qid, {})
         sitelink = entite.get("sitelinks", {}).get("frwiki")
         return sitelink["title"] if sitelink else None
@@ -55,7 +60,12 @@ async def _extraire_section_tournage(titre_page: str) -> str | None:
                 "titles": titre_page, "format": "json",
             },
         )
-        data = resp.json()
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"  ⚠️ Wikipédia indisponible pour '{titre_page}': {e} — ignoré", flush=True)
+            return None
         pages = data.get("query", {}).get("pages", {})
         texte = next(iter(pages.values()), {}).get("extract", "")
 
@@ -88,38 +98,44 @@ async def main(film_id: int | None):
         print(f"{len(films)} film(s) à vérifier\n", flush=True)
 
         for film in films:
-            titre_page = await _qid_vers_titre_wikipedia_fr(film["wikidata_qid"])
-            if not titre_page:
-                continue
+            try:
+                titre_page = await _qid_vers_titre_wikipedia_fr(film["wikidata_qid"])
+                if not titre_page:
+                    continue
 
-            section = await _extraire_section_tournage(titre_page)
-            if not section:
+                section = await _extraire_section_tournage(titre_page)
+                if not section:
+                    await asyncio.sleep(1)
+                    continue
+
+                lieux = await fetch_all(
+                    "SELECT id, nom FROM lieux_tournage WHERE film_id = %s", (film["id"],)
+                )
+
+                if len(lieux) == 1:
+                    # Aucune ambiguïté possible : publication automatique.
+                    await execute(
+                        "UPDATE lieux_tournage SET anecdote = %s WHERE id = %s",
+                        (section + MENTION_SOURCE, lieux[0]["id"]),
+                    )
+                    auto_publies += 1
+                    print(f"✓ {film['titre']} → publié automatiquement (lieu unique: {lieux[0]['nom']})", flush=True)
+                else:
+                    a_traiter_manuellement += 1
+                    print(f"\n═══ {film['titre']} (id={film['id']}) — {len(lieux)} lieux, à répartir toi-même ═══")
+                    print(section)
+                    noms_lieux = ", ".join(f"{l['nom']} (id={l['id']})" for l in lieux)
+                    print(f"Lieux disponibles : {noms_lieux}")
+                    print(
+                        f"→ UPDATE lieux_tournage SET anecdote = '... (Source : Wikipédia, CC BY-SA)' "
+                        f"WHERE id = <lieu concerné parmi ceux ci-dessus>;\n"
+                    )
+
+                await asyncio.sleep(1)  # respecte l'API Wikipédia, service public partagé
+            except Exception as e:
+                print(f"⚠️ Erreur imprévue sur '{film['titre']}': {e} — passage au suivant", flush=True)
                 await asyncio.sleep(1)
                 continue
-
-            lieux = await fetch_all(
-                "SELECT id, nom FROM lieux_tournage WHERE film_id = %s", (film["id"],)
-            )
-
-            if len(lieux) == 1:
-                # Aucune ambiguïté possible : publication automatique.
-                await execute(
-                    "UPDATE lieux_tournage SET anecdote = %s WHERE id = %s",
-                    (section + MENTION_SOURCE, lieux[0]["id"]),
-                )
-                auto_publies += 1
-                print(f"✓ {film['titre']} → publié automatiquement (lieu unique: {lieux[0]['nom']})", flush=True)
-            else:
-                a_traiter_manuellement += 1
-                print(f"\n═══ {film['titre']} (id={film['id']}) — {len(lieux)} lieux, à répartir toi-même ═══")
-                print(section)
-                print(f"Lieux disponibles : {', '.join(f'{l['nom']} (id={l['id']})' for l in lieux)}")
-                print(
-                    f"→ UPDATE lieux_tournage SET anecdote = '... (Source : Wikipédia, CC BY-SA)' "
-                    f"WHERE id = <lieu concerné parmi ceux ci-dessus>;\n"
-                )
-
-            await asyncio.sleep(1)  # respecte l'API Wikipédia, service public partagé
 
         print(f"\nTerminé : {auto_publies} publiée(s) automatiquement, {a_traiter_manuellement} à répartir toi-même.", flush=True)
     finally:

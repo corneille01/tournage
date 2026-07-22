@@ -410,7 +410,7 @@ async def detail_film(film_id: int):
     lieux = await fetch_all(
         """
         SELECT id, nom, description, commune, departement,
-               latitude, longitude, photo_url
+               latitude, longitude, photo_url, anecdote
         FROM lieux_tournage
         WHERE film_id = %s
         """,

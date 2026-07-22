@@ -300,6 +300,12 @@ function ouvrirPopupLieu(film, lieu) {
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
   document.getElementById("popup-synopsis").textContent =
     lieu.description || film.synopsis || "Aucune description disponible.";
+
+  const conteneurAnecdote = document.getElementById("popup-anecdote");
+  conteneurAnecdote.innerHTML = lieu.anecdote
+    ? `<p class="anecdote-titre">🎬 Anecdote de tournage</p><p class="anecdote-texte">${lieu.anecdote}</p>`
+    : "";
+
   document.getElementById("popup-resultats").innerHTML = "";
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;

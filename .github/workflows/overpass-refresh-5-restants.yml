@@ -32,3 +32,4 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python refresh_cache.py --departement "${{ matrix.departement }}"
+

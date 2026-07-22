@@ -675,3 +675,15 @@ body.page-film-ssr {
   color: var(--couleur-texte-muted);
   margin-bottom: 4px;
 }
+
+/* ── Anecdote de tournage — le contenu que Google Maps n'a pas ── */
+#popup-anecdote:empty { display: none; }
+#popup-anecdote {
+  background: rgba(230,57,70,0.08);
+  border-left: 3px solid var(--couleur-accent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+.anecdote-titre { font-size: 0.78rem; font-weight: 700; margin-bottom: 4px; }
+.anecdote-texte { font-size: 0.82rem; line-height: 1.4; color: var(--couleur-texte); }

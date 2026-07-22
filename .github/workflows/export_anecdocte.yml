@@ -1,0 +1,35 @@
+name: Export films pour anecdotes (étape 1/2)
+
+# Exporte id/titre/QID/lieux de tous les films publiés en JSON,
+# téléchargeable en artefact. Étape 2 (recherche Wikipédia) se fait
+# ensuite en local, sans avoir besoin de Neon à ce moment-là.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install asyncpg python-dotenv
+
+      - name: Exporter les films
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python export_films_pour_anecdotes.py
+
+      - name: Publier le JSON en artefact téléchargeable
+        uses: actions/upload-artifact@v4
+        with:
+          name: films-pour-anecdotes
+          path: backend/films_pour_anecdotes.json
+          retention-days: 7

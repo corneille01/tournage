@@ -92,7 +92,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -325,7 +325,9 @@ function ouvrirPopupLieu(film, lieu) {
 
   const conteneurAnecdote = document.getElementById("popup-anecdote");
   conteneurAnecdote.innerHTML = lieu.anecdote
-    ? `<p class="anecdote-titre">🎬 Anecdote de tournage</p><p class="anecdote-texte">${lieu.anecdote}</p>`
+    ? `<p class="anecdote-titre">🎬 Anecdote de tournage</p>
+       <div class="anecdote-texte scrollable">${lieu.anecdote}</div>
+       ${lieu.source_anecdote ? `<a class="anecdote-source" href="${lieu.source_anecdote}" target="_blank" rel="noopener noreferrer">Source</a>` : ""}`
     : "";
 
   const conteneurDescriptionLieu = document.getElementById("popup-description-lieu");
@@ -637,9 +639,9 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
 }
 
 function _texteHoraires(horaires) {
-  if (typeof OpeningHours === "undefined") return `🕒 ${horaires}`;
+  if (typeof opening_hours === "undefined") return `🕒 ${horaires}`;
   try {
-    const oh = new OpeningHours(horaires, { lat: 43.9, lon: 2.2 }, { locale: "fr" });
+    const oh = new opening_hours(horaires, { lat: 43.9, lon: 2.2 }, { locale: "fr" });
     const maintenant = new Date();
     const ouvert = oh.getState(maintenant);
     const prochainChangement = oh.getNextChange(maintenant);

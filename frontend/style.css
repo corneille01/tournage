@@ -797,3 +797,18 @@ body.page-film-ssr {
 .statut-bientot { color: #f39c12; font-weight: 700; }
 
 .phrases-pied-voiture p { margin-bottom: 8px; font-size: 0.82rem; line-height: 1.4; }
+
+/* ── Anecdote scrollable (texte long, pas de limite artificielle) ── */
+.anecdote-texte.scrollable {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  line-height: 1.5;
+}
+.anecdote-source {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--couleur-accent);
+  text-decoration: underline;
+}

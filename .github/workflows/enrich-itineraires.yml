@@ -18,7 +18,7 @@ on:
 jobs:
   precalcul:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 340
     defaults:
       run:
         working-directory: backend

@@ -163,6 +163,24 @@ async def query_wikidata() -> list[dict]:
     return lignes
 
 
+_NATIONALITES = {
+    "FR": "Français", "BE": "Belge", "CH": "Suisse", "CA": "Canadien",
+    "US": "Américain", "GB": "Britannique", "DE": "Allemand", "ES": "Espagnol",
+    "IT": "Italien", "LU": "Luxembourgeois", "MC": "Monégasque",
+}
+
+
+def _nationalite_depuis_pays(production_countries: list) -> str | None:
+    if not production_countries:
+        return None
+    if len(production_countries) == 1:
+        code = production_countries[0].get("iso_3166_1")
+        return _NATIONALITES.get(code, production_countries[0].get("name"))
+    # Coproduction : "Franco-Belge" etc. — on affiche simplement les deux
+    noms = [_NATIONALITES.get(p.get("iso_3166_1"), p.get("name")) for p in production_countries[:2]]
+    return " / ".join(noms)
+
+
 async def enrichir_tmdb(ligne: dict) -> dict:
     """
     Complète avec les vraies données TMDB (poster, synopsis, année,
@@ -203,6 +221,7 @@ async def enrichir_tmdb(ligne: dict) -> dict:
     date = d.get("release_date") or d.get("first_air_date") or ""
     ligne["annee"] = int(date[:4]) if date[:4].isdigit() else None
     ligne["popularite"] = d.get("popularity")
+    ligne["nationalite"] = _nationalite_depuis_pays(d.get("production_countries", []))
     poster = d.get("poster_path")
     ligne["poster_url"] = f"https://image.tmdb.org/t/p/w500{poster}" if poster else None
     return ligne
@@ -222,19 +241,33 @@ async def inserer_en_base(ligne: dict) -> None:
     )
     if film:
         film_id = film["id"]
+        # Rétro-complétion : le film existait déjà avant qu'on capture
+        # popularité/nationalité (ou avant un run où TMDB était
+        # indisponible) — on comble seulement ce qui manque, sans
+        # jamais écraser une valeur déjà en base.
+        await execute(
+            """
+            UPDATE films SET
+                popularite = COALESCE(popularite, %s),
+                nationalite = COALESCE(nationalite, %s)
+            WHERE id = %s
+            """,
+            (ligne.get("popularite"), ligne.get("nationalite"), film_id),
+        )
     else:
         film_id = await execute(
             """
             INSERT INTO films
                 (tmdb_id, wikidata_qid, titre, titre_original, media_type,
-                 annee, synopsis, poster_url, popularite, region, source_donnee, statut)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'Occitanie', 'wikidata', 'brouillon')
+                 annee, synopsis, poster_url, popularite, nationalite, region, source_donnee, statut)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Occitanie', 'wikidata', 'brouillon')
             RETURNING id
             """,
             (
                 ligne["tmdb_id"], ligne["wikidata_qid"], ligne["titre"],
                 ligne["titre_original"], ligne["media_type"], ligne["annee"],
                 ligne["synopsis"], ligne["poster_url"], ligne.get("popularite"),
+                ligne.get("nationalite"),
             ),
         )
         print(f"  + Film créé: {ligne['titre']} (id={film_id})", flush=True)

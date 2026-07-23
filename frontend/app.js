@@ -92,7 +92,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -301,7 +301,7 @@ function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = film.titre;
   document.getElementById("popup-meta").textContent =
-    `${labelMediaType(film.media_type)} · ${film.annee || "année inconnue"}`;
+    `${labelMediaType(film.media_type)}${film.nationalite ? " " + film.nationalite : ""} · ${film.annee || "année inconnue"}`;
   document.getElementById("popup-adresse").textContent =
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
   document.getElementById("popup-synopsis").textContent =
@@ -321,10 +321,10 @@ function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;
 
-  // Photo actuelle du lieu (Wikidata P18), si disponible
+  // Photo actuelle du lieu (Wikidata P18 ou Wikimedia Commons), si disponible
   const conteneurPhoto = document.getElementById("popup-photos-lieu");
   conteneurPhoto.innerHTML = lieu.photo_url
-    ? `<img src="${lieu.photo_url}" alt="Photo actuelle de ${lieu.nom}" loading="lazy">`
+    ? `<p class="anecdote-titre">📷 Photo actuelle du lieu</p><img src="${lieu.photo_url}" alt="Photo actuelle de ${lieu.nom}" loading="lazy">`
     : "";
 
   // Plateformes de streaming — priorité à Amazon Prime / Rakuten /
@@ -373,148 +373,168 @@ async function _recupererAmenities(lieuId) {
 }
 
 // ── Clic sur un bouton catégorie (hébergement, resto, etc.) ──────
+const NOMS_CATEGORIE_SINGULIER = {
+  hebergement: "l'hébergement", refuge: "le refuge", restaurant: "le restaurant",
+  office_tourisme: "l'office de tourisme", police: "le commissariat/la gendarmerie",
+  hopital: "l'établissement de santé", gare: "la gare", aeroport: "l'aéroport",
+  arret_bus: "l'arrêt de transport", parking: "le parking",
+  distributeur: "le distributeur/la banque", activite: "le point d'intérêt",
+};
+
+let modeAffichageCommodites = "vol_oiseau";
+const cacheDistancesCommodites = {}; // clé: `${lieuId}_${categorie}`
+
 async function afficherCategorie(categorie) {
   const popupOverlay = document.getElementById("popup-overlay");
   const lieuId = popupOverlay.dataset.lieuId;
+  if (!lieuId) return;
 
-  if (!lieuId) {
-    return;
-  }
+  modeAffichageCommodites = "vol_oiseau"; // repart du mode par défaut à chaque catégorie choisie
 
   document.querySelectorAll("#popup-boutons button").forEach((bouton) => {
-    bouton.classList.toggle(
-      "actif",
-      bouton.dataset.categorie === categorie
-    );
+    bouton.classList.toggle("actif", bouton.dataset.categorie === categorie);
   });
 
   const conteneur = document.getElementById("popup-resultats");
-
-  conteneur.innerHTML = `
-    <p style="color:#9a9ea8;">
-      Chargement…
-    </p>
-  `;
+  conteneur.innerHTML = `<p style="color:#9a9ea8;">Chargement…</p>`;
+  conteneur.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   const data = await _recupererAmenities(lieuId);
-
   if (!data) {
-    conteneur.innerHTML = `
-      <p style="color:#9a9ea8;">
-        Données indisponibles pour ce lieu.
-      </p>
-    `;
+    conteneur.innerHTML = `<p style="color:#9a9ea8;">Données indisponibles pour ce lieu.</p>`;
     return;
   }
 
   const items = data.amenities?.[categorie] || [];
   const stats = data.stats?.[categorie] || null;
-  const phrase = data.phrases_recommandation?.[categorie];
-
-  const informationsCategorie =
-    ICONES_CATEGORIE[categorie] || {};
-
-  const couleur =
-    informationsCategorie.couleur || "#e63946";
-
-  const resume = creerResumeRecherche(
-    stats,
-    items.length
-  );
 
   if (!items.length) {
-    conteneur.innerHTML =
-      resume +
-      `
-        <p style="color:#9a9ea8;">
-          Aucun résultat nommé trouvé à proximité.
-        </p>
-      `;
-
+    conteneur.innerHTML = `<p style="color:#9a9ea8;">Aucun résultat nommé trouvé à proximité.</p>`;
     return;
   }
 
-  const liste = items.map((item, index) => {
+  afficherCommoditesSurCarte(categorie, items, stats);
+
+  // Affichage immédiat (vol d'oiseau, déjà en cache) — ne bloque jamais
+  // sur le calcul piéton/voiture, qui arrive ensuite en arrière-plan.
+  _rendreListeCommodites(categorie, items, stats, null);
+
+  // Calcul piéton/voiture en arrière-plan, mis en cache par lieu+catégorie
+  // pour ne plus jamais le recalculer au clic suivant sur la même catégorie.
+  const cle = `${lieuId}_${categorie}`;
+  if (!cacheDistancesCommodites[cle]) {
+    try {
+      const res = await fetch(`${API_BASE}/api/lieux/${lieuId}/commodites-distances?categorie=${categorie}`);
+      cacheDistancesCommodites[cle] = await res.json();
+    } catch (e) {
+      return; // reste sur l'affichage vol d'oiseau si le calcul échoue
+    }
+  }
+  // Le popup a-t-il changé de catégorie pendant le calcul en arrière-plan ?
+  // On ne réaffiche que si l'utilisateur regarde toujours cette catégorie.
+  const boutonActif = document.querySelector(`#popup-boutons button[data-categorie="${categorie}"].actif`);
+  if (boutonActif) {
+    _rendreListeCommodites(categorie, items, stats, cacheDistancesCommodites[cle]);
+  }
+}
+
+function _rendreListeCommodites(categorie, items, stats, distances) {
+  const conteneur = document.getElementById("popup-resultats");
+  const infoCategorie = ICONES_CATEGORIE[categorie] || {};
+  const couleur = infoCategorie.couleur || "#e63946";
+  const resume = creerResumeRecherche(stats, items.length);
+
+  // Sélecteur de mode (vol d'oiseau toujours dispo ; pied/voiture
+  // seulement une fois le calcul en arrière-plan terminé).
+  const selecteurMode = `
+    <div class="selecteur-mode">
+      <button class="mode-btn ${modeAffichageCommodites === "vol_oiseau" ? "actif" : ""}" data-mode="vol_oiseau">📏 Vol d'oiseau</button>
+      <button class="mode-btn ${modeAffichageCommodites === "pied" ? "actif" : ""}" data-mode="pied" ${!distances ? "disabled" : ""}>🚶 À pied</button>
+      <button class="mode-btn ${modeAffichageCommodites === "voiture" ? "actif" : ""}" data-mode="voiture" ${!distances ? "disabled" : ""}>🚗 Voiture</button>
+      ${!distances ? '<span class="mode-calcul">(calcul piéton/voiture en cours…)</span>' : ""}
+    </div>
+  `;
+
+  // Classement selon le mode choisi
+  let itemsTries = items;
+  if (distances && modeAffichageCommodites !== "vol_oiseau") {
+    const parNom = Object.fromEntries(distances.items.map((d) => [d.nom, d]));
+    itemsTries = [...items].sort((a, b) => {
+      const da = parNom[a.nom]?.[modeAffichageCommodites]?.distance_metres ?? Infinity;
+      const db = parNom[b.nom]?.[modeAffichageCommodites]?.distance_metres ?? Infinity;
+      return da - db;
+    });
+  }
+
+  const phraseComparaison = distances
+    ? _genererPhraseComparaison(categorie, distances, stats)
+    : "";
+
+  const liste = itemsTries.map((item, index) => {
     const estPlusProche = index === 0;
+    const detailDistance = distances
+      ? distances.items.find((d) => d.nom === item.nom)?.[modeAffichageCommodites]
+      : null;
+    const texteDistance = detailDistance
+      ? `${formatDistance(detailDistance.distance_metres)} · ${formatDuree(detailDistance.duree_secondes)}`
+      : formatDistance(item.distance_metres);
 
     return `
-      <div
-        class="resultat-item ${estPlusProche ? "plus-proche" : ""}"
-        style="${estPlusProche ? `border-color:${couleur};` : ""}"
-      >
+      <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
         ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
-
-        <div class="nom">
-          ${estPlusProche ? "⭐ " : ""}
-          ${item.nom}
-        </div>
-
-        <div class="distance">
-          ${formatDistance(item.distance_metres)}
-        </div>
-
-        ${
-          item.adresse
-            ? `<div class="adresse">${item.adresse}</div>`
-            : ""
-        }
-
+        <div class="nom">${estPlusProche ? "⭐ " : ""}${item.nom}</div>
+        <div class="distance">${texteDistance}</div>
+        ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
         ${item.horaires ? `<div class="horaires">🕒 ${item.horaires}</div>` : ""}
-
-        ${
-          item.telephone
-            ? `
-              <div class="telephone">
-                📞 ${item.telephone}
-              </div>
-            `
-            : ""
-        }
-
-        ${
-          item.site_web
-            ? `
-              <div class="site-web">
-                <a
-                  href="${item.site_web}"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Voir le site
-                </a>
-              </div>
-            `
-            : ""
-        }
-
+        ${item.telephone ? `<div class="telephone">📞 ${item.telephone}</div>` : ""}
+        ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
         <div class="boutons-itineraire">
-          <button class="btn-itineraire" data-mode="foot-walking"
-                  data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
-          <button class="btn-itineraire" data-mode="driving-car"
-                  data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
+          <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
+          <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
         </div>
         <div class="itineraire-resultat"></div>
       </div>
     `;
   }).join("");
 
-  conteneur.innerHTML =
-    resume +
-    (
-      phrase
-        ? `<div class="phrase-recommandation">${phrase}</div>`
-        : ""
-    ) +
-    liste;
+  conteneur.innerHTML = resume + selecteurMode + phraseComparaison + liste;
 
   conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
     btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
   });
+  conteneur.querySelectorAll(".mode-btn").forEach((btn) => {
+    if (btn.disabled) return;
+    btn.addEventListener("click", () => {
+      modeAffichageCommodites = btn.dataset.mode;
+      _rendreListeCommodites(categorie, items, stats, distances);
+    });
+  });
+}
 
-  // Toutes les catégories affichent désormais leurs points sur la
-  // carte (avant, seule "activité" le faisait) — même comportement
-  // partout, comme demandé.
-  afficherCommoditesSurCarte(categorie, items, stats);
+function _genererPhraseComparaison(categorie, distances, stats) {
+  const nomCat = NOMS_CATEGORIE_SINGULIER[categorie] || "la commodité";
+  const total = stats?.nombre_total ?? distances.items.length;
+  const rayonKm = stats?.rayon_metres ? (stats.rayon_metres / 1000).toFixed(1).replace(".0", "") : "?";
+  const r = distances.resume;
+
+  let texte = "";
+  if (r.pied) {
+    texte += `<p><b>À pied :</b><br>${nomCat.charAt(0).toUpperCase() + nomCat.slice(1)} « ${r.pied.nom} » est situé`
+      + ` à ${formatDistance(r.pied.distance_metres)} à pied du lieu de tournage, soit environ ${formatDuree(r.pied.duree_secondes)} de marche.`
+      + ` C'est ${nomCat} le plus proche à pied parmi les ${total} recensés dans un rayon de ${rayonKm} km.</p>`;
+  }
+  if (r.voiture) {
+    texte += `<p><b>En voiture :</b><br>${nomCat.charAt(0).toUpperCase() + nomCat.slice(1)} « ${r.voiture.nom} » est situé`
+      + ` à ${formatDistance(r.voiture.distance_metres)} en voiture du lieu de tournage, soit environ ${formatDuree(r.voiture.duree_secondes)} de trajet.`
+      + ` C'est ${nomCat} le plus rapidement accessible en voiture parmi les ${total} recensés dans un rayon de ${rayonKm} km.</p>`;
+  }
+  if (r.vol_oiseau) {
+    texte += `<p><b>À vol d'oiseau :</b><br>${nomCat.charAt(0).toUpperCase() + nomCat.slice(1)} « ${r.vol_oiseau.nom} » est situé`
+      + ` à ${formatDistance(r.vol_oiseau.distance_metres)} à vol d'oiseau du lieu de tournage.`
+      + ` C'est ${nomCat} géographiquement le plus proche parmi les ${total} recensés dans un rayon de ${rayonKm} km.`
+      + ` Cette distance étant calculée en ligne droite, elle ne correspond pas forcément à un temps de trajet réel.</p>`;
+  }
+  return `<div class="phrase-recommandation phrase-comparaison">${texte}</div>`;
 }
 
 let coucheItineraireCommodite = null;
@@ -619,6 +639,7 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
     });
     const idPopupItineraire = `itin-carte-${categorie}-${index}`;
     const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
+      ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy" style="margin-bottom:6px;">` : ""}
       <b>${estPlusProche ? "⭐ " : ""}${item.nom}</b><br>
       ${formatDistance(item.distance_metres)} du lieu de tournage
       ${item.adresse ? `<br>${item.adresse}` : ""}

@@ -766,3 +766,27 @@ body.page-film-ssr {
   padding: 10px 12px;
   margin: 10px 0;
 }
+
+/* ── Sélecteur de mode (vol d'oiseau/pied/voiture) ── */
+.selecteur-mode {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.mode-btn {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.mode-btn.actif { background: var(--couleur-accent); border-color: var(--couleur-accent); color: #fff; }
+.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-calcul { font-size: 0.7rem; color: var(--couleur-texte-muted); font-style: italic; }
+
+.phrase-comparaison p { margin-bottom: 8px; font-size: 0.8rem; line-height: 1.4; }
+.phrase-comparaison b { color: var(--couleur-accent); }

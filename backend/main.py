@@ -524,51 +524,58 @@ def _traduire_manoeuvre(maneuver: dict, nom_rue: str | None) -> str:
     return phrase
 
 
-async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_etapes: bool = False) -> dict | None:
+async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_etapes: bool = False, tentatives: int = 2) -> dict | None:
     profil = _OSRM_PROFILS.get(mode, "driving")
     chemin_coords = ";".join(f"{lon},{lat}" for lon, lat in coords_lonlat)
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                f"{OSRM_URL}/route/v1/{profil}/{chemin_coords}",
-                params={
-                    "overview": "full", "geometries": "geojson",
-                    "steps": "true" if avec_etapes else "false",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        route = data["routes"][0]
-        duree = round(route["duration"])
-        if profil == "foot":
-            # Le serveur de démo OSRM ne différencie pas toujours
-            # correctement la vitesse piéton de la vitesse voiture sur
-            # certains tronçons — on recalcule nous-mêmes avec une
-            # vitesse de marche standard (5 km/h) plutôt que de faire
-            # confiance à une durée parfois identique à la voiture.
-            duree = round(route["distance"] / (5000 / 3600))  # 5 km/h en m/s
-        resultat = {
-            "type": "route_reelle",
-            "geometry": route["geometry"],
-            "distance_metres": round(route["distance"]),
-            "duree_secondes": duree,
-        }
-        if avec_etapes:
-            etapes = []
-            for leg in route.get("legs", []):
-                for step in leg.get("steps", []):
-                    loc = step["maneuver"]["location"]  # [lon, lat]
-                    etapes.append({
-                        "instruction": _traduire_manoeuvre(step["maneuver"], step.get("name") or None),
-                        "distance_metres": round(step["distance"]),
-                        "latitude": loc[1],
-                        "longitude": loc[0],
-                    })
-            resultat["etapes_navigation"] = etapes
-        return resultat
-    except Exception as e:
-        print(f"⚠️ OSRM indisponible: {e}", flush=True)
-        return None
+
+    derniere_erreur = None
+    for tentative in range(1, tentatives + 1):
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    f"{OSRM_URL}/route/v1/{profil}/{chemin_coords}",
+                    params={
+                        "overview": "full", "geometries": "geojson",
+                        "steps": "true" if avec_etapes else "false",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            route = data["routes"][0]
+            duree = round(route["duration"])
+            if profil == "foot":
+                # Le serveur de démo OSRM ne différencie pas toujours
+                # correctement la vitesse piéton de la vitesse voiture sur
+                # certains tronçons — on recalcule nous-mêmes avec une
+                # vitesse de marche standard (5 km/h) plutôt que de faire
+                # confiance à une durée parfois identique à la voiture.
+                duree = round(route["distance"] / (5000 / 3600))  # 5 km/h en m/s
+            resultat = {
+                "type": "route_reelle",
+                "geometry": route["geometry"],
+                "distance_metres": round(route["distance"]),
+                "duree_secondes": duree,
+            }
+            if avec_etapes:
+                etapes = []
+                for leg in route.get("legs", []):
+                    for step in leg.get("steps", []):
+                        loc = step["maneuver"]["location"]  # [lon, lat]
+                        etapes.append({
+                            "instruction": _traduire_manoeuvre(step["maneuver"], step.get("name") or None),
+                            "distance_metres": round(step["distance"]),
+                            "latitude": loc[1],
+                            "longitude": loc[0],
+                        })
+                resultat["etapes_navigation"] = etapes
+            return resultat
+        except Exception as e:
+            derniere_erreur = e
+            if tentative < tentatives:
+                await asyncio.sleep(1.5)  # le serveur public OSRM limite à 1 req/s
+
+    print(f"⚠️ OSRM indisponible après {tentatives} tentative(s): {derniere_erreur}", flush=True)
+    return None
 
 
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
@@ -593,106 +600,7 @@ def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     return ordre
 
 
-async def _matrice_distances_osrm(depart: tuple[float, float], destinations: list[tuple[float, float]], mode: str) -> list[dict | None]:
-    """
-    Calcule en UN seul appel (service 'table' d'OSRM, pas 'route') la
-    distance/durée du départ vers CHAQUE destination — bien plus
-    rapide que d'appeler /route dix fois. Retourne une liste dans le
-    même ordre que 'destinations', avec None pour celles injoignables.
-    """
-    profil = _OSRM_PROFILS.get(mode, "driving")
-    tous_points = [depart] + destinations
-    coords = ";".join(f"{lon},{lat}" for lat, lon in tous_points)
-    n = len(destinations)
-    destinations_idx = ";".join(str(i) for i in range(1, n + 1))
-
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(
-                f"{OSRM_URL}/table/v1/{profil}/{coords}",
-                params={"sources": "0", "destinations": destinations_idx, "annotations": "distance,duration"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        distances = data["distances"][0]
-        durees = data["durations"][0]
-    except Exception as e:
-        print(f"⚠️ Table OSRM indisponible ({mode}): {e}", flush=True)
-        return [None] * n
-
-    resultats = []
-    for i in range(n):
-        if distances[i] is None:
-            resultats.append(None)
-            continue
-        duree = durees[i]
-        if profil == "foot":
-            duree = distances[i] / (5000 / 3600)
-        resultats.append({"distance_metres": round(distances[i]), "duree_secondes": round(duree)})
-    return resultats
-
-
-@app.get("/api/lieux/{lieu_id}/commodites-distances")
-async def commodites_distances(lieu_id: int, categorie: str = Query(...)):
-    """
-    Pour une catégorie donnée, calcule la distance/durée piéton ET
-    voiture vers chacune des commodités déjà en cache (top 10), en
-    plus de la distance à vol d'oiseau déjà connue — permet de trier
-    "par mode" et de générer la phrase de comparaison complète.
-    """
-    lieu = await fetch_one("SELECT latitude, longitude FROM lieux_tournage WHERE id = %s", (lieu_id,))
-    if not lieu:
-        raise HTTPException(404, "Lieu introuvable")
-
-    items = await fetch_all(
-        """
-        SELECT nom, latitude, longitude, distance_metres, adresse, telephone, site_web, horaires, photo_url
-        FROM amenity_cache WHERE lieu_tournage_id = %s AND categorie = %s ORDER BY rang
-        """,
-        (lieu_id, categorie),
-    )
-    if not items:
-        return {"items": [], "resume": {}}
-
-    depart = (float(lieu["latitude"]), float(lieu["longitude"]))
-    destinations = [(float(i["latitude"]), float(i["longitude"])) for i in items]
-
-    distances_pied, distances_voiture = await asyncio.gather(
-        _matrice_distances_osrm(depart, destinations, "foot-walking"),
-        _matrice_distances_osrm(depart, destinations, "driving-car"),
-    )
-
-    resultat_items = []
-    for i, item in enumerate(items):
-        d = dict(item)
-        d["vol_oiseau"] = {"distance_metres": item["distance_metres"]}
-        d["pied"] = distances_pied[i]
-        d["voiture"] = distances_voiture[i]
-        resultat_items.append(d)
-
-    def _meilleur(cle: str):
-        candidats = [(i, r[cle]) for i, r in enumerate(resultat_items) if r[cle]]
-        if not candidats:
-            return None
-        return min(candidats, key=lambda c: c[1]["distance_metres"])
-
-    stats_categorie = await fetch_one(
-        "SELECT nombre_total, rayon_metres FROM amenity_stats WHERE lieu_tournage_id = %s AND categorie = %s",
-        (lieu_id, categorie),
-    )
-
-    resume = {}
-    for cle in ("vol_oiseau", "pied", "voiture"):
-        meilleur = _meilleur(cle)
-        if meilleur is not None:
-            idx, valeurs = meilleur
-            resume[cle] = {"nom": resultat_items[idx]["nom"], **valeurs}
-
-    return {
-        "items": resultat_items,
-        "resume": resume,
-        "stats": dict(stats_categorie) if stats_categorie else None,
-    }
+@app.get("/api/itineraire")
 async def itineraire_point_a_point(
     depart_lat: float = Query(...),
     depart_lon: float = Query(...),

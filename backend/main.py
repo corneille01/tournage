@@ -68,6 +68,7 @@ async def liste_films(
     annee: int | None = Query(None),
     departement: str | None = Query(None),
     commune: str | None = Query(None),
+    nationalite: str | None = Query(None),
     q: str | None = Query(None, description="Recherche par titre"),
     tri: str = Query("titre", description="titre ou popularite"),
     page: int = Query(1, ge=1),
@@ -92,6 +93,9 @@ async def liste_films(
     if q:
         conditions.append("f.titre ILIKE %s")
         params.append(f"%{q}%")
+    if nationalite:
+        conditions.append("f.nationalite = %s")
+        params.append(nationalite)
     if departement or commune:
         conditions.append(
             "EXISTS (SELECT 1 FROM lieux_tournage lt WHERE lt.film_id = f.id"
@@ -164,10 +168,19 @@ async def options_filtres(region: str = Query("Occitanie")):
         """,
         (region,),
     )
+    nationalites = await fetch_all(
+        """
+        SELECT DISTINCT nationalite FROM films
+        WHERE region = %s AND statut = 'publie' AND nationalite IS NOT NULL
+        ORDER BY nationalite ASC
+        """,
+        (region,),
+    )
     return {
         "annees": [a["annee"] for a in annees],
         "departements": [d["departement"] for d in departements],
         "communes": [c["commune"] for c in communes],
+        "nationalites": [n["nationalite"] for n in nationalites],
     }
 
 
@@ -370,6 +383,7 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
         return _parser_cache(film.get("plateformes_json"))
 
     plateformes = []
+    lien_general = data.get("link")  # page TMDB "où regarder" pour ce film — repli tant qu'il n'y a pas de vrai lien d'affiliation
     for categorie in ("flatrate", "rent", "buy"):
         for p in data.get(categorie, []):
             plateformes.append({
@@ -377,6 +391,7 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
                 "logo_url": f"https://image.tmdb.org/t/p/w92{p['logo_path']}",
                 "type": {"flatrate": "streaming", "rent": "location", "buy": "achat"}[categorie],
                 "lien_affilie": "",  # à remplir : lien Awin/partenaire pour ce provider
+                "lien_repli": lien_general,  # utilisé tant que lien_affilie est vide
             })
 
     await _sauvegarder_plateformes_cache(film["id"], plateformes)
@@ -423,6 +438,18 @@ async def detail_film(film_id: int):
 
 
 # ── Amenities proches d'un lieu (appelé au clic sur l'icône) ─────
+def _formater_distance(m: int) -> str:
+    return f"{m} m" if m < 1000 else f"{m / 1000:.1f}".replace(".0", "") + " km"
+
+
+def _formater_duree(secondes: int) -> str:
+    minutes = round(secondes / 60)
+    if minutes < 60:
+        return f"{minutes} min"
+    h, reste = divmod(minutes, 60)
+    return f"{h}h{reste:02d}" if reste else f"{h}h"
+
+
 @app.get("/api/lieux/{lieu_id}/amenities")
 async def amenities_proches(lieu_id: int):
     lieu = await fetch_one(
@@ -435,7 +462,9 @@ async def amenities_proches(lieu_id: int):
     rows = await fetch_all(
         """
         SELECT categorie, nom, latitude, longitude, distance_metres,
-               adresse, telephone, site_web, horaires, photo_url, rang
+               adresse, telephone, site_web, horaires, photo_url, rang,
+               distance_pied_metres, duree_pied_secondes,
+               distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache
         WHERE lieu_tournage_id = %s
         ORDER BY categorie, rang
@@ -458,26 +487,40 @@ async def amenities_proches(lieu_id: int):
     for r in rows:
         par_categorie.setdefault(r["categorie"], []).append(r)
 
-    # Phrase de recommandation pour le plus proche de chaque catégorie,
-    # incluant le total trouvé dans le rayon (pas seulement le top 10 —
-    # "3 restaurants dans le coin" et "80 restaurants dans le coin" ne
-    # doivent pas avoir l'air identiques une fois coupés à 10 affichés).
-    plus_proches = {}
+    # Deux phrases par catégorie (à pied / en voiture), basées sur les
+    # distances précalculées — jamais de vol d'oiseau, jamais d'appel
+    # OSRM en direct ici (tout vient déjà de amenity_cache).
+    phrases = {}
     for categorie, items in par_categorie.items():
-        if items:
-            top = items[0]  # déjà trié par rang
-            label = _LABELS_CATEGORIE.get(categorie, categorie)
-            phrase = phrase_recommandation(label, top["nom"], top["distance_metres"])
-            stat = stats_par_categorie.get(categorie)
-            if stat and stat["nombre_total"] > 1:
-                phrase += f" ({stat['nombre_total']} au total dans un rayon de {stat['rayon_metres'] // 1000} km.)"
-            plus_proches[categorie] = phrase
+        label = _LABELS_CATEGORIE.get(categorie, categorie)
+        stat = stats_par_categorie.get(categorie)
+        total = stat["nombre_total"] if stat else len(items)
+        rayon_km = (stat["rayon_metres"] // 1000) if stat else None
+
+        for mode, cle_distance, cle_duree, verbe in (
+            ("pied", "distance_pied_metres", "duree_pied_secondes", "à pied"),
+            ("voiture", "distance_voiture_metres", "duree_voiture_secondes", "en voiture"),
+        ):
+            candidats = [i for i in items if i.get(cle_distance) is not None]
+            if not candidats:
+                continue
+            meilleur = min(candidats, key=lambda i: i[cle_distance])
+            phrase = (
+                f"{label} « {meilleur['nom']} » est situé à {_formater_distance(meilleur[cle_distance])} {verbe} "
+                f"du lieu de tournage, soit environ {_formater_duree(meilleur[cle_duree])} de trajet. "
+                f"C'est {label.lower()} le plus proche {verbe} parmi les {total} recensés"
+                + (f" dans un rayon de {rayon_km} km." if rayon_km else ".")
+            )
+            phrases.setdefault(categorie, {})[mode] = {
+                "texte": phrase, "nom": meilleur["nom"],
+                "distance_metres": meilleur[cle_distance], "duree_secondes": meilleur[cle_duree],
+            }
 
     return {
         "lieu": lieu,
         "amenities": par_categorie,
         "stats": stats_par_categorie,
-        "phrases_recommandation": plus_proches,
+        "phrases_pied_voiture": phrases,
         "icones_categorie": ICONES_CATEGORIE,
     }
 

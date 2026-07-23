@@ -573,7 +573,7 @@ body.page-film-ssr {
 }
 
 #filtres-carte select {
-  flex: 1 1 120px;
+  flex: 1 1 100px;
   background: var(--couleur-carte);
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
@@ -790,3 +790,10 @@ body.page-film-ssr {
 
 .phrase-comparaison p { margin-bottom: 8px; font-size: 0.8rem; line-height: 1.4; }
 .phrase-comparaison b { color: var(--couleur-accent); }
+
+/* ── Statuts horaires ── */
+.statut-ouvert { color: #2ecc71; font-weight: 700; }
+.statut-ferme { color: #e74c3c; font-weight: 700; }
+.statut-bientot { color: #f39c12; font-weight: 700; }
+
+.phrases-pied-voiture p { margin-bottom: 8px; font-size: 0.82rem; line-height: 1.4; }

@@ -79,7 +79,7 @@ const ICONES_CATEGORIE = {
 };
 
 const state = {
-  filtres: { mediaType: "", annee: "", departement: "", commune: "", q: "", tri: "titre" },
+  filtres: { mediaType: "", annee: "", departement: "", commune: "", nationalite: "", q: "", tri: "titre" },
   filmSelectionne: null,
   lieuxCourants: [],
   amenitiesParLieu: {},
@@ -169,6 +169,7 @@ async function chargerOptionsFiltres() {
     remplirSelect("filtre-annee", data.annees, "Année");
     remplirSelect("filtre-departement", data.departements, "Département");
     remplirSelect("filtre-commune", data.communes, "Commune");
+    remplirSelect("filtre-nationalite", data.nationalites, "Nationalité");
   } catch (e) { /* champs restent vides, pas bloquant */ }
 }
 
@@ -190,6 +191,7 @@ async function chargerFilms() {
   if (state.filtres.annee) params.set("annee", state.filtres.annee);
   if (state.filtres.departement) params.set("departement", state.filtres.departement);
   if (state.filtres.commune) params.set("commune", state.filtres.commune);
+  if (state.filtres.nationalite) params.set("nationalite", state.filtres.nationalite);
   if (state.filtres.q) params.set("q", state.filtres.q);
   if (state.filtres.tri) params.set("tri", state.filtres.tri);
 
@@ -297,11 +299,25 @@ function _trierEtLimiterPlateformes(plateformes) {
     .slice(0, 5);
 }
 
+// "Film Français" mais "Série Française" — la nationalité est stockée
+// au masculin en base, on l'accorde ici selon le type ("tv"/"anime" = féminin).
+const NATIONALITE_FEMININ = {
+  "Français": "Française", "Belge": "Belge", "Suisse": "Suisse",
+  "Canadien": "Canadienne", "Américain": "Américaine", "Britannique": "Britannique",
+  "Allemand": "Allemande", "Espagnol": "Espagnole", "Italien": "Italienne",
+  "Luxembourgeois": "Luxembourgeoise", "Monégasque": "Monégasque",
+};
+
+function _accorderNationalite(nationalite, mediaType) {
+  if (mediaType === "movie") return nationalite; // "Film" = masculin, rien à changer
+  return nationalite.split(" / ").map((n) => NATIONALITE_FEMININ[n] || n).join(" / ");
+}
+
 function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = film.titre;
   document.getElementById("popup-meta").textContent =
-    `${labelMediaType(film.media_type)}${film.nationalite ? " " + film.nationalite : ""} · ${film.annee || "année inconnue"}`;
+    `${labelMediaType(film.media_type)}${film.nationalite ? " " + _accorderNationalite(film.nationalite, film.media_type) : ""} · ${film.annee || "année inconnue"}`;
   document.getElementById("popup-adresse").textContent =
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
   document.getElementById("popup-synopsis").textContent =
@@ -335,7 +351,7 @@ function ouvrirPopupLieu(film, lieu) {
   conteneurPlateformes.innerHTML = plateformesTriees.length ? (
     `<p class="plateformes-intro">Disponible sur :</p>` +
     plateformesTriees.map((p) => `
-      <a class="plateforme-logo" href="${p.lien_affilie || '#'}" target="_blank" rel="noopener sponsored">
+      <a class="plateforme-logo" href="${p.lien_affilie || p.lien_repli || '#'}" target="_blank" rel="noopener sponsored">
         <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
       </a>
     `).join("")
@@ -373,10 +389,16 @@ async function _recupererAmenities(lieuId) {
 }
 
 // ── Clic sur un bouton catégorie (hébergement, resto, etc.) ──────
+let modeTriCourant = "pied"; // "pied", "voiture" — plus de vol d'oiseau
+let dernieresDonneesAmenities = null; // pour retrier sans refaire l'appel réseau
+
 async function afficherCategorie(categorie) {
   const popupOverlay = document.getElementById("popup-overlay");
   const lieuId = popupOverlay.dataset.lieuId;
   if (!lieuId) return;
+
+  modeTriCourant = "pied"; // repart du mode par défaut à chaque catégorie choisie
+  if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
 
   document.querySelectorAll("#popup-boutons button").forEach((bouton) => {
     bouton.classList.toggle("actif", bouton.dataset.categorie === categorie);
@@ -394,27 +416,58 @@ async function afficherCategorie(categorie) {
 
   const items = data.amenities?.[categorie] || [];
   const stats = data.stats?.[categorie] || null;
+  const phrases = data.phrases_pied_voiture?.[categorie] || {};
 
   if (!items.length) {
     conteneur.innerHTML = `<p style="color:#9a9ea8;">Aucun résultat nommé trouvé à proximité.</p>`;
     return;
   }
 
-  afficherCommoditesSurCarte(categorie, items, stats);
+  dernieresDonneesAmenities = { categorie, items, stats, phrases };
+  _rendreCategorie();
+}
 
+function _rendreCategorie() {
+  if (!dernieresDonneesAmenities) return;
+  const { categorie, items, stats, phrases } = dernieresDonneesAmenities;
+  const conteneur = document.getElementById("popup-resultats");
   const infoCategorie = ICONES_CATEGORIE[categorie] || {};
   const couleur = infoCategorie.couleur || "#e63946";
   const resume = creerResumeRecherche(stats, items.length);
 
-  const liste = items.map((item, index) => {
+  // Les 2 phrases essentielles (à pied / en voiture), toujours visibles
+  const blocPhrases = `
+    <div class="phrase-recommandation phrases-pied-voiture">
+      ${phrases.pied ? `<p><b>🚶 À pied :</b> ${phrases.pied.texte}</p>` : ""}
+      ${phrases.voiture ? `<p><b>🚗 En voiture :</b> ${phrases.voiture.texte}</p>` : ""}
+    </div>
+  `;
+
+  // Boutons de tri groupé, juste après les phrases
+  const selecteurTri = `
+    <div class="selecteur-mode">
+      <button class="mode-btn ${modeTriCourant === "pied" ? "actif" : ""}" data-mode="pied">🚶 Trier à pied</button>
+      <button class="mode-btn ${modeTriCourant === "voiture" ? "actif" : ""}" data-mode="voiture">🚗 Trier en voiture</button>
+    </div>
+  `;
+
+  // Tri selon le mode choisi (données déjà précalculées, aucun appel réseau)
+  const cleDistance = modeTriCourant === "pied" ? "distance_pied_metres" : "distance_voiture_metres";
+  const itemsTries = [...items].sort((a, b) => {
+    const da = a[cleDistance] ?? Infinity;
+    const db = b[cleDistance] ?? Infinity;
+    return da - db;
+  });
+
+  const liste = itemsTries.map((item, index) => {
     const estPlusProche = index === 0;
     return `
       <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
         ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
         <div class="nom">${estPlusProche ? "⭐ " : ""}${item.nom}</div>
-        <div class="distance">${formatDistance(item.distance_metres)}</div>
+        <div class="distance">${_texteDistanceDynamique(item, modeTriCourant)}</div>
         ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
-        ${item.horaires ? `<div class="horaires">🕒 ${item.horaires}</div>` : ""}
+        ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
         ${item.telephone ? `<div class="telephone">📞 ${item.telephone}</div>` : ""}
         ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
         <div class="boutons-itineraire">
@@ -426,11 +479,19 @@ async function afficherCategorie(categorie) {
     `;
   }).join("");
 
-  conteneur.innerHTML = resume + liste;
+  conteneur.innerHTML = resume + blocPhrases + selecteurTri + liste;
 
   conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
     btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
   });
+  conteneur.querySelectorAll(".mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      modeTriCourant = btn.dataset.mode;
+      _rendreCategorie();
+    });
+  });
+
+  afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTriCourant);
 }
 
 let coucheItineraireCommodite = null;
@@ -504,10 +565,9 @@ function _jouerSon() {
   } catch (e) { /* audio non disponible (autoplay bloqué, etc.) — silencieux */ }
 }
 
-function afficherCommoditesSurCarte(categorie, items, stats) {
+function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
   clusterActivites.clearLayers();
   if (coucheCercleRayon) { map.removeLayer(coucheCercleRayon); coucheCercleRayon = null; }
-  if (coucheTraitPlusProche) { map.removeLayer(coucheTraitPlusProche); coucheTraitPlusProche = null; }
 
   const lieuActuel = state.lieuxCourants.find(
     (l) => l.id === Number(document.getElementById("popup-overlay").dataset.lieuId)
@@ -526,7 +586,7 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
     }).addTo(map);
   }
 
-  items.forEach((item, index) => {
+  itemsTries.forEach((item, index) => {
     const estPlusProche = index === 0;
     const couleurIcone = estPlusProche ? "#ffd60a" : (infoCategorie.couleur || "#e63946");
     const icone = L.divIcon({
@@ -534,12 +594,13 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
       className: "", iconSize: estPlusProche ? [32, 32] : [24, 24], iconAnchor: estPlusProche ? [16, 30] : [12, 22],
     });
     const idPopupItineraire = `itin-carte-${categorie}-${index}`;
+    const texteDistance = _texteDistanceDynamique(item, modeTri);
     const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
       ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy" style="margin-bottom:6px;">` : ""}
       <b>${estPlusProche ? "⭐ " : ""}${item.nom}</b><br>
-      ${formatDistance(item.distance_metres)} du lieu de tournage
+      ${texteDistance} du lieu de tournage
       ${item.adresse ? `<br>${item.adresse}` : ""}
-      ${item.horaires ? `<br>🕒 ${item.horaires}` : ""}
+      ${item.horaires ? `<br>${_texteHoraires(item.horaires)}` : ""}
       ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
       ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
       <div class="boutons-itineraire" style="margin-top:6px;">
@@ -553,25 +614,18 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
     // faut rebrancher les écouteurs à ce moment-là (popupopen), pas à
     // la création du marqueur (le DOM du popup n'existe pas encore).
     marker.on("popupopen", (e) => {
+      if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
       e.popup.getElement().querySelectorAll(".btn-itineraire").forEach((btn) => {
         btn.addEventListener("click", () => afficherItineraireVersCommodite(btn, idPopupItineraire));
       });
     });
 
-    // Le plus proche a un comportement spécial au clic : trait vers le
-    // lieu de tournage (via Turf, pour la cohérence géographique) + son.
-    if (estPlusProche && lieuActuel) {
-      marker.on("click", () => {
-        if (coucheTraitPlusProche) map.removeLayer(coucheTraitPlusProche);
-        const trait = turf.lineString([
-          [lieuActuel.longitude, lieuActuel.latitude],
-          [item.longitude, item.latitude],
-        ]);
-        coucheTraitPlusProche = L.geoJSON(trait, {
-          style: { color: "#ffd60a", weight: 3, dashArray: "6 6" },
-        }).addTo(map);
-        _jouerSon();
-      });
+    // Le plus proche (selon le mode piéton/voiture choisi, plus de vol
+    // d'oiseau) a une couleur distincte + un son au clic — plus de
+    // trait en pointillés, uniquement demandé pour un lieu précis via
+    // les boutons 🚶/🚗 désormais.
+    if (estPlusProche) {
+      marker.on("click", () => _jouerSon());
     }
 
     clusterActivites.addLayer(marker);
@@ -580,6 +634,44 @@ function afficherCommoditesSurCarte(categorie, items, stats) {
 
   if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   if (state.dernierBounds) document.getElementById("btn-recentrer").classList.remove("hidden");
+}
+
+function _texteHoraires(horaires) {
+  if (typeof OpeningHours === "undefined") return `🕒 ${horaires}`;
+  try {
+    const oh = new OpeningHours(horaires, { lat: 43.9, lon: 2.2 }, { locale: "fr" });
+    const maintenant = new Date();
+    const ouvert = oh.getState(maintenant);
+    const prochainChangement = oh.getNextChange(maintenant);
+    const minutesAvant = prochainChangement
+      ? Math.round((prochainChangement - maintenant) / 60000)
+      : null;
+
+    if (ouvert) {
+      if (minutesAvant !== null && minutesAvant <= 60) {
+        return `🕒 ${horaires} · <span class="statut-ouvert">Ferme dans ${minutesAvant} min</span>`;
+      }
+      return `🕒 ${horaires} · <span class="statut-ouvert">Ouvert</span>`;
+    }
+    if (minutesAvant !== null && minutesAvant <= 60) {
+      return `🕒 ${horaires} · <span class="statut-bientot">Ouvre dans ${minutesAvant} min</span>`;
+    }
+    return `🕒 ${horaires} · <span class="statut-ferme">Fermé</span>`;
+  } catch (e) {
+    // Format d'horaires OSM non standard ou non reconnu — on affiche
+    // juste le texte brut plutôt que de planter.
+    return `🕒 ${horaires}`;
+  }
+}
+
+function _texteDistanceDynamique(item, modeTri) {
+  if (modeTri === "pied" && item.distance_pied_metres != null) {
+    return `${formatDistance(item.distance_pied_metres)} à pied (${formatDuree(item.duree_pied_secondes)})`;
+  }
+  if (modeTri === "voiture" && item.distance_voiture_metres != null) {
+    return `${formatDistance(item.distance_voiture_metres)} en voiture (${formatDuree(item.duree_voiture_secondes)})`;
+  }
+  return formatDistance(item.distance_metres);
 }
 
 function creerResumeRecherche(stats, nombreAffiche) {
@@ -865,9 +957,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  ["filtre-annee", "filtre-departement", "filtre-commune"].forEach((id) => {
+  ["filtre-annee", "filtre-departement", "filtre-commune", "filtre-nationalite"].forEach((id) => {
     document.getElementById(id).addEventListener("change", (e) => {
-      const cle = { "filtre-annee": "annee", "filtre-departement": "departement", "filtre-commune": "commune" }[id];
+      const cle = { "filtre-annee": "annee", "filtre-departement": "departement", "filtre-commune": "commune", "filtre-nationalite": "nationalite" }[id];
       state.filtres[cle] = e.target.value;
       chargerFilms();
     });

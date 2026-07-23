@@ -62,7 +62,11 @@
         <div id="filtres-carte">
           <select id="filtre-annee"><option value="">Année</option></select>
           <select id="filtre-departement"><option value="">Département</option></select>
+          <!-- Filtre commune désactivé temporairement : données Wikidata
+               trop imprécises pour ce niveau de granularité (voir historique).
+               À réactiver une fois une meilleure source trouvée.
           <select id="filtre-commune"><option value="">Commune</option></select>
+          -->
           <select id="filtre-nationalite"><option value="">Nationalité</option></select>
           <button id="filtre-notoriete" data-tri="titre">
             ⭐ Les plus connus
@@ -121,6 +125,7 @@
 
           <div id="popup-actions-globales">
             <button id="btn-trace">🎬 Sur les traces de ce film…</button>
+            <div id="resultat-trace"><!-- rempli au clic --></div>
           </div>
 
           <div id="popup-pub-slot" class="pub-slot">

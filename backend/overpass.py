@@ -275,6 +275,11 @@ def _build_query(
         )
 
     rayon = RAYON_RECHERCHE_M[categorie]
+    # Format décimal fixe : évite la notation scientifique Python sur
+    # les coordonnées très proches de 0 (l'Occitanie est proche du
+    # méridien de Greenwich), qu'Overpass ne saurait pas interpréter.
+    lat = f"{lat:.7f}"
+    lon = f"{lon:.7f}"
     clauses = []
 
     for tag in _CATEGORY_TAGS[categorie]:

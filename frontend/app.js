@@ -168,13 +168,14 @@ async function chargerOptionsFiltres() {
     const data = await res.json();
     remplirSelect("filtre-annee", data.annees, "Année");
     remplirSelect("filtre-departement", data.departements, "Département");
-    remplirSelect("filtre-commune", data.communes, "Commune");
+    remplirSelect("filtre-commune", data.communes, "Commune"); // no-op si l'élément n'existe pas (voir remplirSelect)
     remplirSelect("filtre-nationalite", data.nationalites, "Nationalité");
   } catch (e) { /* champs restent vides, pas bloquant */ }
 }
 
 function remplirSelect(id, valeurs, labelDefaut) {
   const select = document.getElementById(id);
+  if (!select) return; // filtre désactivé (commenté dans le HTML)
   const valeurCourante = select.value;
   select.innerHTML = `<option value="">${labelDefaut}</option>` +
     valeurs.map((v) => `<option value="${v}">${v}</option>`).join("");
@@ -313,6 +314,19 @@ function _accorderNationalite(nationalite, mediaType) {
   return nationalite.split(" / ").map((n) => NATIONALITE_FEMININ[n] || n).join(" / ");
 }
 
+function _rendreVideo(media, nomLieu) {
+  const url = media.url;
+  const idYoutube = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  if (idYoutube) {
+    return `<iframe class="media-video" src="https://www.youtube.com/embed/${idYoutube[1]}" title="${media.legende || nomLieu}" frameborder="0" allowfullscreen loading="lazy"></iframe>`;
+  }
+  const idVimeo = url.match(/vimeo\.com\/(\d+)/);
+  if (idVimeo) {
+    return `<iframe class="media-video" src="https://player.vimeo.com/video/${idVimeo[1]}" title="${media.legende || nomLieu}" frameborder="0" allowfullscreen loading="lazy"></iframe>`;
+  }
+  return `<video class="media-video" src="${url}" controls preload="metadata"></video>`;
+}
+
 function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = film.titre;
@@ -339,10 +353,21 @@ function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;
 
-  // Photo actuelle du lieu (Wikidata P18 ou Wikimedia Commons), si disponible
+  // Galerie photos/vidéos du lieu (nouvelle table lieu_medias) — repli
+  // sur la photo unique (photo_url) si aucun média n'a encore été migré.
   const conteneurPhoto = document.getElementById("popup-photos-lieu");
-  conteneurPhoto.innerHTML = lieu.photo_url
-    ? `<p class="anecdote-titre">📷 Photo actuelle du lieu</p><img src="${lieu.photo_url}" alt="Photo actuelle de ${lieu.nom}" loading="lazy">`
+  const medias = lieu.medias && lieu.medias.length
+    ? lieu.medias
+    : (lieu.photo_url ? [{ type_media: "photo", url: lieu.photo_url, legende: null, source: null }] : []);
+
+  conteneurPhoto.innerHTML = medias.length
+    ? `<p class="anecdote-titre">📷 Photos et vidéos du lieu</p>
+       <div class="galerie-medias">
+         ${medias.map((m) => m.type_media === "video"
+           ? _rendreVideo(m, lieu.nom)
+           : `<img src="${m.url}" alt="${m.legende || lieu.nom}" loading="lazy">`
+         ).join("")}
+       </div>`
     : "";
 
   // Plateformes de streaming — priorité à Amazon Prime / Rakuten /
@@ -710,13 +735,14 @@ async function afficherTraceFilm() {
   const filmId = document.getElementById("popup-overlay").dataset.filmId;
   if (!filmId) return;
 
-  fermerPopup();
+  const conteneurResultat = document.getElementById("resultat-trace");
+  conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Calcul du trajet le plus optimisé…</p>`;
   effacerTrace();
 
   try {
     const res = await fetch(`${API_BASE}/api/films/${filmId}/trace`);
     if (!res.ok) {
-      alert("Tracé impossible pour ce film (un seul lieu recensé, ou erreur serveur).");
+      conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Tracé impossible (un seul lieu recensé, ou erreur serveur).</p>`;
       return;
     }
     const data = await res.json();
@@ -725,19 +751,30 @@ async function afficherTraceFilm() {
       style: { color: "#e63946", weight: 4, opacity: 0.8 },
     }).addTo(map);
 
-    const distanceKm = (data.distance_metres / 1000).toFixed(1);
-    const typeTexte = data.type === "route_reelle"
-      ? `Itinéraire routier réel : ${distanceKm} km`
-      : `Estimation à vol d'oiseau : ${distanceKm} km (itinéraire routier indisponible)`;
+    // Un marqueur numéroté (1, 2, 3…) par étape, dans l'ordre du trajet optimisé
+    data.etapes.forEach((etape, index) => {
+      const icone = L.divIcon({
+        html: `<div class="numero-etape">${index + 1}</div>`,
+        className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+      });
+      L.marker([etape.latitude, etape.longitude], { icon: icone }).addTo(map);
+    });
 
-    L.popup()
-      .setLatLng(state.traceLayer.getBounds().getCenter())
-      .setContent(`<b>${typeTexte}</b>`)
-      .openOn(map);
+    const distanceKm = (data.distance_metres / 1000).toFixed(1);
+    const dureeTxt = data.duree_secondes ? formatDuree(data.duree_secondes) : null;
+    const typeTexte = data.type === "route_reelle"
+      ? `Voici le trajet le plus optimisé en temps et en distance en voiture (${distanceKm} km, environ ${dureeTxt}) :`
+      : `Estimation à vol d'oiseau (${distanceKm} km, itinéraire routier indisponible) :`;
+
+    const listeAdresses = data.adresses.map((adresse, i) => `<li>${adresse}</li>`).join("");
+    conteneurResultat.innerHTML = `
+      <p class="trace-intro">${typeTexte}</p>
+      <ol class="trace-liste">${listeAdresses}</ol>
+    `;
 
     map.fitBounds(state.traceLayer.getBounds(), { padding: [40, 40] });
   } catch (e) {
-    alert("Erreur lors du calcul du tracé.");
+    conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Erreur lors du calcul du tracé.</p>`;
   }
 }
 
@@ -960,7 +997,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   ["filtre-annee", "filtre-departement", "filtre-commune", "filtre-nationalite"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", (e) => {
+    const element = document.getElementById(id);
+    if (!element) return; // filtre désactivé (commenté dans le HTML)
+    element.addEventListener("change", (e) => {
       const cle = { "filtre-annee": "annee", "filtre-departement": "departement", "filtre-commune": "commune", "filtre-nationalite": "nationalite" }[id];
       state.filtres[cle] = e.target.value;
       chargerFilms();

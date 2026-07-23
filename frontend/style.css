@@ -634,6 +634,31 @@ body.page-film-ssr {
 @media (max-width: 600px) {
   #filtres-carte { left: 6px; right: 6px; }
   #filtres-carte select { flex: 1 1 90px; }
+
+  /* La sidebar (cartes films) manquait cruellement de place sur mobile
+     — l'en-tête (titre/recherche/filtres) prenait trop de hauteur au
+     détriment de la liste elle-même. */
+  #sidebar { flex: 0 0 58%; }
+
+  #sidebar-header {
+    padding: 10px 12px 8px;
+  }
+  #sidebar-header h1 { font-size: 1.1rem; }
+  #sidebar-header .sous-titre { display: none; } /* superflu sur petit écran, gagne de la place */
+  #sidebar-header input#recherche-input { padding: 7px 10px; font-size: 0.8rem; margin-top: 6px; }
+  #filtres { margin-top: 6px; }
+  .filtre-btn { padding: 5px 10px; font-size: 0.78rem; }
+  #stats-toggle { padding: 7px; font-size: 0.75rem; margin-top: 6px; }
+
+  /* Cartes films plus compactes et plus lisibles */
+  #cartes-scroll { padding: 6px; }
+  #cartes-liste { gap: 6px; }
+  .carte-film { padding: 6px; gap: 8px; }
+  .carte-film img { width: 46px; height: 68px; }
+  .carte-film .infos h3 { font-size: 0.82rem; }
+  .carte-film .infos .meta { font-size: 0.7rem; }
+  .carte-film .badge-lieux { font-size: 0.68rem; }
+  .carte-film .btn-voir-carte { padding: 5px; font-size: 0.7rem; }
 }
 
 /* ── Calques carte (choroplèthe départements / carte de chaleur) ── */
@@ -812,3 +837,40 @@ body.page-film-ssr {
   color: var(--couleur-accent);
   text-decoration: underline;
 }
+
+/* ── Galerie photos/vidéos du lieu ── */
+.galerie-medias {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+.galerie-medias img,
+.galerie-medias .media-video {
+  flex: 0 0 auto;
+  width: 220px;
+  height: 140px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.galerie-medias .media-video { border: none; }
+
+/* ── Numéros d'étape sur la carte (trace du film) ── */
+.numero-etape {
+  background: #e63946;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  border: 2px solid #fff;
+}
+
+.trace-intro { font-size: 0.85rem; font-weight: 600; margin-top: 10px; margin-bottom: 6px; }
+.trace-liste { padding-left: 20px; font-size: 0.82rem; line-height: 1.6; color: var(--couleur-texte-muted); }

@@ -31,7 +31,7 @@ VITESSE_MARCHE_MS = 5000 / 3600  # 5 km/h — voir note dans main.py
 async def _table_osrm(depart: tuple[float, float], destinations: list[tuple[float, float]], mode: str) -> list[dict | None]:
     profil = _PROFILS[mode]
     tous_points = [depart] + destinations
-    coords = ";".join(f"{lon},{lat}" for lat, lon in tous_points)
+    coords = ";".join(f"{lon:.7f},{lat:.7f}" for lat, lon in tous_points)
     n = len(destinations)
     destinations_idx = ";".join(str(i) for i in range(1, n + 1))
 

@@ -9,6 +9,7 @@ pour le remplissage du cache.
 import os
 import json
 import asyncio
+import itertools
 from datetime import datetime, timezone
 
 import httpx
@@ -433,6 +434,21 @@ async def detail_film(film_id: int):
         """,
         (film_id,),
     )
+
+    if lieux:
+        medias = await fetch_all(
+            """
+            SELECT lieu_tournage_id, type_media, url, legende, source
+            FROM lieu_medias WHERE lieu_tournage_id = ANY(%s) ORDER BY ordre
+            """,
+            ([l["id"] for l in lieux],),
+        )
+        medias_par_lieu: dict[int, list[dict]] = {}
+        for m in medias:
+            medias_par_lieu.setdefault(m["lieu_tournage_id"], []).append(m)
+        for l in lieux:
+            l["medias"] = medias_par_lieu.get(l["id"], [])
+
     plateformes = await _plateformes_streaming(film)
     return {"film": film, "lieux": lieux, "plateformes": plateformes}
 
@@ -569,7 +585,7 @@ def _traduire_manoeuvre(maneuver: dict, nom_rue: str | None) -> str:
 
 async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_etapes: bool = False, tentatives: int = 2) -> dict | None:
     profil = _OSRM_PROFILS.get(mode, "driving")
-    chemin_coords = ";".join(f"{lon},{lat}" for lon, lat in coords_lonlat)
+    chemin_coords = ";".join(f"{lon:.7f},{lat:.7f}" for lon, lat in coords_lonlat)
 
     derniere_erreur = None
     for tentative in range(1, tentatives + 1):
@@ -696,50 +712,76 @@ async def itineraire_point_a_point(
     }
 
 
+async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
+    """
+    Pour un petit nombre de lieux (≤ 8), teste TOUTES les combinaisons
+    d'ordre possibles et garde celle qui minimise le temps de trajet
+    total en voiture (via la matrice OSRM, un seul appel réseau quel
+    que soit le nombre de permutations testées ensuite). Au-delà de 8
+    lieux, le nombre de permutations explose (9! = 362880) — on
+    retombe sur l'heuristique du plus proche voisin, plus rapide bien
+    que légèrement moins optimale.
+    """
+    if len(lieux) > 8:
+        return _ordre_plus_proche_voisin(lieux)
+
+    points = [(float(l["latitude"]), float(l["longitude"])) for l in lieux]
+    matrice = await _table_complete_osrm(points)
+    if matrice is None:
+        return _ordre_plus_proche_voisin(lieux)
+
+    meilleur_ordre = None
+    meilleure_duree = float("inf")
+    for permutation in itertools.permutations(range(len(lieux))):
+        duree = sum(matrice[permutation[i]][permutation[i + 1]] for i in range(len(permutation) - 1))
+        if duree < meilleure_duree:
+            meilleure_duree = duree
+            meilleur_ordre = permutation
+
+    return [lieux[i] for i in meilleur_ordre]
+
+
+async def _table_complete_osrm(points: list[tuple[float, float]]) -> list[list[float]] | None:
+    """Matrice complète des durées (secondes) entre chaque paire de points, en voiture."""
+    coords = ";".join(f"{lon:.7f},{lat:.7f}" for lat, lon in points)
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(f"{OSRM_URL}/table/v1/driving/{coords}", params={"annotations": "duration"})
+            resp.raise_for_status()
+            data = resp.json()
+        return data["durations"]
+    except Exception as e:
+        print(f"⚠️ Table OSRM indisponible (trace complète): {e}", flush=True)
+        return None
+
+
+def _adresse_complete(lieu: dict) -> str:
+    return ", ".join(p for p in (lieu["nom"], lieu.get("commune"), lieu.get("departement")) if p)
+
+
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):
     """
     "Sur les traces de {film}" — relie tous les lieux de tournage d'un
-    film en Occitanie par un itinéraire réel (routes, pas à vol
-    d'oiseau), via OpenRouteService. Si l'API échoue ou n'est pas
-    configurée (ORS_API_KEY manquante), repli en lignes droites avec
-    la distance clairement annoncée comme une estimation.
+    film en Occitanie par le trajet EN VOITURE le plus rapide (pas
+    juste le plus proche voisin), via OSRM. Repli en lignes droites,
+    clairement annoncé comme estimation, si OSRM est indisponible.
     """
     lieux = await fetch_all(
-        "SELECT id, nom, commune, latitude, longitude FROM lieux_tournage WHERE film_id = %s",
+        "SELECT id, nom, commune, departement, latitude, longitude FROM lieux_tournage WHERE film_id = %s",
         (film_id,),
     )
     if len(lieux) < 2:
         raise HTTPException(400, "Ce film n'a qu'un seul lieu recensé — pas de tracé possible.")
 
-    lieux_ordonnes = _ordre_plus_proche_voisin(lieux)
+    lieux_ordonnes = await _ordre_optimise(lieux)
     coords_lonlat = [[float(l["longitude"]), float(l["latitude"])] for l in lieux_ordonnes]
 
     resultat_osrm = await _itineraire_osrm(coords_lonlat, "driving-car")
     if resultat_osrm:
         resultat_osrm["etapes"] = lieux_ordonnes
+        resultat_osrm["adresses"] = [_adresse_complete(l) for l in lieux_ordonnes]
         return resultat_osrm
-
-    if ORS_API_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                resp = await client.post(
-                    "https://api.openrouteservice.org/v2/directions/driving-car/geojson",
-                    headers={"Authorization": ORS_API_KEY},
-                    json={"coordinates": coords_lonlat},
-                )
-                resp.raise_for_status()
-                geojson = resp.json()
-            feature = geojson["features"][0]
-            return {
-                "type": "route_reelle",
-                "geometry": feature["geometry"],
-                "distance_metres": round(feature["properties"]["summary"]["distance"]),
-                "duree_secondes": round(feature["properties"]["summary"]["duration"]),
-                "etapes": lieux_ordonnes,
-            }
-        except Exception as e:
-            print(f"⚠️ OpenRouteService indisponible: {e} → repli ligne droite", flush=True)
 
     # Repli : lignes droites, distance clairement annoncée comme estimation
     distance_totale = sum(
@@ -758,6 +800,7 @@ async def trace_film(film_id: int):
         "distance_metres": round(distance_totale),
         "duree_secondes": None,
         "etapes": lieux_ordonnes,
+        "adresses": [_adresse_complete(l) for l in lieux_ordonnes],
     }
 
 

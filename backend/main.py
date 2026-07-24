@@ -614,6 +614,10 @@ async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_eta
                 "geometry": route["geometry"],
                 "distance_metres": round(route["distance"]),
                 "duree_secondes": duree,
+                "trajets": [
+                    {"distance_metres": round(leg["distance"]), "duree_secondes": round(leg["duration"])}
+                    for leg in route.get("legs", [])
+                ],
             }
             if avec_etapes:
                 etapes = []

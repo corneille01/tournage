@@ -328,6 +328,7 @@ function _rendreVideo(media, nomLieu) {
 }
 
 function ouvrirPopupLieu(film, lieu) {
+  effacerTrace();
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = film.titre;
   document.getElementById("popup-meta").textContent =
@@ -426,6 +427,7 @@ async function afficherCategorie(categorie) {
 
   modeTriCourant = "pied"; // repart du mode par défaut à chaque catégorie choisie
   if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
+  effacerTrace();
 
   document.querySelectorAll("#popup-boutons button").forEach((bouton) => {
     bouton.classList.toggle("actif", bouton.dataset.categorie === categorie);
@@ -729,6 +731,12 @@ function effacerTrace() {
     map.removeLayer(state.traceLayer);
     state.traceLayer = null;
   }
+  if (state.marqueursEtapes) {
+    state.marqueursEtapes.forEach((m) => map.removeLayer(m));
+  }
+  state.marqueursEtapes = [];
+  const conteneurResultat = document.getElementById("resultat-trace");
+  if (conteneurResultat) conteneurResultat.innerHTML = "";
 }
 
 async function afficherTraceFilm() {
@@ -751,13 +759,49 @@ async function afficherTraceFilm() {
       style: { color: "#e63946", weight: 4, opacity: 0.8 },
     }).addTo(map);
 
-    // Un marqueur numéroté (1, 2, 3…) par étape, dans l'ordre du trajet optimisé
-    data.etapes.forEach((etape, index) => {
+    // Un marqueur numéroté (1, 2, 3…) par étape, dans l'ordre du trajet
+    // optimisé — chacun avec un popup vers l'étape suivante (distance/
+    // durée déjà connues via data.trajets, aucun appel réseau en plus).
+    state.marqueursEtapes = data.etapes.map((etape, index) => {
       const icone = L.divIcon({
         html: `<div class="numero-etape">${index + 1}</div>`,
         className: "", iconSize: [28, 28], iconAnchor: [14, 14],
       });
-      L.marker([etape.latitude, etape.longitude], { icon: icone }).addTo(map);
+      const marker = L.marker([etape.latitude, etape.longitude], { icon: icone });
+
+      const estDernierPoint = index === data.etapes.length - 1;
+      const trajetSuivant = !estDernierPoint ? data.trajets?.[index] : null;
+      const etapeSuivante = !estDernierPoint ? data.etapes[index + 1] : null;
+
+      let contenuPopup = `<b>Étape ${index + 1}</b><br>${data.adresses[index]}`;
+      if (trajetSuivant && etapeSuivante) {
+        contenuPopup += `
+          <div class="boutons-itineraire" style="margin-top:8px;">
+            <button class="btn-etape-suivante"
+                    data-lat="${etapeSuivante.latitude}" data-lon="${etapeSuivante.longitude}"
+                    data-distance="${trajetSuivant.distance_metres}" data-duree="${trajetSuivant.duree_secondes}">
+              🚗 Vers l'étape ${index + 2}
+            </button>
+          </div>
+          <div class="itineraire-resultat">
+            ${formatDistance(trajetSuivant.distance_metres)} · ${formatDuree(trajetSuivant.duree_secondes)}
+          </div>
+        `;
+      } else {
+        contenuPopup += `<div class="itineraire-resultat" style="margin-top:6px;">🏁 Dernière étape du trajet</div>`;
+      }
+
+      marker.bindPopup(contenuPopup);
+      marker.on("popupopen", (e) => {
+        const bouton = e.popup.getElement().querySelector(".btn-etape-suivante");
+        if (!bouton) return;
+        bouton.addEventListener("click", () => {
+          demarrerNavigation(parseFloat(bouton.dataset.lat), parseFloat(bouton.dataset.lon), "driving-car");
+        });
+      });
+
+      marker.addTo(map);
+      return marker;
     });
 
     const distanceKm = (data.distance_metres / 1000).toFixed(1);

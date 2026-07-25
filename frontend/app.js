@@ -1180,7 +1180,7 @@ function _gererPositionFiltresAvances() {
 // ════ PUBLICITÉS — mêmes offres Awin que Pelify, rotation 4s (au lieu
 // de 8s sur Pelify), navigable manuellement avec les flèches ════
 const PUBS_PELIFY = [
-  { icon: "🏡", titre: "Festivilla", desc: "Villas de groupe pour anniversaires, EVG/EVJF, séminaires...", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4712338&v=117343&q=599044&r=2932851", image: "https://www.awin1.com/cshow.php?s=4712338&v=117343&q=599044&r=2932851" },
+ 
   { icon: "💡", titre: "Éclairage Déco", desc: "Lustres, suspensions et luminaires design haut de gamme", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4826404&v=128237&q=608878&r=2932851", image: "https://www.awin1.com/cshow.php?s=4826404&v=128237&q=608878&r=2932851" },
   { icon: "🛒", titre: "AliExpress FR", desc: "Des millions de produits à prix direct usine", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3775159&v=26009&q=501388&r=2932851", image: "https://www.awin1.com/cshow.php?s=3775159&v=26009&q=501388&r=2932851" },
   { icon: "🛋️", titre: "Moskera", desc: "Mobilier et décoration d'intérieur", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4814317&v=128253&q=608010&r=2932851", image: "https://www.awin1.com/cshow.php?s=4814317&v=128253&q=608010&r=2932851" },

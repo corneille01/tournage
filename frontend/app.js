@@ -119,7 +119,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -935,7 +935,7 @@ function afficherSectionReservation() {
       devis exact envoyé sous 24h après votre demande.
     </p>
 
-    <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
+    <a class="btn-reserver" href="mailto:blogoos1@gmail.com?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
       📩 Demander un devis pour ce parcours
     </a>
   `;

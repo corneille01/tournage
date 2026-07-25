@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-// CinéTour — analyse.js — Page d'analyse territoriale
+// Pelify Lieux de tournage — analyse.js — Page d'analyse territoriale
 // ═══════════════════════════════════════════════════════════════
 
 async function charger() {
@@ -11,7 +11,9 @@ async function charger() {
   const analyse = await analyseRes.json();
 
   afficherTotaux(stats.totaux);
-  afficherTableau(analyse.par_departement);
+  afficherSyntheseComparative(analyse.synthese_comparative);
+  afficherFilmsNotables(analyse.films_notables);
+  afficherCartesDepartements(analyse.par_departement);
   afficherGrapheLieux(analyse.par_departement);
   afficherGrapheEquipement(analyse.par_departement);
   afficherCompletude(analyse.completude);
@@ -25,18 +27,48 @@ function afficherTotaux(totaux) {
   `;
 }
 
-function afficherTableau(parDepartement) {
-  const tbody = document.querySelector("#table-departements tbody");
-  tbody.innerHTML = parDepartement.map((d) => `
-    <tr>
-      <td><b>${d.departement}</b></td>
-      <td>${d.nb_films}</td>
-      <td>${d.nb_lieux}</td>
-      <td>${d.moy_hebergement ?? "—"}</td>
-      <td>${d.moy_restaurant ?? "—"}</td>
-      <td>${d.lieux_sans_hebergement_5km ?? 0}</td>
-      <td class="recommandation">${d.recommandation}</td>
-    </tr>
+function afficherSyntheseComparative(texte) {
+  const conteneur = document.getElementById("synthese-comparative");
+  if (!texte) { conteneur.innerHTML = ""; return; }
+  conteneur.innerHTML = `
+    <p class="synthese-titre">📊 Ce que montrent les chiffres</p>
+    <p class="synthese-texte">${texte}</p>
+  `;
+}
+
+function afficherFilmsNotables(films) {
+  const conteneur = document.getElementById("films-notables-cartes");
+  if (!films || !films.length) { conteneur.innerHTML = "<p class=\"analyse-note\">Pas encore assez de données de popularité.</p>"; return; }
+
+  conteneur.innerHTML = films.map((f, i) => `
+    <div class="carte-film-notable">
+      <div class="rang-notable">#${i + 1}</div>
+      <img src="${f.poster_url || '/placeholder-poster.png'}" alt="${f.titre}" loading="lazy">
+      <div class="infos-notable">
+        <div class="titre-notable">${f.titre}</div>
+        <div class="meta-notable">${f.annee || "?"} · ${f.media_type === "movie" ? "Film" : f.media_type === "tv" ? "Série" : "Animé"}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function afficherCartesDepartements(parDepartement) {
+  const conteneur = document.getElementById("cartes-departements");
+  conteneur.innerHTML = parDepartement.map((d) => `
+    <div class="carte-departement">
+      <div class="entete-departement">
+        <h3>${d.departement}</h3>
+        <span class="part-departement">${d.part_pourcentage}% du total régional</span>
+      </div>
+      <div class="chiffres-departement">
+        <div><span class="chiffre">${d.nb_films}</span><span class="libelle-chiffre">films/séries</span></div>
+        <div><span class="chiffre">${d.nb_lieux}</span><span class="libelle-chiffre">lieux</span></div>
+        <div><span class="chiffre">${d.moy_hebergement ?? "—"}</span><span class="libelle-chiffre">hébergements (moy.)</span></div>
+        <div><span class="chiffre">${d.moy_restaurant ?? "—"}</span><span class="libelle-chiffre">restaurants (moy.)</span></div>
+        <div><span class="chiffre">${d.lieux_sans_hebergement_5km ?? 0}</span><span class="libelle-chiffre">lieux isolés</span></div>
+      </div>
+      <p class="interpretation-departement">${d.recommandation}</p>
+    </div>
   `).join("");
 }
 
@@ -49,7 +81,7 @@ function afficherGrapheLieux(parDepartement) {
       datasets: [{
         label: "Lieux de tournage",
         data: parDepartement.map((d) => d.nb_lieux),
-        backgroundColor: "#e63946",
+        backgroundColor: "#ff007f",
       }],
     },
     options: {
@@ -61,6 +93,12 @@ function afficherGrapheLieux(parDepartement) {
       },
     },
   });
+
+  const premier = parDepartement[0];
+  const dernier = parDepartement[parDepartement.length - 1];
+  document.getElementById("interpretation-lieux").textContent = premier && dernier
+    ? `Lecture objective : ${premier.departement} arrive en tête avec ${premier.nb_lieux} lieux recensés (${premier.part_pourcentage}% du total), ${dernier.departement} ferme la marche avec ${dernier.nb_lieux} (${dernier.part_pourcentage}%). Cet écart reflète la donnée actuellement en base, pas nécessairement le potentiel réel de chaque territoire — certains départements sont probablement sous-représentés faute de données Wikidata complètes.`
+    : "";
 }
 
 function afficherGrapheEquipement(parDepartement) {
@@ -73,24 +111,32 @@ function afficherGrapheEquipement(parDepartement) {
         {
           label: "Hébergements (moy.)",
           data: parDepartement.map((d) => d.moy_hebergement || 0),
-          backgroundColor: "#2a9d8f",
+          backgroundColor: "#00ffcc",
         },
         {
           label: "Restaurants (moy.)",
           data: parDepartement.map((d) => d.moy_restaurant || 0),
-          backgroundColor: "#e76f51",
+          backgroundColor: "#ffd700",
         },
       ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: "#f2f2f2" } } },
+      plugins: { legend: { labels: { color: "#dde4f0" } } },
       scales: {
         x: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
         y: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
       },
     },
   });
+
+  const mieuxEquipe = [...parDepartement].filter((d) => d.moy_hebergement != null)
+    .sort((a, b) => b.moy_hebergement - a.moy_hebergement)[0];
+  const moinsEquipe = [...parDepartement].filter((d) => d.moy_hebergement != null)
+    .sort((a, b) => a.moy_hebergement - b.moy_hebergement)[0];
+  document.getElementById("interpretation-equipement").textContent = mieuxEquipe && moinsEquipe
+    ? `Lecture objective : ${mieuxEquipe.departement} offre le plus d'hébergements à proximité de ses lieux de tournage (${mieuxEquipe.moy_hebergement} en moyenne), contre ${moinsEquipe.moy_hebergement} pour ${moinsEquipe.departement} — un département avec peu de lieux mais bien équipés (comme des zones urbaines) peut être plus facile à valoriser rapidement qu'un département avec beaucoup de lieux mal desservis.`
+    : "";
 }
 
 function afficherCompletude(c) {

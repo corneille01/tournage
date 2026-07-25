@@ -237,13 +237,14 @@ function afficherCartesFilms(films) {
   document.getElementById("cartes-vide").classList.toggle("hidden", films.length > 0);
 
   films.forEach((film) => {
+    const titreCarte = film.i18n?.[langueCourante]?.titre || film.titre;
     const div = document.createElement("div");
     div.className = "carte-film";
     div.dataset.filmId = film.id;
     div.innerHTML = `
-      <img src="${film.poster_url || '/placeholder-poster.png'}" alt="${film.titre}" loading="lazy">
+      <img src="${film.poster_url || '/placeholder-poster.png'}" alt="${titreCarte}" loading="lazy">
       <div class="infos">
-        <h3>${film.titre}</h3>
+        <h3>${titreCarte}</h3>
         <div class="meta">${labelMediaType(film.media_type)} · ${film.annee || "?"}</div>
         <div class="badge-lieux">📍 ${film.nb_lieux} lieu${film.nb_lieux > 1 ? "x" : ""} de tournage</div>
       </div>
@@ -360,25 +361,35 @@ function _rendreVideo(media, nomLieu) {
 
 function ouvrirPopupLieu(film, lieu) {
   effacerTrace();
+
+  // Traduction disponible pour la langue du navigateur, sinon repli
+  // français — jamais de contenu manquant, juste moins traduit.
+  const filmTexte = film.i18n?.[langueCourante] || {};
+  const lieuTexte = lieu.i18n?.[langueCourante] || {};
+  const titreAffiche = filmTexte.titre || film.titre;
+  const synopsisAffiche = filmTexte.synopsis || film.synopsis;
+  const anecdoteAffichee = lieuTexte.anecdote || lieu.anecdote;
+  const descriptionLieuAffichee = lieuTexte.description_wikipedia || lieu.description_wikipedia;
+
   document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
-  document.getElementById("popup-titre").textContent = film.titre;
+  document.getElementById("popup-titre").textContent = titreAffiche;
   document.getElementById("popup-meta").textContent =
     `${labelMediaType(film.media_type)}${film.nationalite ? " " + _accorderNationalite(film.nationalite, film.media_type) : ""} · ${film.annee || "année inconnue"}`;
   document.getElementById("popup-adresse").textContent =
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
   document.getElementById("popup-synopsis").textContent =
-    lieu.description || film.synopsis || "Aucune description disponible.";
+    lieu.description || synopsisAffiche || "Aucune description disponible.";
 
   const conteneurAnecdote = document.getElementById("popup-anecdote");
-  conteneurAnecdote.innerHTML = lieu.anecdote
+  conteneurAnecdote.innerHTML = anecdoteAffichee
     ? `<p class="anecdote-titre">🎬 Anecdote de tournage</p>
-       <div class="anecdote-texte scrollable">${lieu.anecdote}</div>
+       <div class="anecdote-texte scrollable">${anecdoteAffichee}</div>
        ${lieu.source_anecdote ? `<a class="anecdote-source" href="${lieu.source_anecdote}" target="_blank" rel="noopener noreferrer">Source</a>` : ""}`
     : "";
 
   const conteneurDescriptionLieu = document.getElementById("popup-description-lieu");
-  conteneurDescriptionLieu.innerHTML = lieu.description_wikipedia
-    ? `<p class="anecdote-titre">📍 À propos de ce lieu</p><p class="anecdote-texte">${lieu.description_wikipedia}</p>`
+  conteneurDescriptionLieu.innerHTML = descriptionLieuAffichee
+    ? `<p class="anecdote-titre">📍 À propos de ce lieu</p><p class="anecdote-texte">${descriptionLieuAffichee}</p>`
     : "";
 
   document.getElementById("popup-resultats").innerHTML = "";

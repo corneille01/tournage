@@ -83,3 +83,81 @@ canvas { max-width: 100%; }
 @media (max-width: 600px) {
   .analyse-header h1 { font-size: 1.2rem; }
 }
+
+/* ── Synthèse comparative (bandeau mis en avant) ── */
+.carte-synthese {
+  background: linear-gradient(135deg, rgba(255,0,127,0.12), rgba(0,255,204,0.08));
+  border: 1px solid var(--couleur-accent);
+  border-radius: 12px;
+  padding: 16px;
+}
+.synthese-titre { font-family: var(--font-display); font-size: 0.95rem; margin-bottom: 6px; color: var(--primary); }
+.synthese-texte { font-size: 0.9rem; line-height: 1.5; }
+
+/* ── Films les plus reconnus ── */
+.cartes-films-notables {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.carte-film-notable {
+  flex: 0 0 130px;
+  position: relative;
+}
+.carte-film-notable img { width: 100%; height: 190px; object-fit: cover; border-radius: 10px; }
+.rang-notable {
+  position: absolute;
+  top: 6px; left: 6px;
+  background: var(--gold);
+  color: #050508;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.titre-notable { font-size: 0.78rem; font-weight: 600; margin-top: 6px; line-height: 1.3; }
+.meta-notable { font-size: 0.7rem; color: var(--couleur-texte-muted); }
+
+/* ── Cartes départements (remplace le tableau) ── */
+.cartes-departements {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.carte-departement {
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.entete-departement { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.entete-departement h3 { font-family: var(--font-display); font-size: 1rem; }
+.part-departement { font-size: 0.7rem; color: var(--primary); font-weight: 600; }
+
+.chiffres-departement {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chiffres-departement > div { text-align: center; }
+.chiffre { display: block; font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--couleur-texte); }
+.libelle-chiffre { font-size: 0.62rem; color: var(--couleur-texte-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+
+.interpretation-departement {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--couleur-texte-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.interpretation-graphe {
+  font-size: 0.8rem;
+  color: var(--couleur-texte-muted);
+  margin-top: 8px;
+  line-height: 1.4;
+  font-style: italic;
+}

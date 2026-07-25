@@ -116,7 +116,7 @@ async def liste_films(
     films = await fetch_all(
         f"""
         SELECT f.id, f.titre, f.titre_original, f.media_type, f.annee, f.poster_url,
-               f.popularite, COUNT(lt.id) AS nb_lieux
+               f.popularite, f.i18n, COUNT(lt.id) AS nb_lieux
         FROM films f
         LEFT JOIN lieux_tournage lt ON lt.film_id = f.id
         WHERE {where}
@@ -126,6 +126,8 @@ async def liste_films(
         """,
         (*params, par_page, offset),
     )
+    for f in films:
+        f["i18n"] = _parser_json(f.get("i18n"))
     return {"films": films, "page": page}
 
 
@@ -243,22 +245,39 @@ def _recommandation_departement(d: dict) -> str:
     Traduction en texte des indicateurs bruts, dans l'esprit "outil
     d'aide à la décision" plutôt que "carte sympa" : quelques règles
     simples plutôt qu'un score composite arbitraire, faciles à
-    expliquer et à faire évoluer avec l'Agence Unique.
+    expliquer et à faire évoluer avec l'Agence Unique. Les chiffres
+    réels sont cités dans le texte, pas juste une étiquette qualitative.
     """
     nb_lieux = d["nb_lieux"] or 0
     moy_heberg = d["moy_hebergement"] or 0
     moy_resto = d["moy_restaurant"] or 0
     lieux_isoles = d["lieux_sans_hebergement_5km"] or 0
+    part_isoles = round(100 * lieux_isoles / nb_lieux) if nb_lieux else 0
 
     if nb_lieux == 0:
         return "Aucune donnée suffisante pour ce département."
     if moy_heberg >= 3 and moy_resto >= 3:
-        return "Bien équipé en moyenne — valorisation immédiate possible (circuit ciné-touristique)."
-    if lieux_isoles > nb_lieux / 2:
-        return "Plus de la moitié des lieux sont isolés (aucun hébergement à moins de 5 km) — aménagement ou signalétique à prévoir avant toute promotion."
+        return (
+            f"Avec {moy_heberg} hébergements et {moy_resto} restaurants en moyenne à proximité des "
+            f"{nb_lieux} lieux recensés, ce département est bien équipé pour une valorisation "
+            f"touristique immédiate (circuit ciné-touristique, signalétique) sans investissement préalable."
+        )
+    if part_isoles > 50:
+        return (
+            f"{part_isoles}% des {nb_lieux} lieux recensés ({lieux_isoles} sur {nb_lieux}) n'ont "
+            f"aucun hébergement à moins de 5 km — un aménagement (hébergement, signalétique, accès) "
+            f"est nécessaire avant toute promotion touristique de ces sites."
+        )
     if moy_heberg < 1:
-        return "Faible densité d'hébergement — potentiel réel mais nécessite des partenariats avec des hébergeurs avant une valorisation touristique large."
-    return "Équipement intermédiaire — à évaluer au cas par cas selon les lieux les plus emblématiques."
+        return (
+            f"Avec seulement {moy_heberg} hébergement en moyenne à proximité des {nb_lieux} lieux, "
+            f"le potentiel ciné-touristique existe mais nécessite des partenariats avec des "
+            f"hébergeurs locaux avant une valorisation à grande échelle."
+        )
+    return (
+        f"Équipement intermédiaire ({moy_heberg} hébergements, {moy_resto} restaurants en moyenne "
+        f"pour {nb_lieux} lieux) — à évaluer au cas par cas selon les lieux les plus emblématiques."
+    )
 
 
 @app.get("/api/lieux/tous-points")
@@ -311,10 +330,39 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
     )
 
     resultat = []
+    total_lieux_region = sum(d["nb_lieux"] for d in par_departement) or 1
     for d in par_departement:
         d = dict(d)
+        d["part_pourcentage"] = round(100 * d["nb_lieux"] / total_lieux_region, 1)
         d["recommandation"] = _recommandation_departement(d)
         resultat.append(d)
+
+    # Films les plus reconnus (popularité TMDB) — pour la section dédiée
+    # de la page d'analyse, distincte de la comparaison territoriale.
+    films_notables = await fetch_all(
+        """
+        SELECT id, titre, annee, media_type, poster_url, popularite
+        FROM films
+        WHERE region = %s AND statut = 'publie' AND popularite IS NOT NULL
+        ORDER BY popularite DESC
+        LIMIT 10
+        """,
+        (region,),
+    )
+
+    # Synthèse comparative chiffrée : pourquoi le 1er département est
+    # plus sollicité que le dernier, en s'appuyant uniquement sur des
+    # chiffres déjà présents en base (pas d'affirmation non vérifiable).
+    synthese_comparative = None
+    if len(resultat) >= 2:
+        premier, dernier = resultat[0], resultat[-1]
+        ratio = round(premier["nb_lieux"] / dernier["nb_lieux"], 1) if dernier["nb_lieux"] else None
+        synthese_comparative = (
+            f"{premier['departement']} concentre {premier['nb_lieux']} lieux de tournage recensés "
+            f"({premier['part_pourcentage']}% du total régional), contre seulement {dernier['nb_lieux']} "
+            f"pour {dernier['departement']} ({dernier['part_pourcentage']}%)"
+            + (f" — soit {ratio} fois plus de lieux." if ratio else ".")
+        )
 
     # Films sans coordonnées / sans image / non validés — complétude
     # des données, utile pour prioriser le travail éditorial restant.
@@ -329,7 +377,12 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
         (region, region, region),
     )
 
-    return {"par_departement": resultat, "completude": completude}
+    return {
+        "par_departement": resultat,
+        "completude": completude,
+        "films_notables": films_notables,
+        "synthese_comparative": synthese_comparative,
+    }
 
 
 # ── Détail d'un film + ses lieux de tournage ─────────────────────
@@ -417,6 +470,20 @@ async def _sauvegarder_plateformes_cache(film_id: int, plateformes: list[dict]) 
         print(f"⚠️ Cache plateformes non sauvegardé pour film {film_id}: {e}", flush=True)
 
 
+def _parser_json(valeur):
+    """asyncpg renvoie JSONB comme une chaîne brute par défaut (pas de
+    codec enregistré) — on la parse nous-mêmes avant de la renvoyer,
+    sinon le frontend recevrait une chaîne au lieu d'un objet."""
+    if not valeur:
+        return None
+    if isinstance(valeur, str):
+        try:
+            return json.loads(valeur)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return valeur
+
+
 @app.get("/api/films/{film_id}")
 async def detail_film(film_id: int):
     film = await fetch_one(
@@ -424,16 +491,19 @@ async def detail_film(film_id: int):
     )
     if not film:
         raise HTTPException(404, "Film introuvable")
+    film["i18n"] = _parser_json(film.get("i18n"))
 
     lieux = await fetch_all(
         """
         SELECT id, nom, description, commune, departement,
-               latitude, longitude, photo_url, anecdote, source_anecdote, description_wikipedia
+               latitude, longitude, photo_url, anecdote, source_anecdote, description_wikipedia, i18n
         FROM lieux_tournage
         WHERE film_id = %s
         """,
         (film_id,),
     )
+    for l in lieux:
+        l["i18n"] = _parser_json(l.get("i18n"))
 
     if lieux:
         medias = await fetch_all(

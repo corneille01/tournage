@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-<meta name="description" content="Comparaison des départements d'Occitanie par potentiel ciné-touristique : équipement, densité de services, recommandations.">
+<meta name="description" content="Analyse territoriale du potentiel ciné-touristique en Occitanie : équipement réel, comparaison chiffrée entre départements, aide à la décision pour les acteurs publics.">
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/analyse.css">
 </head>
@@ -17,8 +17,9 @@
   <a href="/" class="ssr-logo">← Pelify Lieux de tournage</a>
   <h1>Analyse territoriale</h1>
   <p class="sous-titre">
-    Comparaison des départements d'Occitanie par potentiel ciné-touristique —
-    équipement réel autour des lieux de tournage, pas seulement leur nombre.
+    Outil d'aide à la décision pour les acteurs publics de l'aménagement
+    touristique : équipement réel autour des lieux de tournage, comparé
+    département par département, avec une lecture objective des chiffres.
   </p>
 </header>
 
@@ -28,38 +29,40 @@
   </section>
 
   <section class="analyse-section">
+    <div id="synthese-comparative" class="carte-synthese"><!-- rempli par analyse.js --></div>
+  </section>
+
+  <section class="analyse-section">
+    <h2>Films et séries les plus reconnus</h2>
+    <p class="analyse-note">
+      Classés par popularité TMDB — un indicateur de notoriété auprès du
+      grand public, utile pour prioriser quels tournages mettre en avant
+      dans une communication touristique.
+    </p>
+    <div id="films-notables-cartes" class="cartes-films-notables"><!-- rempli par analyse.js --></div>
+  </section>
+
+  <section class="analyse-section">
     <h2>Comparaison par département</h2>
     <div class="analyse-note">
       La moyenne d'hébergements/restaurants est calculée sur un rayon de
-      15 km / 8 km autour de chaque lieu (voir <code>RAYON_RECHERCHE_M</code>).
-      "Lieux isolés" = aucun hébergement recensé dans ce rayon.
+      15 km / 8 km autour de chaque lieu. "Lieux isolés" = aucun
+      hébergement recensé dans ce rayon — un signal direct de besoin
+      d'aménagement avant toute valorisation touristique.
     </div>
-    <div class="table-scroll">
-      <table id="table-departements">
-        <thead>
-          <tr>
-            <th>Département</th>
-            <th>Films/séries</th>
-            <th>Lieux</th>
-            <th>Hébergements (moy.)</th>
-            <th>Restaurants (moy.)</th>
-            <th>Lieux isolés</th>
-            <th>Recommandation</th>
-          </tr>
-        </thead>
-        <tbody><!-- rempli par analyse.js --></tbody>
-      </table>
-    </div>
+    <div id="cartes-departements" class="cartes-departements"><!-- rempli par analyse.js --></div>
   </section>
 
   <section class="analyse-section">
     <h2>Nombre de lieux de tournage par département</h2>
     <canvas id="graphe-lieux" height="100"></canvas>
+    <p class="interpretation-graphe" id="interpretation-lieux"><!-- rempli par analyse.js --></p>
   </section>
 
   <section class="analyse-section">
     <h2>Équipement moyen par département (hébergements vs restaurants)</h2>
     <canvas id="graphe-equipement" height="100"></canvas>
+    <p class="interpretation-graphe" id="interpretation-equipement"><!-- rempli par analyse.js --></p>
   </section>
 
   <section class="analyse-section">
@@ -67,18 +70,19 @@
     <div id="completude-contenu"><!-- rempli par analyse.js --></div>
   </section>
 
-  <section class="analyse-section carte-a-venir">
-    <h2>Carte choroplèthe par département</h2>
+  <section class="analyse-section">
+    <h2>Carte interactive</h2>
     <p>
-      En préparation — nécessite le contour GeoJSON officiel des
-      départements d'Occitanie. Une fois disponible : couleur par
-      niveau d'équipement, clic sur un département pour le détail,
-      bouton carte de chaleur des départements les plus sollicités.
+      La choroplèthe par département (couleur selon le nombre de lieux)
+      et la carte de chaleur (densité réelle des points) sont disponibles
+      directement sur la <a href="/">carte principale</a>, boutons en bas
+      à droite.
     </p>
   </section>
 </main>
 
 <script src="/vendor/chartjs/chart.umd.js"></script>
+<script src="/i18n.js" defer></script>
 <script src="/analyse.js" defer></script>
 </body>
 </html>

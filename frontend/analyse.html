@@ -32,6 +32,28 @@
     <div id="synthese-comparative" class="carte-synthese"><!-- rempli par analyse.js --></div>
   </section>
 
+  <!-- ═══ VUE D'ENSEMBLE EN PREMIER : l'internaute comprend le sujet
+       avant d'aller consulter le détail département par département ═══ -->
+  <section class="analyse-section">
+    <h2>Vue d'ensemble — nombre de lieux de tournage par département</h2>
+    <canvas id="graphe-lieux" height="100"></canvas>
+    <p class="interpretation-graphe" id="interpretation-lieux"><!-- rempli par analyse.js --></p>
+  </section>
+
+  <section class="analyse-section">
+    <h2>Vue d'ensemble — équipement moyen par département (hébergements vs restaurants)</h2>
+    <canvas id="graphe-equipement" height="100"></canvas>
+    <p class="interpretation-graphe" id="interpretation-equipement"><!-- rempli par analyse.js --></p>
+    <p class="analyse-note">
+      <b>Comment cette moyenne est calculée :</b> pour chaque lieu de
+      tournage du département, on compte le nombre réel d'hébergements
+      dans un rayon de 15 km et de restaurants dans un rayon de 8 km
+      (données OpenStreetMap), puis on fait la moyenne de ce chiffre
+      sur tous les lieux du département. Un lieu pas encore traité par
+      le calcul est simplement exclu de la moyenne (pas compté comme 0).
+    </p>
+  </section>
+
   <section class="analyse-section">
     <h2>Films et séries les plus reconnus</h2>
     <p class="analyse-note">
@@ -43,26 +65,32 @@
   </section>
 
   <section class="analyse-section">
-    <h2>Comparaison par département</h2>
+    <h2>Accessibilité réelle des lieux les plus connus</h2>
+    <p class="analyse-note">
+      Pour chaque film/série populaire, temps réel en voiture jusqu'à
+      l'hébergement et au restaurant les plus proches (mêmes données
+      que ci-dessus, au niveau du lieu précis cette fois) — l'objectif :
+      identifier les lieux "prêts à valoriser" et ceux qui nécessitent
+      un aménagement avant toute promotion touristique.
+      <br><b>NB :</b> cette analyse ne porte que sur les lieux déjà
+      traités par le précalcul des distances — elle s'enrichira au fur
+      et à mesure, comme le reste du site dépend de la complétude des
+      données Wikidata/Overpass.
+    </p>
+    <h3 class="sous-section-titre">🇫🇷 Films et séries français</h3>
+    <div id="accessibilite-francais" class="cartes-accessibilite"><!-- rempli par analyse.js --></div>
+    <h3 class="sous-section-titre">🌍 Autres nationalités</h3>
+    <div id="accessibilite-autres" class="cartes-accessibilite"><!-- rempli par analyse.js --></div>
+  </section>
+
+  <section class="analyse-section">
+    <h2>Détail par département</h2>
     <div class="analyse-note">
-      La moyenne d'hébergements/restaurants est calculée sur un rayon de
-      15 km / 8 km autour de chaque lieu. "Lieux isolés" = aucun
-      hébergement recensé dans ce rayon — un signal direct de besoin
-      d'aménagement avant toute valorisation touristique.
+      "Lieux isolés" = aucun hébergement recensé dans le rayon de 15 km
+      — un signal direct de besoin d'aménagement avant toute
+      valorisation touristique.
     </div>
     <div id="cartes-departements" class="cartes-departements"><!-- rempli par analyse.js --></div>
-  </section>
-
-  <section class="analyse-section">
-    <h2>Nombre de lieux de tournage par département</h2>
-    <canvas id="graphe-lieux" height="100"></canvas>
-    <p class="interpretation-graphe" id="interpretation-lieux"><!-- rempli par analyse.js --></p>
-  </section>
-
-  <section class="analyse-section">
-    <h2>Équipement moyen par département (hébergements vs restaurants)</h2>
-    <canvas id="graphe-equipement" height="100"></canvas>
-    <p class="interpretation-graphe" id="interpretation-equipement"><!-- rempli par analyse.js --></p>
   </section>
 
   <section class="analyse-section">

@@ -359,8 +359,18 @@ function _rendreVideo(media, nomLieu) {
   return `<video class="media-video" src="${url}" controls preload="metadata"></video>`;
 }
 
+let dernierLieuOuvertId = null;
+let derniereCategorieAffichee = null;
+
 function ouvrirPopupLieu(film, lieu) {
   effacerTrace();
+  document.getElementById("section-reservation").innerHTML = "";
+
+  // Même lieu rouvert : on garde l'état (catégorie sélectionnée,
+  // résultats déjà affichés). Lieu différent : on repart à zéro.
+  const memeLieu = lieu.id === dernierLieuOuvertId;
+  dernierLieuOuvertId = lieu.id;
+  if (!memeLieu) derniereCategorieAffichee = null;
 
   // Traduction disponible pour la langue du navigateur, sinon repli
   // français — jamais de contenu manquant, juste moins traduit.
@@ -377,6 +387,9 @@ function ouvrirPopupLieu(film, lieu) {
     `${labelMediaType(film.media_type)}${film.nationalite ? " " + _accorderNationalite(film.nationalite, film.media_type) : ""} · ${film.annee || "année inconnue"}`;
   document.getElementById("popup-adresse").textContent =
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
+
+  const motType = film.media_type === "movie" ? "ce film" : film.media_type === "tv" ? "cette série" : "cet animé";
+  document.getElementById("btn-trace").querySelector("span").textContent = `Sur les traces de ${motType}…`;
   document.getElementById("popup-synopsis").textContent =
     lieu.description || synopsisAffiche || "Aucune description disponible.";
 
@@ -392,7 +405,7 @@ function ouvrirPopupLieu(film, lieu) {
     ? `<p class="anecdote-titre">📍 À propos de ce lieu</p><p class="anecdote-texte">${descriptionLieuAffichee}</p>`
     : "";
 
-  document.getElementById("popup-resultats").innerHTML = "";
+  if (!memeLieu) document.getElementById("popup-resultats").innerHTML = "";
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;
 
@@ -440,6 +453,9 @@ function ouvrirPopupLieu(film, lieu) {
     `).join("");
   conteneurBoutons.querySelectorAll("button").forEach((btn) => {
     btn.addEventListener("click", () => afficherCategorie(btn.dataset.categorie));
+    if (memeLieu && btn.dataset.categorie === derniereCategorieAffichee) {
+      btn.classList.add("actif");
+    }
   });
 
   document.getElementById("popup-overlay").classList.remove("hidden");
@@ -466,6 +482,8 @@ async function afficherCategorie(categorie) {
   const popupOverlay = document.getElementById("popup-overlay");
   const lieuId = popupOverlay.dataset.lieuId;
   if (!lieuId) return;
+
+  derniereCategorieAffichee = categorie;
 
   modeTriCourant = "pied"; // repart du mode par défaut à chaque catégorie choisie
   if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
@@ -856,12 +874,71 @@ async function afficherTraceFilm() {
     conteneurResultat.innerHTML = `
       <p class="trace-intro">${typeTexte}</p>
       <ol class="trace-liste">${listeAdresses}</ol>
+      <button id="btn-voir-sur-carte" class="btn-voir-sur-carte">🗺️ Voir sur la carte</button>
     `;
+    document.getElementById("btn-voir-sur-carte").addEventListener("click", fermerPopup);
+    afficherSectionReservation();
 
     map.fitBounds(state.traceLayer.getBounds(), { padding: [40, 40] });
   } catch (e) {
     conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Erreur lors du calcul du tracé.</p>`;
   }
+}
+
+function afficherSectionReservation() {
+  const conteneur = document.getElementById("section-reservation");
+  const titre = state.filmSelectionne?.titre || "ce parcours";
+
+  conteneur.innerHTML = `
+    <p class="anecdote-titre">🎟️ Envie de vivre ce parcours sans rien organiser vous-même ?</p>
+    <p class="reservation-intro">
+      Pelify Voyages Cinéma s'occupe de tout, du premier au dernier jour :
+      hébergement, restauration, transport entre les lieux, et une visite
+      guidée qui raconte les coulisses de "${titre}" directement sur place.
+    </p>
+
+    <div class="packs-reservation">
+      <div class="pack-carte">
+        <div class="pack-nom">Découverte</div>
+        <div class="pack-prix">Gratuit</div>
+        <ul class="pack-inclus">
+          <li>✅ Itinéraire optimisé (déjà sous vos yeux)</li>
+          <li>✅ Fiches lieux, anecdotes, adresses</li>
+          <li>❌ Hébergement / repas / transport à votre charge</li>
+        </ul>
+      </div>
+      <div class="pack-carte pack-recommande">
+        <div class="pack-badge">Le plus choisi</div>
+        <div class="pack-nom">Confort</div>
+        <div class="pack-prix">À partir de 89€ / pers.</div>
+        <ul class="pack-inclus">
+          <li>✅ Tout Découverte, plus :</li>
+          <li>✅ Réservation de l'hébergement le mieux placé</li>
+          <li>✅ Table réservée dans les restaurants recommandés</li>
+          <li>✅ Assistance téléphonique pendant le séjour</li>
+        </ul>
+      </div>
+      <div class="pack-carte">
+        <div class="pack-nom">Premium</div>
+        <div class="pack-prix">À partir de 219€ / pers.</div>
+        <ul class="pack-inclus">
+          <li>✅ Tout Confort, plus :</li>
+          <li>✅ Transport organisé entre chaque lieu</li>
+          <li>✅ Guide local sur place pour la visite</li>
+          <li>✅ Accès prioritaire aux sites partenaires</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="reservation-note">
+      Tarifs indicatifs pour un parcours de 2 jours, hors saison haute —
+      devis exact envoyé sous 24h après votre demande.
+    </p>
+
+    <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
+      📩 Demander un devis pour ce parcours
+    </a>
+  `;
 }
 
 function formatDistance(m) {
@@ -882,6 +959,7 @@ function formatDuree(secondes) {
 // viennent d'OSRM (simples : gauche/droite/tout droit), pas aussi
 // riches qu'un GPS dédié. Fonctionne néanmoins pour un usage réel.
 let suiviPositionId = null;
+let coucheMarqueurDepart = null;
 let etapesNavigationCourantes = [];
 let indexEtapeCourante = 0;
 
@@ -924,8 +1002,18 @@ async function demarrerNavigation(destLat, destLon, mode) {
 
     if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
     coucheItineraireCommodite = L.geoJSON(data.geometry, {
-      style: { color: "#ffd60a", weight: 5, opacity: 0.9 },
+      style: { color: "#00ffcc", weight: 5, opacity: 0.9 },
     }).addTo(map);
+
+    // Marqueur du point de départ réel de l'utilisateur — distinct des
+    // icônes de lieu de tournage et de commodité.
+    if (coucheMarqueurDepart) map.removeLayer(coucheMarqueurDepart);
+    coucheMarqueurDepart = L.marker([departLat, departLon], {
+      icon: L.divIcon({
+        html: '<div class="marqueur-depart">📍</div>',
+        className: "", iconSize: [30, 30], iconAnchor: [15, 28],
+      }),
+    }).bindPopup("Votre point de départ").addTo(map);
 
     _parler(etapesNavigationCourantes[0].instruction);
     panneau.querySelector(".nav-instruction").textContent = etapesNavigationCourantes[0].instruction;
@@ -1089,12 +1177,71 @@ function _gererPositionFiltresAvances() {
   media.addEventListener("change", repositionner);
 }
 
+// ════ PUBLICITÉS — mêmes offres Awin que Pelify, rotation 4s (au lieu
+// de 8s sur Pelify), navigable manuellement avec les flèches ════
+const PUBS_PELIFY = [
+  { icon: "🏡", titre: "Festivilla", desc: "Villas de groupe pour anniversaires, EVG/EVJF, séminaires...", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4712338&v=117343&q=599044&r=2932851", image: "https://www.awin1.com/cshow.php?s=4712338&v=117343&q=599044&r=2932851" },
+  { icon: "💡", titre: "Éclairage Déco", desc: "Lustres, suspensions et luminaires design haut de gamme", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4826404&v=128237&q=608878&r=2932851", image: "https://www.awin1.com/cshow.php?s=4826404&v=128237&q=608878&r=2932851" },
+  { icon: "🛒", titre: "AliExpress FR", desc: "Des millions de produits à prix direct usine", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3775159&v=26009&q=501388&r=2932851", image: "https://www.awin1.com/cshow.php?s=3775159&v=26009&q=501388&r=2932851" },
+  { icon: "🛋️", titre: "Moskera", desc: "Mobilier et décoration d'intérieur", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4814317&v=128253&q=608010&r=2932851", image: "https://www.awin1.com/cshow.php?s=4814317&v=128253&q=608010&r=2932851" },
+  { icon: "🔒", titre: "FastestVPN", desc: "Navigation privée et sécurisée — chiffrement 256 bits", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4590561&v=90211&q=566685&r=2932851", image: "https://www.awin1.com/cshow.php?s=4590561&v=90211&q=566685&r=2932851" },
+  { icon: "🎧", titre: "EarFun", desc: "Écouteurs et enceintes sans fil primés", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3996847&v=61233&q=525399&r=2932851", image: "https://www.awin1.com/cshow.php?s=3996847&v=61233&q=525399&r=2932851" },
+  { icon: "🎨", titre: "HTVRont", desc: "Machines, vinyles HTV, vinyles adhésifs et outils créatifs pour personnaliser vos projets", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4819183&v=68106&q=523805&r=2932851", image: "https://www.awin1.com/cshow.php?s=4819183&v=68106&q=523805&r=2932851" },
+];
+
+const _etatsCarrousels = {}; // { "1": { index, intervalId }, "2": {...} }
+
+function _rendreOffrePub(offre) {
+  return `
+    <div class="pub-carte">
+      <img src="${offre.image}" alt="${offre.titre}"
+           onerror="this.outerHTML='<div class=&quot;pub-icone-repli&quot;>${offre.icon}</div>'">
+      <div class="pub-titre">${offre.titre}</div>
+      <div class="pub-desc">${offre.desc}</div>
+      <a href="${offre.url}" target="_blank" rel="sponsored noopener" class="pub-cta">${offre.cta}</a>
+    </div>
+  `;
+}
+
+function _initialiserCarrousel(idCarrousel) {
+  const conteneur = document.getElementById(`carrousel-pub-${idCarrousel}`);
+  if (!conteneur) return;
+  const zoneContenu = conteneur.querySelector(".carrousel-contenu");
+
+  _etatsCarrousels[idCarrousel] = { index: 0, intervalId: null };
+
+  function afficher(index) {
+    _etatsCarrousels[idCarrousel].index = ((index % PUBS_PELIFY.length) + PUBS_PELIFY.length) % PUBS_PELIFY.length;
+    zoneContenu.innerHTML = _rendreOffrePub(PUBS_PELIFY[_etatsCarrousels[idCarrousel].index]);
+  }
+
+  function suivant() { afficher(_etatsCarrousels[idCarrousel].index + 1); _redemarrerAuto(); }
+  function precedent() { afficher(_etatsCarrousels[idCarrousel].index - 1); _redemarrerAuto(); }
+
+  function _redemarrerAuto() {
+    clearInterval(_etatsCarrousels[idCarrousel].intervalId);
+    _etatsCarrousels[idCarrousel].intervalId = setInterval(() => afficher(_etatsCarrousels[idCarrousel].index + 1), 4000);
+  }
+
+  conteneur.querySelector(".carrousel-gauche").addEventListener("click", precedent);
+  conteneur.querySelector(".carrousel-droite").addEventListener("click", suivant);
+
+  afficher(0);
+  _redemarrerAuto();
+}
+
+function initialiserPublicites() {
+  _initialiserCarrousel(1);
+  _initialiserCarrousel(2);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
   chargerContourOccitanie();
   chargerOptionsFiltres();
   chargerFilms();
   _gererPositionFiltresAvances();
+  initialiserPublicites();
 
   document.querySelectorAll(".filtre-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

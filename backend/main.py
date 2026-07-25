@@ -300,6 +300,124 @@ async def tous_les_points(region: str = Query("Occitanie")):
     return {"points": [[float(p["latitude"]), float(p["longitude"])] for p in points]}
 
 
+def _classer_accessibilite(duree_secondes: int | None) -> tuple[str, str]:
+    """
+    Seuils simples et défendables (pas de score composite opaque) :
+    moins de 20 min en voiture = bien desservi, plus de 45 min = isolé.
+    Retourne (étiquette, action recommandée).
+    """
+    if duree_secondes is None:
+        return ("donnée manquante", "Lancer le précalcul des distances pour ce lieu (aucune donnée disponible actuellement).")
+    minutes = duree_secondes / 60
+    if minutes <= 20:
+        return ("bien desservi", "Mettre ce lieu en avant dans la communication — l'expérience touristique y est déjà fluide, sans aménagement préalable nécessaire.")
+    if minutes <= 45:
+        return ("accessibilité modérée", "Signaler clairement les temps de trajet réels aux visiteurs avant leur venue, pour éviter une déception sur place.")
+    return ("isolé", "Nécessite une action avant valorisation : partenariat avec un hébergeur/restaurateur plus proche, navette dédiée, ou signalétique renforcée sur les distances réelles.")
+
+
+@app.get("/api/analyse/accessibilite")
+async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = Query(20)):
+    """
+    Pour les films/séries les plus connus (popularité TMDB), analyse
+    concrète de l'accessibilité réelle en voiture aux commodités
+    essentielles (hébergement, restaurant) — pas juste "il y a des
+    commodités", mais "combien de temps pour s'y rendre en voiture".
+    Sépare le contenu français du reste, comme demandé.
+    """
+    films = await fetch_all(
+        """
+        SELECT id, titre, annee, media_type, poster_url, popularite, nationalite
+        FROM films
+        WHERE region = %s AND statut = 'publie' AND popularite IS NOT NULL
+        ORDER BY popularite DESC
+        LIMIT %s
+        """,
+        (region, limite),
+    )
+
+    resultat = {"francais": [], "autres": []}
+
+    for film in films:
+        lieux = await fetch_all(
+            "SELECT id, nom FROM lieux_tournage WHERE film_id = %s", (film["id"],)
+        )
+        if not lieux:
+            continue
+        lieu_ids = [l["id"] for l in lieux]
+
+        # Le meilleur accès voiture, tous lieux du film confondus (le
+        # touriste choisira naturellement le lieu le plus accessible
+        # s'il y en a plusieurs).
+        meilleur_heberg = await fetch_one(
+            """
+            SELECT nom, distance_voiture_metres, duree_voiture_secondes
+            FROM amenity_cache
+            WHERE lieu_tournage_id = ANY(%s) AND categorie = 'hebergement' AND rang = 1
+            ORDER BY duree_voiture_secondes ASC NULLS LAST LIMIT 1
+            """,
+            (lieu_ids,),
+        )
+        meilleur_resto = await fetch_one(
+            """
+            SELECT nom, distance_voiture_metres, duree_voiture_secondes
+            FROM amenity_cache
+            WHERE lieu_tournage_id = ANY(%s) AND categorie = 'restaurant' AND rang = 1
+            ORDER BY duree_voiture_secondes ASC NULLS LAST LIMIT 1
+            """,
+            (lieu_ids,),
+        )
+
+        # Nombre total de commodités trouvées dans le rayon (densité
+        # réelle, pas seulement le top 10 affiché) — un lieu avec 2
+        # hébergements dans son rayon n'a pas la même marge de
+        # manœuvre qu'un lieu qui en compte 80.
+        stats_globales = await fetch_all(
+            """
+            SELECT categorie, SUM(nombre_total) AS total
+            FROM amenity_stats
+            WHERE lieu_tournage_id = ANY(%s) AND categorie IN ('hebergement', 'restaurant', 'office_tourisme', 'parking')
+            GROUP BY categorie
+            """,
+            (lieu_ids,),
+        )
+        nb_par_categorie = {s["categorie"]: s["total"] for s in stats_globales}
+
+        etiquette_heberg, action_heberg = _classer_accessibilite(
+            meilleur_heberg["duree_voiture_secondes"] if meilleur_heberg else None
+        )
+        etiquette_resto, action_resto = _classer_accessibilite(
+            meilleur_resto["duree_voiture_secondes"] if meilleur_resto else None
+        )
+
+        entree = {
+            "id": film["id"], "titre": film["titre"], "annee": film["annee"],
+            "media_type": film["media_type"], "poster_url": film["poster_url"],
+            "nombre_lieux": len(lieux),
+            "hebergement": {
+                "nom": meilleur_heberg["nom"] if meilleur_heberg else None,
+                "duree_minutes": round(meilleur_heberg["duree_voiture_secondes"] / 60) if meilleur_heberg and meilleur_heberg["duree_voiture_secondes"] else None,
+                "distance_metres": meilleur_heberg["distance_voiture_metres"] if meilleur_heberg else None,
+                "nombre_total_rayon": nb_par_categorie.get("hebergement", 0),
+                "etiquette": etiquette_heberg, "action": action_heberg,
+            },
+            "restaurant": {
+                "nom": meilleur_resto["nom"] if meilleur_resto else None,
+                "duree_minutes": round(meilleur_resto["duree_voiture_secondes"] / 60) if meilleur_resto and meilleur_resto["duree_voiture_secondes"] else None,
+                "distance_metres": meilleur_resto["distance_voiture_metres"] if meilleur_resto else None,
+                "nombre_total_rayon": nb_par_categorie.get("restaurant", 0),
+                "etiquette": etiquette_resto, "action": action_resto,
+            },
+            "office_tourisme_total": nb_par_categorie.get("office_tourisme", 0),
+            "parking_total": nb_par_categorie.get("parking", 0),
+        }
+
+        categorie_liste = "francais" if film["nationalite"] and "Français" in film["nationalite"] else "autres"
+        resultat[categorie_liste].append(entree)
+
+    return resultat
+
+
 @app.get("/api/analyse")
 async def analyse_territoriale(region: str = Query("Occitanie")):
     """

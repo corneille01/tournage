@@ -918,3 +918,91 @@ body.page-film-ssr {
 .trace-liste { padding-left: 20px; font-size: 0.82rem; line-height: 1.6; color: var(--couleur-texte-muted); }
 
 .sous-nom { font-family: var(--font-body); font-size: 0.7rem; color: var(--primary); display: block; font-weight: 600; letter-spacing: 0.5px; }
+
+.marqueur-depart { font-size: 28px; filter: drop-shadow(0 0 6px #00ffcc) drop-shadow(0 2px 3px rgba(0,0,0,0.6)); }
+
+/* ── Section réservation (agence de cinétourisme) ── */
+.btn-voir-sur-carte {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--primary);
+  color: #050508;
+  border: none;
+  padding: 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#section-reservation { max-height: 320px; overflow-y: auto; margin-top: 12px; padding-right: 4px; }
+.reservation-intro { font-size: 0.82rem; line-height: 1.5; margin-bottom: 12px; color: var(--couleur-texte-muted); }
+
+.packs-reservation { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.pack-carte {
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+}
+.pack-recommande { border-color: var(--primary); }
+.pack-badge {
+  position: absolute; top: -9px; right: 10px;
+  background: var(--primary); color: #050508;
+  font-size: 0.62rem; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+}
+.pack-nom { font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 2px; }
+.pack-prix { color: var(--gold); font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+.pack-inclus { list-style: none; font-size: 0.75rem; line-height: 1.7; color: var(--couleur-texte-muted); }
+
+.reservation-note { font-size: 0.68rem; color: var(--couleur-texte-muted); font-style: italic; margin-bottom: 10px; }
+.btn-reserver {
+  display: block;
+  text-align: center;
+  background: linear-gradient(135deg, var(--accent), var(--gold));
+  color: #050508;
+  font-weight: 700;
+  padding: 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+/* ── Carrousel publicitaire (Awin, rotation 4s + flèches) ── */
+.carrousel-pub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0;
+}
+.carrousel-contenu { flex: 1; min-width: 0; }
+.pub-carte {
+  background: linear-gradient(135deg, var(--select-bg), var(--card2));
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+.pub-carte img { max-width: 100%; max-height: 90px; border-radius: 8px; margin-bottom: 10px; }
+.pub-icone-repli { font-size: 2.2rem; margin-bottom: 10px; }
+.pub-titre { color: var(--primary); font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 4px; }
+.pub-desc { color: var(--couleur-texte-muted); font-size: 0.75rem; margin-bottom: 10px; }
+.pub-cta {
+  display: inline-block;
+  background: var(--primary);
+  color: #050508;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+.carrousel-fleche {
+  flex: 0 0 auto;
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  color: var(--couleur-texte);
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+}

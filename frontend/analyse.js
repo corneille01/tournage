@@ -3,20 +3,62 @@
 // ═══════════════════════════════════════════════════════════════
 
 async function charger() {
-  const [statsRes, analyseRes] = await Promise.all([
+  const [statsRes, analyseRes, accessibiliteRes] = await Promise.all([
     fetch("/api/stats"),
     fetch("/api/analyse"),
+    fetch("/api/analyse/accessibilite"),
   ]);
   const stats = await statsRes.json();
   const analyse = await analyseRes.json();
+  const accessibilite = await accessibiliteRes.json();
 
   afficherTotaux(stats.totaux);
   afficherSyntheseComparative(analyse.synthese_comparative);
   afficherFilmsNotables(analyse.films_notables);
+  afficherAccessibilite("accessibilite-francais", accessibilite.francais);
+  afficherAccessibilite("accessibilite-autres", accessibilite.autres);
   afficherCartesDepartements(analyse.par_departement);
   afficherGrapheLieux(analyse.par_departement);
   afficherGrapheEquipement(analyse.par_departement);
   afficherCompletude(analyse.completude);
+}
+
+function afficherAccessibilite(idConteneur, entrees) {
+  const conteneur = document.getElementById(idConteneur);
+  if (!entrees || !entrees.length) {
+    conteneur.innerHTML = `<p class="analyse-note">Pas encore de données d'accessibilité pour cette catégorie.</p>`;
+    return;
+  }
+
+  conteneur.innerHTML = entrees.map((e) => {
+    const couleurHeberg = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" }[e.hebergement.etiquette] || "#6b7280";
+    const couleurResto = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" }[e.restaurant.etiquette] || "#6b7280";
+
+    return `
+      <div class="carte-accessibilite">
+        <div class="entete-accessibilite">
+          <img src="${e.poster_url || '/placeholder-poster.png'}" alt="${e.titre}">
+          <div>
+            <div class="titre-accessibilite">${e.titre}</div>
+            <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""}</div>
+          </div>
+        </div>
+        <div class="indicateur-accessibilite" style="border-color:${couleurHeberg}">
+          <b>🏨 Hébergement le plus proche :</b>
+          ${e.hebergement.nom ? `${e.hebergement.nom} — ${e.hebergement.duree_minutes} min en voiture (${(e.hebergement.distance_metres / 1000).toFixed(1)} km), ${e.hebergement.nombre_total_rayon} au total dans le rayon` : "Donnée non disponible"}
+          <span class="etiquette-accessibilite" style="color:${couleurHeberg}">${e.hebergement.etiquette}</span>
+          <p class="action-accessibilite">→ ${e.hebergement.action}</p>
+        </div>
+        <div class="indicateur-accessibilite" style="border-color:${couleurResto}">
+          <b>🍽️ Restaurant le plus proche :</b>
+          ${e.restaurant.nom ? `${e.restaurant.nom} — ${e.restaurant.duree_minutes} min en voiture (${(e.restaurant.distance_metres / 1000).toFixed(1)} km), ${e.restaurant.nombre_total_rayon} au total dans le rayon` : "Donnée non disponible"}
+          <span class="etiquette-accessibilite" style="color:${couleurResto}">${e.restaurant.etiquette}</span>
+          <p class="action-accessibilite">→ ${e.restaurant.action}</p>
+        </div>
+        <div class="stats-secondaires">ℹ️ ${e.office_tourisme_total} offices de tourisme · 🅿️ ${e.parking_total} parkings dans le rayon</div>
+      </div>
+    `;
+  }).join("");
 }
 
 function afficherTotaux(totaux) {

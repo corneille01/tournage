@@ -161,3 +161,33 @@ canvas { max-width: 100%; }
   line-height: 1.4;
   font-style: italic;
 }
+
+.sous-section-titre { font-family: var(--font-display); font-size: 0.85rem; margin: 16px 0 8px; color: var(--primary); }
+
+.cartes-accessibilite {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.carte-accessibilite {
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.entete-accessibilite { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.entete-accessibilite img { width: 44px; height: 64px; object-fit: cover; border-radius: 6px; }
+.titre-accessibilite { font-weight: 700; font-size: 0.85rem; }
+.meta-accessibilite { font-size: 0.7rem; color: var(--couleur-texte-muted); }
+
+.indicateur-accessibilite {
+  border-left: 3px solid;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.etiquette-accessibilite { display: block; font-weight: 700; text-transform: uppercase; font-size: 0.68rem; margin-top: 2px; }
+.action-accessibilite { color: var(--couleur-texte-muted); font-size: 0.74rem; margin-top: 4px; font-style: italic; }
+.stats-secondaires { font-size: 0.72rem; color: var(--couleur-texte-muted); }

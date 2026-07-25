@@ -1,15 +1,39 @@
 :root {
+  /* ── Thème Pelify ── */
+  --primary: #00ffcc;
+  --accent: #ff007f;
+  --gold: #ffd700;
+  --bg: #050508;
+  --card: #0d0d14;
+  --card2: #13131e;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #dde4f0;
+  --muted: #6b7280;
+  --select-bg: #1a1a2e;
+  --select-text: #dde4f0;
+  --error-bg: rgba(255, 60, 60, 0.1);
+  --error-border: rgba(255, 60, 60, 0.35);
+  --error-text: #ff6b6b;
+  --font-display: "Orbitron", sans-serif;
+  --font-body: "Rajdhani", sans-serif;
+
+  /* ── Alias : tout le CSS existant utilise ces noms, on les fait
+     pointer vers le thème Pelify ci-dessus plutôt que de réécrire
+     chaque règle une par une. ── */
   --sidebar-width: 380px;
   --header-height: auto;
-  --couleur-fond: #0f1115;
-  --couleur-carte: #1a1d24;
-  --couleur-accent: #e63946;
-  --couleur-texte: #f2f2f2;
-  --couleur-texte-muted: #9a9ea8;
-  --rayon: 2px;
+  --couleur-fond: var(--bg);
+  --couleur-carte: var(--card);
+  --couleur-accent: var(--accent);
+  --couleur-texte: var(--text);
+  --couleur-texte-muted: var(--muted);
+  --rayon: 12px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+body { font-family: var(--font-body); }
+h1, h2, h3, .anecdote-titre, .nav-instruction { font-family: var(--font-display); }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -65,7 +89,7 @@ body {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte-muted);
   padding: 6px 12px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -108,7 +132,7 @@ body {
   width: 56px;
   height: 84px;
   object-fit: cover;
-  border-radius: var(--rayon);
+  border-radius: 6px;
   flex: 0 0 auto;
   background: #2a2d35;
 }
@@ -166,7 +190,7 @@ body {
   background: var(--couleur-fond);
   width: 100%;
   max-height: 85vh;
-  border-radius: var(--rayon) var(--rayon) 0 0;
+  border-radius: 16px 16px 0 0;
   overflow-y: auto;
   position: relative;
   padding-bottom: 20px;
@@ -179,7 +203,7 @@ body {
   background: rgba(0,0,0,0.5);
   color: #fff;
   border: none;
-  border-radius: var(--rayon);
+  border-radius: 50%;
   width: 34px;
   height: 34px;
   font-size: 1rem;
@@ -218,7 +242,7 @@ body {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 10px 8px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.8rem;
   cursor: pointer;
   text-align: left;
@@ -231,7 +255,7 @@ body {
 
 .resultat-item {
   background: var(--couleur-carte);
-  border-radius: var(--rayon);
+  border-radius: 10px;
   padding: 10px;
 }
 .resultat-item .nom { font-weight: 600; font-size: 0.9rem; }
@@ -244,7 +268,7 @@ body {
   color: var(--couleur-texte);
   background: rgba(230,57,70,0.12);
   padding: 8px 10px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   margin-bottom: 10px;
 }
 
@@ -266,7 +290,7 @@ body {
   #popup-lieu {
     width: 480px;
     max-height: 80vh;
-    border-radius: var(--rayon);
+    border-radius: 16px;
   }
 }
 
@@ -306,7 +330,7 @@ body.page-film-ssr {
   background: var(--couleur-accent);
   color: #fff;
   padding: 12px 18px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   text-decoration: none;
   font-weight: 600;
 }
@@ -344,7 +368,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 9px 12px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
 }
 #recherche-input::placeholder { color: var(--couleur-texte-muted); }
@@ -361,7 +385,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 7px 4px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   min-width: 0;
 }
@@ -374,7 +398,7 @@ body.page-film-ssr {
   border: 1px dashed #3a3d45;
   color: var(--couleur-texte-muted);
   padding: 8px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.78rem;
   cursor: pointer;
 }
@@ -411,7 +435,7 @@ body.page-film-ssr {
   border: 1px solid var(--couleur-accent);
   color: var(--couleur-accent);
   padding: 6px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   cursor: pointer;
 }
@@ -442,7 +466,7 @@ body.page-film-ssr {
   align-items: center;
   gap: 5px;
   background: var(--couleur-carte);
-  border-radius: var(--rayon);
+  border-radius: 8px;
   padding: 4px 8px;
   font-size: 0.72rem;
   text-decoration: none;
@@ -454,7 +478,7 @@ body.page-film-ssr {
 #popup-photos-lieu { margin-bottom: 12px; }
 #popup-photos-lieu img {
   width: 100%;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   max-height: 180px;
   object-fit: cover;
 }
@@ -476,7 +500,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 11px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -488,7 +512,7 @@ body.page-film-ssr {
   margin-top: 16px;
   padding: 10px;
   border: 1px dashed #3a3d45;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   text-align: center;
   font-size: 0.7rem;
   color: var(--couleur-texte-muted);
@@ -510,7 +534,7 @@ body.page-film-ssr {
   color: #333;
   background: #f5f7fa;
   border-left: 4px solid #3388ff;
-  border-radius: var(--rayon);
+  border-radius: 6px;
   font-size: 0.9rem;
   line-height: 1.45;
 }
@@ -531,7 +555,7 @@ body.page-film-ssr {
   border: none;
   color: #fff;
   padding: 9px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.78rem;
   text-decoration: none;
   text-align: center;
@@ -546,7 +570,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 9px 12px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
 }
 #sidebar-header input#recherche-input::placeholder { color: var(--couleur-texte-muted); }
@@ -563,7 +587,7 @@ body.page-film-ssr {
   z-index: 1000;
   background: rgba(15,17,21,0.92);
   backdrop-filter: blur(4px);
-  border-radius: var(--rayon);
+  border-radius: 12px;
   padding: 8px;
   display: flex;
   flex-direction: row;
@@ -578,7 +602,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 7px 6px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   min-width: 0;
 }
@@ -589,7 +613,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte-muted);
   padding: 7px 12px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.75rem;
   cursor: pointer;
   white-space: nowrap;
@@ -607,7 +631,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 9px 16px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -639,6 +663,22 @@ body.page-film-ssr {
      — l'en-tête (titre/recherche/filtres) prenait trop de hauteur au
      détriment de la liste elle-même. */
   #sidebar { flex: 0 0 58%; }
+
+  /* Une fois déplacé dans la sidebar par app.js, #filtres-carte n'est
+     plus flottant sur la carte — retour au flux normal du document. */
+  #sidebar-header #filtres-carte {
+    position: static;
+    background: none;
+    backdrop-filter: none;
+    padding: 0;
+    margin-top: 6px;
+    border-radius: 0;
+  }
+  #sidebar-header #filtres-carte select,
+  #sidebar-header #filtre-notoriete {
+    font-size: 0.72rem;
+    padding: 5px 6px;
+  }
 
   #sidebar-header {
     padding: 10px 12px 8px;
@@ -676,7 +716,7 @@ body.page-film-ssr {
   color: var(--couleur-texte);
   border: 1px solid #2a2d35;
   padding: 8px 12px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   cursor: pointer;
   white-space: nowrap;
@@ -718,7 +758,7 @@ body.page-film-ssr {
   width: 100%;
   max-height: 120px;
   object-fit: cover;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   margin-bottom: 6px;
 }
 .horaires { font-size: 0.75rem; color: var(--couleur-texte-muted); margin-top: 2px; }
@@ -734,7 +774,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 6px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.72rem;
   cursor: pointer;
 }
@@ -753,7 +793,7 @@ body.page-film-ssr {
   z-index: 1100;
   background: #1a1d24;
   border: 2px solid #ffd60a;
-  border-radius: var(--rayon);
+  border-radius: 12px;
   padding: 14px;
   text-align: center;
 }
@@ -766,7 +806,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 8px 16px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -776,7 +816,7 @@ body.page-film-ssr {
   color: #0f1115;
   border: none;
   padding: 7px 12px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
@@ -787,7 +827,7 @@ body.page-film-ssr {
 #popup-description-lieu {
   background: rgba(42,157,143,0.08);
   border-left: 3px solid #2a9d8f;
-  border-radius: var(--rayon);
+  border-radius: 6px;
   padding: 10px 12px;
   margin: 10px 0;
 }
@@ -805,7 +845,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 6px 10px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.72rem;
   cursor: pointer;
 }
@@ -851,18 +891,20 @@ body.page-film-ssr {
   flex: 0 0 auto;
   width: 220px;
   height: 140px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   object-fit: cover;
 }
 .galerie-medias .media-video { border: none; }
 
 /* ── Numéros d'étape sur la carte (trace du film) ── */
 .numero-etape {
+  position: relative;
+  z-index: 10000; /* toujours au-dessus des icônes de lieu de tournage */
   background: #e63946;
   color: #fff;
   width: 28px;
   height: 28px;
-  border-radius: var(--rayon);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -874,3 +916,5 @@ body.page-film-ssr {
 
 .trace-intro { font-size: 0.85rem; font-weight: 600; margin-top: 10px; margin-bottom: 6px; }
 .trace-liste { padding-left: 20px; font-size: 0.82rem; line-height: 1.6; color: var(--couleur-texte-muted); }
+
+.sous-nom { font-family: var(--font-body); font-size: 0.7rem; color: var(--primary); display: block; font-weight: 600; letter-spacing: 0.5px; }

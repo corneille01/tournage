@@ -4,6 +4,33 @@
 const API_BASE = "";
 
 // Doit rester synchronisé avec ICONES_CATEGORIE dans backend/overpass.py
+// ════ AMAZON PAR MARCHÉ (détection navigateur) ════
+const AMAZON_DOMAINS = {
+  FR:"www.amazon.fr", BE:"www.amazon.com.be", ES:"www.amazon.es", DE:"www.amazon.de",
+  AT:"www.amazon.de", IT:"www.amazon.it", NL:"www.amazon.nl", SE:"www.amazon.se",
+  PL:"www.amazon.pl", GB:"www.amazon.co.uk", IE:"www.amazon.co.uk", US:"www.amazon.com",
+  CA:"www.amazon.ca", MX:"www.amazon.com.mx", BR:"www.amazon.com.br", JP:"www.amazon.co.jp",
+  IN:"www.amazon.in", AU:"www.amazon.com.au", AE:"www.amazon.ae", SA:"www.amazon.sa",
+  SG:"www.amazon.sg", TR:"www.amazon.com.tr",
+};
+function _amazonTag(domain){
+  if (domain.endsWith(".com")) return "pelify-20";
+  if (domain.endsWith(".ca"))  return "pelify-20";
+  return "pelify-21";
+}
+function _detectCountry(){
+  for (const l of (navigator.languages || [navigator.language || ""])) {
+    const m = l.toUpperCase().match(/-([A-Z]{2})$/);
+    if (m && AMAZON_DOMAINS[m[1]]) return m[1];
+  }
+  const uiToCC = { fr:"FR", es:"ES", de:"DE", "en-GB":"GB", "en-US":"US", zh:"US" };
+  return uiToCC[langueCourante] || "FR";
+}
+function getAmazonSearch(title){
+  const domain = AMAZON_DOMAINS[_detectCountry()] || "www.amazon.fr";
+  return `https://${domain}/s?k=${encodeURIComponent(title||"")}&i=instant-video&tag=${_amazonTag(domain)}`;
+}
+
 const ICONES_CATEGORIE = {
   hebergement: {
     emoji: "🏨",
@@ -92,7 +119,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -100,17 +127,14 @@ function initCarte() {
     attribution: "© OpenStreetMap",
     maxZoom: 19,
   }).addTo(map);
-  clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 40,
-    // Au-delà du zoom 15 (rue/quartier), plus de clustering du tout —
-    // à ce niveau de zoom, l'utilisateur veut cliquer un lieu précis,
-    // pas encore zoomer sur une bulle de regroupement.
-    disableClusteringAtZoom: 15,
-  });
+  // Les lieux de tournage ne doivent JAMAIS être masqués dans une bulle
+  // de regroupement, même sur petit écran avec beaucoup de commodités
+  // autour — layerGroup simple, pas de clustering, contrairement aux
+  // commodités.
+  clusterGroup = L.layerGroup();
   // Groupe SÉPARÉ pour les activités "que faire aux alentours" : ne
-  // doit jamais se mélanger dans la même bulle que les lieux de
-  // tournage, sinon cliquer sur un lieu de tournage peut ouvrir un
-  // cluster d'activités par erreur.
+  // doit jamais se mélanger avec les lieux de tournage, sinon cliquer
+  // sur un lieu de tournage peut ouvrir un cluster d'activités par erreur.
   clusterActivites = L.markerClusterGroup({ maxClusterRadius: 40, disableClusteringAtZoom: 15 });
 
   map.addLayer(clusterGroup);
@@ -118,7 +142,6 @@ function initCarte() {
 
   // N'importe quel clic sur une bulle de regroupement change la vue —
   // propose de revenir à la vue initiale du film sélectionné.
-  clusterGroup.on("clusterclick", afficherBoutonRecentrer);
   clusterActivites.on("clusterclick", afficherBoutonRecentrer);
 }
 
@@ -166,10 +189,10 @@ async function chargerOptionsFiltres() {
   try {
     const res = await fetch(`${API_BASE}/api/filtres`);
     const data = await res.json();
-    remplirSelect("filtre-annee", data.annees, "Année");
-    remplirSelect("filtre-departement", data.departements, "Département");
+    remplirSelect("filtre-annee", data.annees, t("annee"));
+    remplirSelect("filtre-departement", data.departements, t("departement"));
     remplirSelect("filtre-commune", data.communes, "Commune"); // no-op si l'élément n'existe pas (voir remplirSelect)
-    remplirSelect("filtre-nationalite", data.nationalites, "Nationalité");
+    remplirSelect("filtre-nationalite", data.nationalites, t("nationalite"));
   } catch (e) { /* champs restent vides, pas bloquant */ }
 }
 
@@ -289,6 +312,14 @@ function afficherLieuxSurCarte(film, lieux) {
 // par pertinence), tronqué à 5 au total.
 const PRIORITE_PLATEFORMES = ["amazon prime", "prime video", "rakuten", "netflix"];
 
+function _lienPlateforme(plateforme, titreFilm) {
+  const nom = plateforme.nom.toLowerCase();
+  if (nom.includes("amazon") || nom.includes("prime video")) {
+    return getAmazonSearch(titreFilm);
+  }
+  return plateforme.lien_affilie || plateforme.lien_repli || "#";
+}
+
 function _trierEtLimiterPlateformes(plateformes) {
   const rang = (nom) => {
     const n = nom.toLowerCase();
@@ -379,7 +410,7 @@ function ouvrirPopupLieu(film, lieu) {
   conteneurPlateformes.innerHTML = plateformesTriees.length ? (
     `<p class="plateformes-intro">Disponible sur :</p>` +
     plateformesTriees.map((p) => `
-      <a class="plateforme-logo" href="${p.lien_affilie || p.lien_repli || '#'}" target="_blank" rel="noopener sponsored">
+      <a class="plateforme-logo" href="${_lienPlateforme(p, film.titre)}" target="_blank" rel="noopener sponsored">
         <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
       </a>
     `).join("")
@@ -1025,11 +1056,34 @@ async function toggleChaleur() {
 }
 
 // ── Écouteurs d'événements ────────────────────────────────────────
+// Sur mobile, les filtres avancés (année/département/nationalité) sont
+// déplacés dans la sidebar, à côté de Tout/Films/Séries — ça libère de
+// la hauteur pour la carte, qui devenait trop petite. Sur desktop, ils
+// restent au-dessus de la carte (position d'origine).
+function _gererPositionFiltresAvances() {
+  const filtresCarte = document.getElementById("filtres-carte");
+  const emplacementMobile = document.getElementById("filtres");
+  const emplacementDesktop = document.getElementById("carte-zone");
+  const media = window.matchMedia("(max-width: 600px)");
+
+  function repositionner() {
+    if (media.matches) {
+      emplacementMobile.insertAdjacentElement("afterend", filtresCarte);
+    } else {
+      emplacementDesktop.insertBefore(filtresCarte, emplacementDesktop.firstChild);
+    }
+  }
+
+  repositionner();
+  media.addEventListener("change", repositionner);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
   chargerContourOccitanie();
   chargerOptionsFiltres();
   chargerFilms();
+  _gererPositionFiltresAvances();
 
   document.querySelectorAll(".filtre-btn").forEach((btn) => {
     btn.addEventListener("click", () => {

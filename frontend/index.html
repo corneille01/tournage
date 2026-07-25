@@ -6,7 +6,10 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>CinéTour — Visitez les lieux de tournage en Occitanie</title>
+    <title>Pelify — Lieux de tournage en Occitanie</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <meta
       name="description"
       content="Découvrez où ont été tournés vos films, séries et animés préférés en Occitanie, et tout ce qu'il faut pour visiter : hébergements, restaurants, offices de tourisme, transports."
@@ -27,22 +30,23 @@
       <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + recherche + type + cartes ═══ -->
       <aside id="sidebar">
         <header id="sidebar-header">
-          <h1>CinéTour</h1>
-          <p class="sous-titre">Lieux de tournage en Occitanie</p>
+          <h1>Pelify <span class="sous-nom">Lieux de tournage</span></h1>
+          <p class="sous-titre" data-i18n="sousTitre">Lieux de tournage en Occitanie</p>
 
           <input
             type="search"
             id="recherche-input"
+            data-i18n="recherchePlaceholder"
             placeholder="Chercher un film, une série…"
           />
 
           <div id="filtres">
-            <button class="filtre-btn active" data-type="">Tout</button>
-            <button class="filtre-btn" data-type="movie">Films</button>
-            <button class="filtre-btn" data-type="tv">Séries</button>
+            <button class="filtre-btn active" data-type="" data-i18n="tout">Tout</button>
+            <button class="filtre-btn" data-type="movie" data-i18n="films">Films</button>
+            <button class="filtre-btn" data-type="tv" data-i18n="series">Séries</button>
           </div>
 
-          <a href="/analyse.html" id="stats-toggle">📊 Analyse territoriale complète</a>
+          <a href="/analyse.html" id="stats-toggle">📊 <span data-i18n="analyseComplete">Analyse territoriale complète</span></a>
         </header>
 
         <div id="cartes-scroll">
@@ -69,12 +73,12 @@
           -->
           <select id="filtre-nationalite"><option value="">Nationalité</option></select>
           <button id="filtre-notoriete" data-tri="titre">
-            ⭐ Les plus connus
+            ⭐ <span data-i18n="plusConnus">Les plus connus</span>
           </button>
         </div>
 
         <button id="btn-recentrer" class="hidden" title="Revenir à la vue initiale">
-          ⟲ Recentrer
+          ⟲ <span data-i18n="recentrer">Recentrer</span>
         </button>
 
         <div id="panneau-navigation" class="hidden">
@@ -84,8 +88,8 @@
         </div>
 
         <div id="calques-carte">
-          <button id="btn-choroplethe" data-actif="false">🗺️ Départements</button>
-          <button id="btn-chaleur" data-actif="false">🔥 Carte de chaleur</button>
+          <button id="btn-choroplethe" data-actif="false">🗺️ <span data-i18n="departements">Départements</span></button>
+          <button id="btn-chaleur" data-actif="false">🔥 <span data-i18n="carteChaleur">Carte de chaleur</span></button>
         </div>
 
         <div id="map"></div>
@@ -124,7 +128,7 @@
           <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
 
           <div id="popup-actions-globales">
-            <button id="btn-trace">🎬 Sur les traces de ce film…</button>
+            <button id="btn-trace">🎬 <span data-i18n="surLesTraces">Sur les traces de ce film…</span></button>
             <div id="resultat-trace"><!-- rempli au clic --></div>
           </div>
 
@@ -140,6 +144,7 @@
     <script src="/vendor/leaflet-heat/leaflet-heat.js"></script>
     <script src="/vendor/turf/turf.min.js"></script>
     <script src="/vendor/opening-hours/opening_hours.js"></script>
+    <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

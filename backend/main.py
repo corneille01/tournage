@@ -326,33 +326,25 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
     commodités", mais "combien de temps pour s'y rendre en voiture".
     Sépare le contenu français du reste, comme demandé.
     """
-async def _meilleurs_par_categorie(lieu_ids: list[int], categorie: str, top_n: int = 3) -> list[dict]:
-    """
-    Les `top_n` commodités les plus rapides EN VOITURE parmi TOUTES
-    celles déjà en cache pour ces lieux (pas seulement le rang 1 —
-    correction d'un bug : la plus proche à vol d'oiseau n'est pas
-    forcément la plus rapide en voiture, la route peut faire un détour).
-    """
-    return await fetch_all(
-        """
-        SELECT nom, distance_voiture_metres, duree_voiture_secondes, capacite
-        FROM amenity_cache
-        WHERE lieu_tournage_id = ANY(%s) AND categorie = %s AND duree_voiture_secondes IS NOT NULL
-        ORDER BY duree_voiture_secondes ASC
-        LIMIT %s
-        """,
-        (lieu_ids, categorie, top_n),
-    )
+CATEGORIES_ANALYSE_ACCESSIBILITE = (
+    "hebergement", "restaurant", "activite", "parking",
+    "office_tourisme", "gare", "aeroport", "aerodrome",
+)
 
 
 @app.get("/api/analyse/accessibilite")
 async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = Query(20)):
     """
-    Pour les films/séries les plus connus (popularité TMDB), analyse
-    concrète de l'accessibilité réelle en voiture aux commodités
-    essentielles — hébergement, restaurant, ET activités à proximité
-    (pas seulement les deux premières, sous-représenter les activités
-    donnerait une image incomplète du potentiel touristique réel).
+    Pour les films/séries les plus connus (popularité TMDB), audit
+    d'équipement touristique complet — pas seulement hébergement et
+    restaurant, mais aussi activités, parking, office de tourisme,
+    gare et aéroport/aérodrome : une lecture pensée comme un vrai
+    diagnostic d'aménagement territorial, pas juste "y a-t-il un hôtel
+    à côté".
+
+    Toutes les données sont récupérées en 4 requêtes groupées (pas une
+    par film) — l'ancienne version (~140 requêtes séquentielles pour
+    20 films) provoquait des lenteurs, voire des échecs.
 
     Méthodologie pour un film à PLUSIEURS lieux : chaque catégorie de
     commodité est cherchée en tenant compte de TOUS les lieux du film
@@ -371,31 +363,78 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
         """,
         (region, limite),
     )
+    if not films:
+        return {"francais": [], "autres": []}
+    film_ids = [f["id"] for f in films]
+
+    lieux = await fetch_all(
+        "SELECT id, film_id FROM lieux_tournage WHERE film_id = ANY(%s)", (film_ids,)
+    )
+    lieux_par_film: dict[int, list[int]] = {}
+    for l in lieux:
+        lieux_par_film.setdefault(l["film_id"], []).append(l["id"])
+    tous_lieu_ids = [l["id"] for l in lieux]
+
+    if not tous_lieu_ids:
+        return {"francais": [], "autres": []}
+
+    # Une seule requête pour TOUTES les commodités, tous films et
+    # catégories confondus — regroupé en Python ensuite.
+    toutes_commodites = await fetch_all(
+        """
+        SELECT lieu_tournage_id, categorie, nom, distance_voiture_metres,
+               duree_voiture_secondes, capacite
+        FROM amenity_cache
+        WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
+              AND duree_voiture_secondes IS NOT NULL
+        ORDER BY duree_voiture_secondes ASC
+        """,
+        (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
+    )
+    toutes_stats = await fetch_all(
+        """
+        SELECT lieu_tournage_id, categorie, nombre_total
+        FROM amenity_stats
+        WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
+        """,
+        (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
+    )
+
+    # Index en mémoire : (lieu_id, categorie) → [commodités triées par durée]
+    commodites_par_lieu_categorie: dict[tuple[int, str], list[dict]] = {}
+    for c in toutes_commodites:
+        cle = (c["lieu_tournage_id"], c["categorie"])
+        commodites_par_lieu_categorie.setdefault(cle, []).append(c)
+
+    stats_par_lieu_categorie: dict[tuple[int, str], int] = {}
+    for s in toutes_stats:
+        cle = (s["lieu_tournage_id"], s["categorie"])
+        stats_par_lieu_categorie[cle] = (stats_par_lieu_categorie.get(cle, 0) or 0) + (s["nombre_total"] or 0)
 
     resultat = {"francais": [], "autres": []}
 
     for film in films:
-        lieux = await fetch_all(
-            "SELECT id, nom FROM lieux_tournage WHERE film_id = %s", (film["id"],)
-        )
-        if not lieux:
+        lieu_ids = lieux_par_film.get(film["id"], [])
+        if not lieu_ids:
             continue
-        lieu_ids = [l["id"] for l in lieux]
 
         categories_analysees = {}
-        for categorie in ("hebergement", "restaurant", "activite"):
-            meilleurs = await _meilleurs_par_categorie(lieu_ids, categorie, top_n=3)
+        score_bien_dessservi = 0
+        for categorie in CATEGORIES_ANALYSE_ACCESSIBILITE:
+            candidats = []
+            for lid in lieu_ids:
+                candidats.extend(commodites_par_lieu_categorie.get((lid, categorie), []))
+            candidats.sort(key=lambda c: c["duree_voiture_secondes"])
+            top3 = candidats[:3]
 
-            stats_categorie = await fetch_all(
-                "SELECT SUM(nombre_total) AS total FROM amenity_stats WHERE lieu_tournage_id = ANY(%s) AND categorie = %s",
-                (lieu_ids, categorie),
-            )
-            nombre_total_rayon = stats_categorie[0]["total"] if stats_categorie and stats_categorie[0]["total"] else 0
+            nombre_total_rayon = sum(stats_par_lieu_categorie.get((lid, categorie), 0) for lid in lieu_ids)
 
-            meilleur = meilleurs[0] if meilleurs else None
+            meilleur = top3[0] if top3 else None
             etiquette, action = _classer_accessibilite(
                 meilleur["duree_voiture_secondes"] if meilleur else None
             )
+            if etiquette == "bien desservi":
+                score_bien_dessservi += 1
 
             categories_analysees[categorie] = {
                 "rayon_metres": RAYON_RECHERCHE_M.get(categorie),
@@ -407,7 +446,7 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
                         "distance_metres": m["distance_voiture_metres"],
                         "capacite": m["capacite"],
                     }
-                    for m in meilleurs
+                    for m in top3
                 ],
                 "etiquette": etiquette,
                 "action": action,
@@ -416,7 +455,8 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
         entree = {
             "id": film["id"], "titre": film["titre"], "annee": film["annee"],
             "media_type": film["media_type"], "poster_url": film["poster_url"],
-            "nombre_lieux": len(lieux),
+            "nombre_lieux": len(lieu_ids),
+            "score_equipement": f"{score_bien_dessservi}/{len(CATEGORIES_ANALYSE_ACCESSIBILITE)}",
             "categories": categories_analysees,
         }
 

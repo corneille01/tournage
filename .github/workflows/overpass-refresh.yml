@@ -1,18 +1,38 @@
 name: Remplissage du cache Overpass (hébergements, restaurants, etc.)
 
-# Deux modes :
-# 1. Un "lieu_id" est fourni → traite UNIQUEMENT ce lieu (test rapide, ~30s)
-# 2. Rien n'est fourni → lance les 13 départements d'Occitanie EN
-#    PARALLÈLE (matrice), chacun dans son propre job (~20-30 min au
-#    lieu d'un seul run de plusieurs heures en série, et si un
-#    département échoue, les 12 autres ne sont pas affectés).
+# Trois modes possibles :
+# 1. "lieu_id" renseigné → traite UNIQUEMENT ce lieu (test rapide, ~30s)
+# 2. "departement" choisi dans le menu (autre que "tous") → traite CE
+#    seul département
+# 3. Rien renseigné (ou "tous" choisi) → lance les 13 départements
+#    d'Occitanie EN PARALLÈLE (matrice), chacun dans son propre job
 on:
   workflow_dispatch:
     inputs:
       lieu_id:
-        description: "ID d'un seul lieu à tester (laisser vide pour tout traiter, par département, en parallèle)"
+        description: "ID d'un seul lieu à tester (laisser vide sinon)"
         required: false
         default: ""
+      departement:
+        description: "Département à traiter (ignoré si lieu_id est renseigné)"
+        required: true
+        type: choice
+        default: "tous"
+        options:
+          - tous
+          - Ariège
+          - Aude
+          - Aveyron
+          - Gard
+          - Haute-Garonne
+          - Gers
+          - Hérault
+          - Lot
+          - Lozère
+          - Hautes-Pyrénées
+          - Pyrénées-Orientales
+          - Tarn
+          - Tarn-et-Garonne
 
 jobs:
   test-un-lieu:
@@ -26,20 +46,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - run: pip install asyncpg httpx python-dotenv
       - name: Remplir un seul lieu (test)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python refresh_cache.py --lieu-id ${{ github.event.inputs.lieu_id }}
 
-  remplissage-par-departement:
-    if: ${{ github.event.inputs.lieu_id == '' }}
+  un-seul-departement:
+    if: ${{ github.event.inputs.lieu_id == '' && github.event.inputs.departement != 'tous' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # large marge par département (~20-30 min attendues)
+    timeout-minutes: 180 # large marge, certains départements (ex: Pyrénées-Orientales) sont volumineux
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg httpx python-dotenv
+      - name: Remplir amenity_cache / amenity_stats — ${{ github.event.inputs.departement }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python refresh_cache.py --departement "${{ github.event.inputs.departement }}"
+
+  tous-les-departements:
+    if: ${{ github.event.inputs.lieu_id == '' && github.event.inputs.departement == 'tous' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90 # large marge par département (~20-30 min attendues)
     strategy:
-      fail-fast: false  # un département qui échoue n'arrête pas les autres
-      max-parallel: 6   # évite de saturer overpass-api.de d'un coup avec 13 requêtes simultanées
+      fail-fast: false # un département qui échoue n'arrête pas les autres
+      max-parallel: 6 # évite de saturer overpass-api.de d'un coup avec 13 requêtes simultanées
       matrix:
         departement:
           - "Ariège"
@@ -62,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - run: pip install asyncpg httpx python-dotenv
       - name: Remplir amenity_cache / amenity_stats — ${{ matrix.departement }}
         env:

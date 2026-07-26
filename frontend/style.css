@@ -27,7 +27,7 @@
   --couleur-accent: var(--accent);
   --couleur-texte: var(--text);
   --couleur-texte-muted: var(--muted);
-  --rayon: 2px;
+  --rayon: 12px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -89,7 +89,7 @@ body {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte-muted);
   padding: 6px 12px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -132,7 +132,7 @@ body {
   width: 56px;
   height: 84px;
   object-fit: cover;
-  border-radius: var(--rayon);
+  border-radius: 6px;
   flex: 0 0 auto;
   background: #2a2d35;
 }
@@ -255,7 +255,7 @@ body {
 
 .resultat-item {
   background: var(--couleur-carte);
-  border-radius: var(--rayon);
+  border-radius: 10px;
   padding: 10px;
 }
 .resultat-item .nom { font-weight: 600; font-size: 0.9rem; }
@@ -268,7 +268,7 @@ body {
   color: var(--couleur-texte);
   background: rgba(230,57,70,0.12);
   padding: 8px 10px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   margin-bottom: 10px;
 }
 
@@ -290,7 +290,7 @@ body {
   #popup-lieu {
     width: 480px;
     max-height: 80vh;
-    border-radius: var(--rayon);
+    border-radius: 16px;
   }
 }
 
@@ -330,7 +330,7 @@ body.page-film-ssr {
   background: var(--couleur-accent);
   color: #fff;
   padding: 12px 18px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   text-decoration: none;
   font-weight: 600;
 }
@@ -368,7 +368,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 9px 12px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
 }
 #recherche-input::placeholder { color: var(--couleur-texte-muted); }
@@ -385,7 +385,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 7px 4px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   min-width: 0;
 }
@@ -398,7 +398,7 @@ body.page-film-ssr {
   border: 1px dashed #3a3d45;
   color: var(--couleur-texte-muted);
   padding: 8px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.78rem;
   cursor: pointer;
 }
@@ -435,7 +435,7 @@ body.page-film-ssr {
   border: 1px solid var(--couleur-accent);
   color: var(--couleur-accent);
   padding: 6px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   cursor: pointer;
 }
@@ -466,19 +466,19 @@ body.page-film-ssr {
   align-items: center;
   gap: 5px;
   background: var(--couleur-carte);
-  border-radius: var(--rayon);
+  border-radius: 8px;
   padding: 4px 8px;
   font-size: 0.72rem;
   text-decoration: none;
   color: var(--couleur-texte);
 }
-.plateforme-logo img { width: 20px; height: 20px; border-radius: var(--rayon); }
+.plateforme-logo img { width: 20px; height: 20px; border-radius: 4px; }
 
 /* ── Photo(s) du lieu ── */
 #popup-photos-lieu { margin-bottom: 12px; }
 #popup-photos-lieu img {
   width: 100%;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   max-height: 180px;
   object-fit: cover;
 }
@@ -500,7 +500,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 11px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
@@ -512,7 +512,7 @@ body.page-film-ssr {
   margin-top: 16px;
   padding: 10px;
   border: 1px dashed #3a3d45;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   text-align: center;
   font-size: 0.7rem;
   color: var(--couleur-texte-muted);
@@ -555,7 +555,7 @@ body.page-film-ssr {
   border: none;
   color: #fff;
   padding: 9px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.78rem;
   text-decoration: none;
   text-align: center;
@@ -570,7 +570,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 9px 12px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-size: 0.85rem;
 }
 #sidebar-header input#recherche-input::placeholder { color: var(--couleur-texte-muted); }
@@ -587,7 +587,7 @@ body.page-film-ssr {
   z-index: 1000;
   background: rgba(15,17,21,0.92);
   backdrop-filter: blur(4px);
-  border-radius: var(--rayon);
+  border-radius: 12px;
   padding: 8px;
   display: flex;
   flex-direction: row;
@@ -602,7 +602,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 7px 6px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   min-width: 0;
 }
@@ -613,7 +613,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte-muted);
   padding: 7px 12px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.75rem;
   cursor: pointer;
   white-space: nowrap;
@@ -631,7 +631,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 9px 16px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -716,7 +716,7 @@ body.page-film-ssr {
   color: var(--couleur-texte);
   border: 1px solid #2a2d35;
   padding: 8px 12px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   cursor: pointer;
   white-space: nowrap;
@@ -793,7 +793,7 @@ body.page-film-ssr {
   z-index: 1100;
   background: #1a1d24;
   border: 2px solid #ffd60a;
-  border-radius: var(--rayon);
+  border-radius: 12px;
   padding: 14px;
   text-align: center;
 }
@@ -806,7 +806,7 @@ body.page-film-ssr {
   color: #fff;
   border: none;
   padding: 8px 16px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -816,7 +816,7 @@ body.page-film-ssr {
   color: #0f1115;
   border: none;
   padding: 7px 12px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-size: 0.75rem;
   font-weight: 700;
   cursor: pointer;
@@ -827,7 +827,7 @@ body.page-film-ssr {
 #popup-description-lieu {
   background: rgba(42,157,143,0.08);
   border-left: 3px solid #2a9d8f;
-  border-radius: var(--rayon);
+  border-radius: 6px;
   padding: 10px 12px;
   margin: 10px 0;
 }
@@ -845,7 +845,7 @@ body.page-film-ssr {
   border: 1px solid #2a2d35;
   color: var(--couleur-texte);
   padding: 6px 10px;
-  border-radius: var(--rayon);
+  border-radius: 999px;
   font-size: 0.72rem;
   cursor: pointer;
 }
@@ -891,7 +891,7 @@ body.page-film-ssr {
   flex: 0 0 auto;
   width: 220px;
   height: 140px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   object-fit: cover;
 }
 .galerie-medias .media-video { border: none; }
@@ -904,7 +904,7 @@ body.page-film-ssr {
   color: #fff;
   width: 28px;
   height: 28px;
-  border-radius: var(--rayon);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -929,7 +929,7 @@ body.page-film-ssr {
   color: #050508;
   border: none;
   padding: 10px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -940,7 +940,7 @@ body.page-film-ssr {
 .pack-carte {
   background: var(--couleur-carte);
   border: 1px solid var(--border);
-  border-radius: var(--rayon);
+  border-radius: 10px;
   padding: 12px;
   position: relative;
 }
@@ -949,7 +949,7 @@ body.page-film-ssr {
   position: absolute; top: -9px; right: 10px;
   background: var(--primary); color: #050508;
   font-size: 0.62rem; font-weight: 700;
-  padding: 2px 8px; border-radius: var(--rayon);
+  padding: 2px 8px; border-radius: 999px;
 }
 .pack-nom { font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 2px; }
 .pack-prix { color: var(--gold); font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
@@ -963,7 +963,7 @@ body.page-film-ssr {
   color: #050508;
   font-weight: 700;
   padding: 12px;
-  border-radius: var(--rayon);
+  border-radius: 10px;
   text-decoration: none;
   font-size: 0.85rem;
 }
@@ -978,11 +978,11 @@ body.page-film-ssr {
 .carrousel-contenu { flex: 1; min-width: 0; }
 .pub-carte {
   background: linear-gradient(135deg, var(--select-bg), var(--card2));
-  border-radius: var(--rayon);
+  border-radius: 12px;
   padding: 16px;
   text-align: center;
 }
-.pub-carte img { max-width: 100%; max-height: 90px; border-radius: var(--rayon); margin-bottom: 10px; }
+.pub-carte img { max-width: 100%; max-height: 90px; border-radius: 8px; margin-bottom: 10px; }
 .pub-icone-repli { font-size: 2.2rem; margin-bottom: 10px; }
 .pub-titre { color: var(--primary); font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 4px; }
 .pub-desc { color: var(--couleur-texte-muted); font-size: 0.75rem; margin-bottom: 10px; }
@@ -991,7 +991,7 @@ body.page-film-ssr {
   background: var(--primary);
   color: #050508;
   padding: 7px 16px;
-  border-radius: var(--rayon);
+  border-radius: 8px;
   font-weight: 700;
   font-size: 0.78rem;
   text-decoration: none;
@@ -1002,7 +1002,70 @@ body.page-film-ssr {
   border: 1px solid var(--border);
   color: var(--couleur-texte);
   width: 30px; height: 30px;
-  border-radius: var(--rayon);
+  border-radius: 50%;
   font-size: 1.1rem;
   cursor: pointer;
+}
+
+.pub-icone-repli { width: 60px; height: 60px; margin: 0 auto 10px; color: var(--primary); }
+.pub-icone-repli svg { width: 100%; height: 100%; }
+
+/* ── Uniformisation demandée : TOUS les border-radius à 2px, sans
+   exception (y compris les pastilles rondes et cercles) ── */
+* { border-radius: 2px !important; }
+
+.lien-pelify { color: inherit; text-decoration: none; }
+.lien-pelify:hover { text-decoration: underline; }
+
+/* ── Menu hamburger (mobile uniquement) ── */
+#btn-hamburger, #btn-fermer-sidebar { display: none; }
+
+@media (max-width: 600px) {
+  #btn-hamburger {
+    display: block;
+    position: fixed;
+    top: 10px; left: 10px;
+    z-index: 2000;
+    background: var(--couleur-carte);
+    color: var(--couleur-texte);
+    border: 1px solid var(--border);
+    width: 40px; height: 40px;
+    font-size: 1.2rem;
+  }
+  #btn-fermer-sidebar {
+    display: block;
+    position: absolute;
+    top: 8px; right: 8px;
+    background: none;
+    border: none;
+    color: var(--couleur-texte);
+    font-size: 1.3rem;
+    z-index: 10;
+  }
+
+  /* Ouvert par défaut au chargement (classe ajoutée par app.js) —
+     l'internaute peut ensuite l'ouvrir/fermer à volonté. */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 88%;
+    max-width: 340px;
+    z-index: 1900;
+    flex: none;
+    transition: transform 0.25s ease;
+    transform: translateX(0);
+  }
+  #sidebar.fermee { transform: translateX(-100%); }
+
+  #carte-zone { width: 100%; }
+}
+
+.btn-masquer-tarifs {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--couleur-texte-muted);
+  padding: 5px 10px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  margin-bottom: 8px;
 }

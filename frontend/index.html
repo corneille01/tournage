@@ -28,9 +28,11 @@
   <body>
     <div id="app">
       <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + recherche + type + cartes ═══ -->
+      <button id="btn-hamburger" aria-label="Ouvrir/fermer le menu">☰</button>
       <aside id="sidebar">
+        <button id="btn-fermer-sidebar" aria-label="Fermer le menu">✕</button>
         <header id="sidebar-header">
-          <h1>Pelify <span class="sous-nom">Lieux de tournage</span></h1>
+          <h1><a href="https://pelify.app" class="lien-pelify">Pelify</a> <span class="sous-nom">Lieux de tournage</span></h1>
           <p class="sous-titre" data-i18n="sousTitre">Lieux de tournage en Occitanie</p>
 
           <input
@@ -154,6 +156,7 @@
     <script src="/vendor/leaflet-heat/leaflet-heat.js"></script>
     <script src="/vendor/turf/turf.min.js"></script>
     <script src="/vendor/opening-hours/opening_hours.js"></script>
+    <script src="/vendor/svg-icons/pub-fallback.js"></script>
     <script src="/i18n.js" defer></script>
     <script src="/app.js" defer></script>
   </body>

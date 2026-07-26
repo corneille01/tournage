@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
 
 from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
-from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres
+from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 
 templates = Jinja2Templates(directory="templates")
@@ -36,6 +36,7 @@ _LABELS_CATEGORIE = {
     "hopital":         "L'hôpital",
     "gare":            "La gare",
     "aeroport":        "L'aéroport",
+    "aerodrome":       "L'aérodrome",
     "arret_bus":       "L'arrêt de bus",
     "parking":         "Le parking",
     "refuge":          "Le refuge",
@@ -325,6 +326,41 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
     commodités", mais "combien de temps pour s'y rendre en voiture".
     Sépare le contenu français du reste, comme demandé.
     """
+async def _meilleurs_par_categorie(lieu_ids: list[int], categorie: str, top_n: int = 3) -> list[dict]:
+    """
+    Les `top_n` commodités les plus rapides EN VOITURE parmi TOUTES
+    celles déjà en cache pour ces lieux (pas seulement le rang 1 —
+    correction d'un bug : la plus proche à vol d'oiseau n'est pas
+    forcément la plus rapide en voiture, la route peut faire un détour).
+    """
+    return await fetch_all(
+        """
+        SELECT nom, distance_voiture_metres, duree_voiture_secondes, capacite
+        FROM amenity_cache
+        WHERE lieu_tournage_id = ANY(%s) AND categorie = %s AND duree_voiture_secondes IS NOT NULL
+        ORDER BY duree_voiture_secondes ASC
+        LIMIT %s
+        """,
+        (lieu_ids, categorie, top_n),
+    )
+
+
+@app.get("/api/analyse/accessibilite")
+async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = Query(20)):
+    """
+    Pour les films/séries les plus connus (popularité TMDB), analyse
+    concrète de l'accessibilité réelle en voiture aux commodités
+    essentielles — hébergement, restaurant, ET activités à proximité
+    (pas seulement les deux premières, sous-représenter les activités
+    donnerait une image incomplète du potentiel touristique réel).
+
+    Méthodologie pour un film à PLUSIEURS lieux : chaque catégorie de
+    commodité est cherchée en tenant compte de TOUS les lieux du film
+    à la fois (un touriste peut visiter n'importe lequel des lieux,
+    donc on retient la meilleure option parmi tous). Le nombre de
+    lieux du film est toujours indiqué pour que cette agrégation soit
+    transparente plutôt qu'implicite.
+    """
     films = await fetch_all(
         """
         SELECT id, titre, annee, media_type, poster_url, popularite, nationalite
@@ -346,70 +382,42 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
             continue
         lieu_ids = [l["id"] for l in lieux]
 
-        # Le meilleur accès voiture, tous lieux du film confondus (le
-        # touriste choisira naturellement le lieu le plus accessible
-        # s'il y en a plusieurs).
-        meilleur_heberg = await fetch_one(
-            """
-            SELECT nom, distance_voiture_metres, duree_voiture_secondes
-            FROM amenity_cache
-            WHERE lieu_tournage_id = ANY(%s) AND categorie = 'hebergement' AND rang = 1
-            ORDER BY duree_voiture_secondes ASC NULLS LAST LIMIT 1
-            """,
-            (lieu_ids,),
-        )
-        meilleur_resto = await fetch_one(
-            """
-            SELECT nom, distance_voiture_metres, duree_voiture_secondes
-            FROM amenity_cache
-            WHERE lieu_tournage_id = ANY(%s) AND categorie = 'restaurant' AND rang = 1
-            ORDER BY duree_voiture_secondes ASC NULLS LAST LIMIT 1
-            """,
-            (lieu_ids,),
-        )
+        categories_analysees = {}
+        for categorie in ("hebergement", "restaurant", "activite"):
+            meilleurs = await _meilleurs_par_categorie(lieu_ids, categorie, top_n=3)
 
-        # Nombre total de commodités trouvées dans le rayon (densité
-        # réelle, pas seulement le top 10 affiché) — un lieu avec 2
-        # hébergements dans son rayon n'a pas la même marge de
-        # manœuvre qu'un lieu qui en compte 80.
-        stats_globales = await fetch_all(
-            """
-            SELECT categorie, SUM(nombre_total) AS total
-            FROM amenity_stats
-            WHERE lieu_tournage_id = ANY(%s) AND categorie IN ('hebergement', 'restaurant', 'office_tourisme', 'parking')
-            GROUP BY categorie
-            """,
-            (lieu_ids,),
-        )
-        nb_par_categorie = {s["categorie"]: s["total"] for s in stats_globales}
+            stats_categorie = await fetch_all(
+                "SELECT SUM(nombre_total) AS total FROM amenity_stats WHERE lieu_tournage_id = ANY(%s) AND categorie = %s",
+                (lieu_ids, categorie),
+            )
+            nombre_total_rayon = stats_categorie[0]["total"] if stats_categorie and stats_categorie[0]["total"] else 0
 
-        etiquette_heberg, action_heberg = _classer_accessibilite(
-            meilleur_heberg["duree_voiture_secondes"] if meilleur_heberg else None
-        )
-        etiquette_resto, action_resto = _classer_accessibilite(
-            meilleur_resto["duree_voiture_secondes"] if meilleur_resto else None
-        )
+            meilleur = meilleurs[0] if meilleurs else None
+            etiquette, action = _classer_accessibilite(
+                meilleur["duree_voiture_secondes"] if meilleur else None
+            )
+
+            categories_analysees[categorie] = {
+                "rayon_metres": RAYON_RECHERCHE_M.get(categorie),
+                "nombre_total_rayon": nombre_total_rayon,
+                "top_plus_proches": [
+                    {
+                        "nom": m["nom"],
+                        "duree_minutes": round(m["duree_voiture_secondes"] / 60),
+                        "distance_metres": m["distance_voiture_metres"],
+                        "capacite": m["capacite"],
+                    }
+                    for m in meilleurs
+                ],
+                "etiquette": etiquette,
+                "action": action,
+            }
 
         entree = {
             "id": film["id"], "titre": film["titre"], "annee": film["annee"],
             "media_type": film["media_type"], "poster_url": film["poster_url"],
             "nombre_lieux": len(lieux),
-            "hebergement": {
-                "nom": meilleur_heberg["nom"] if meilleur_heberg else None,
-                "duree_minutes": round(meilleur_heberg["duree_voiture_secondes"] / 60) if meilleur_heberg and meilleur_heberg["duree_voiture_secondes"] else None,
-                "distance_metres": meilleur_heberg["distance_voiture_metres"] if meilleur_heberg else None,
-                "nombre_total_rayon": nb_par_categorie.get("hebergement", 0),
-                "etiquette": etiquette_heberg, "action": action_heberg,
-            },
-            "restaurant": {
-                "nom": meilleur_resto["nom"] if meilleur_resto else None,
-                "duree_minutes": round(meilleur_resto["duree_voiture_secondes"] / 60) if meilleur_resto and meilleur_resto["duree_voiture_secondes"] else None,
-                "distance_metres": meilleur_resto["distance_voiture_metres"] if meilleur_resto else None,
-                "nombre_total_rayon": nb_par_categorie.get("restaurant", 0),
-                "etiquette": etiquette_resto, "action": action_resto,
-            },
-            "office_tourisme_total": nb_par_categorie.get("office_tourisme", 0),
-            "parking_total": nb_par_categorie.get("parking", 0),
+            "categories": categories_analysees,
         }
 
         categorie_liste = "francais" if film["nationalite"] and "Français" in film["nationalite"] else "autres"

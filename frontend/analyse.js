@@ -23,6 +23,9 @@ async function charger() {
   afficherCompletude(analyse.completude);
 }
 
+const LABELS_CATEGORIE_ANALYSE = { hebergement: "🏨 Hébergement", restaurant: "🍽️ Restaurant", activite: "🎡 Activité" };
+const COULEUR_ETIQUETTE = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" };
+
 function afficherAccessibilite(idConteneur, entrees) {
   const conteneur = document.getElementById(idConteneur);
   if (!entrees || !entrees.length) {
@@ -31,8 +34,24 @@ function afficherAccessibilite(idConteneur, entrees) {
   }
 
   conteneur.innerHTML = entrees.map((e) => {
-    const couleurHeberg = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" }[e.hebergement.etiquette] || "#6b7280";
-    const couleurResto = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" }[e.restaurant.etiquette] || "#6b7280";
+    const blocsCategories = Object.entries(e.categories).map(([cle, cat]) => {
+      const couleur = COULEUR_ETIQUETTE[cat.etiquette] || "#6b7280";
+      const rayonKm = cat.rayon_metres ? (cat.rayon_metres / 1000).toFixed(0) : "?";
+      const listeTop3 = cat.top_plus_proches.map((t, i) => `
+        <li>${i + 1}. ${t.nom} — ${t.duree_minutes} min (${(t.distance_metres / 1000).toFixed(1)} km)${t.capacite ? ` · capacité : ${t.capacite}` : ""}</li>
+      `).join("");
+
+      return `
+        <div class="indicateur-accessibilite" style="border-color:${couleur}">
+          <b>${LABELS_CATEGORIE_ANALYSE[cle] || cle} :</b>
+          <span class="rayon-etude">(recherché dans un rayon de ${rayonKm} km autour de chaque lieu de tournage)</span>
+          <div class="total-rayon">${cat.nombre_total_rayon} trouvé${cat.nombre_total_rayon > 1 ? "s" : ""} au total dans ce rayon</div>
+          ${listeTop3 ? `<ol class="top3-accessibilite">${listeTop3}</ol>` : "<p>Aucune donnée de trajet disponible pour l'instant.</p>"}
+          <span class="etiquette-accessibilite" style="color:${couleur}">${cat.etiquette}</span>
+          <p class="action-accessibilite">→ ${cat.action}</p>
+        </div>
+      `;
+    }).join("");
 
     return `
       <div class="carte-accessibilite">
@@ -40,22 +59,12 @@ function afficherAccessibilite(idConteneur, entrees) {
           <img src="${e.poster_url || '/placeholder-poster.png'}" alt="${e.titre}">
           <div>
             <div class="titre-accessibilite">${e.titre}</div>
-            <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""}</div>
+            <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""} de tournage
+              ${e.nombre_lieux > 1 ? `<span class="note-multi-lieux">(analyse : meilleure option parmi les ${e.nombre_lieux} lieux)</span>` : ""}
+            </div>
           </div>
         </div>
-        <div class="indicateur-accessibilite" style="border-color:${couleurHeberg}">
-          <b>🏨 Hébergement le plus proche :</b>
-          ${e.hebergement.nom ? `${e.hebergement.nom} — ${e.hebergement.duree_minutes} min en voiture (${(e.hebergement.distance_metres / 1000).toFixed(1)} km), ${e.hebergement.nombre_total_rayon} au total dans le rayon` : "Donnée non disponible"}
-          <span class="etiquette-accessibilite" style="color:${couleurHeberg}">${e.hebergement.etiquette}</span>
-          <p class="action-accessibilite">→ ${e.hebergement.action}</p>
-        </div>
-        <div class="indicateur-accessibilite" style="border-color:${couleurResto}">
-          <b>🍽️ Restaurant le plus proche :</b>
-          ${e.restaurant.nom ? `${e.restaurant.nom} — ${e.restaurant.duree_minutes} min en voiture (${(e.restaurant.distance_metres / 1000).toFixed(1)} km), ${e.restaurant.nombre_total_rayon} au total dans le rayon` : "Donnée non disponible"}
-          <span class="etiquette-accessibilite" style="color:${couleurResto}">${e.restaurant.etiquette}</span>
-          <p class="action-accessibilite">→ ${e.restaurant.action}</p>
-        </div>
-        <div class="stats-secondaires">ℹ️ ${e.office_tourisme_total} offices de tourisme · 🅿️ ${e.parking_total} parkings dans le rayon</div>
+        ${blocsCategories}
       </div>
     `;
   }).join("");
@@ -128,6 +137,7 @@ function afficherGrapheLieux(parDepartement) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
@@ -164,6 +174,7 @@ function afficherGrapheEquipement(parDepartement) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { color: "#dde4f0" } } },
       scales: {
         x: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },

@@ -80,6 +80,12 @@ const ICONES_CATEGORIE = {
     label: "Aéroport le plus proche"
   },
 
+  aerodrome: {
+    emoji: "🛩️",
+    couleur: "#7209b7",
+    label: "Aérodrome le plus proche"
+  },
+
   arret_bus: {
     emoji: "🚌",
     couleur: "#f4a261",
@@ -119,7 +125,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -616,9 +622,14 @@ async function afficherItineraireVersCommodite(bouton, idConteneurOverride) {
       <button class="btn-demarrer-navigation" data-lat="${arriveeLat}" data-lon="${arriveeLon}" data-mode="${mode}">
         🧭 Démarrer la navigation
       </button>
+      <a href="#" class="lien-voir-carte">🗺️ Voir sur la carte</a>
     `;
     conteneurResultat.querySelector(".btn-demarrer-navigation").addEventListener("click", (e) => {
       demarrerNavigation(parseFloat(e.target.dataset.lat), parseFloat(e.target.dataset.lon), e.target.dataset.mode);
+    });
+    conteneurResultat.querySelector(".lien-voir-carte").addEventListener("click", (e) => {
+      e.preventDefault();
+      fermerPopup();
     });
 
     if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
@@ -760,7 +771,10 @@ function _texteDistanceDynamique(item, modeTri) {
   if (modeTri === "voiture" && item.distance_voiture_metres != null) {
     return `${formatDistance(item.distance_voiture_metres)} en voiture (${formatDuree(item.duree_voiture_secondes)})`;
   }
-  return formatDistance(item.distance_metres);
+  // Repli sur l'AUTRE mode plutôt que le vol d'oiseau, si disponible
+  if (item.distance_pied_metres != null) return `${formatDistance(item.distance_pied_metres)} à pied (${formatDuree(item.duree_pied_secondes)})`;
+  if (item.distance_voiture_metres != null) return `${formatDistance(item.distance_voiture_metres)} en voiture (${formatDuree(item.duree_voiture_secondes)})`;
+  return "Calcul du trajet en cours…";
 }
 
 function creerResumeRecherche(stats, nombreAffiche) {
@@ -804,13 +818,28 @@ async function afficherTraceFilm() {
   if (!filmId) return;
 
   const conteneurResultat = document.getElementById("resultat-trace");
-  conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Calcul du trajet le plus optimisé…</p>`;
   effacerTrace();
+
+  // Un seul lieu recensé : pas besoin d'optimisation multi-points,
+  // mais l'internaute doit avoir le même bouton "Voir sur la carte"
+  // et les mêmes forfaits que pour un parcours à plusieurs lieux.
+  if (state.lieuxCourants.length <= 1) {
+    const lieu = state.lieuxCourants[0];
+    conteneurResultat.innerHTML = `
+      <p class="trace-intro">Ce film n'a qu'un seul lieu de tournage recensé en Occitanie — pas besoin de circuit, juste une visite ciblée.</p>
+      <button id="btn-voir-sur-carte" class="btn-voir-sur-carte">🗺️ Voir sur la carte</button>
+    `;
+    document.getElementById("btn-voir-sur-carte").addEventListener("click", fermerPopup);
+    afficherSectionReservation();
+    return;
+  }
+
+  conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Calcul du trajet le plus optimisé…</p>`;
 
   try {
     const res = await fetch(`${API_BASE}/api/films/${filmId}/trace`);
     if (!res.ok) {
-      conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Tracé impossible (un seul lieu recensé, ou erreur serveur).</p>`;
+      conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Tracé impossible (erreur serveur).</p>`;
       return;
     }
     const data = await res.json();
@@ -890,55 +919,68 @@ function afficherSectionReservation() {
   const titre = state.filmSelectionne?.titre || "ce parcours";
 
   conteneur.innerHTML = `
-    <p class="anecdote-titre">🎟️ Envie de vivre ce parcours sans rien organiser vous-même ?</p>
+    <p class="anecdote-titre">🎟️ Vivez ce parcours comme si vous y étiez</p>
     <p class="reservation-intro">
-      Pelify Voyages Cinéma s'occupe de tout, du premier au dernier jour :
-      hébergement, restauration, transport entre les lieux, et une visite
-      guidée qui raconte les coulisses de "${titre}" directement sur place.
+      Pelify Voyages Cinéma raconte les coulisses de "${titre}" directement
+      sur place, avec un guide qui connaît chaque secret de tournage — même
+      si vous gérez vous-même votre hébergement et vos trajets, la visite
+      guidée reste au programme : c'est elle qui transforme un simple lieu
+      en souvenir.
     </p>
 
-    <div class="packs-reservation">
-      <div class="pack-carte">
-        <div class="pack-nom">Découverte</div>
-        <div class="pack-prix">Gratuit</div>
-        <ul class="pack-inclus">
-          <li>✅ Itinéraire optimisé (déjà sous vos yeux)</li>
-          <li>✅ Fiches lieux, anecdotes, adresses</li>
-          <li>❌ Hébergement / repas / transport à votre charge</li>
-        </ul>
+    <button id="btn-masquer-tarifs" class="btn-masquer-tarifs">🙈 Masquer les tarifs</button>
+
+    <div id="bloc-tarifs-circuit">
+      <div class="packs-reservation">
+        <div class="pack-carte">
+          <div class="pack-nom">L'Éveil du Cinéphile</div>
+          <div class="pack-prix">39€ / pers.</div>
+          <ul class="pack-inclus">
+            <li>✅ Visite guidée sur place, coulisses et anecdotes</li>
+            <li>✅ Itinéraire optimisé, fiches lieux</li>
+            <li>❌ Hébergement / repas / transport à votre charge</li>
+          </ul>
+        </div>
+        <div class="pack-carte pack-recommande">
+          <div class="pack-badge">Le plus choisi</div>
+          <div class="pack-nom">L'Évasion Complète</div>
+          <div class="pack-prix">À partir de 89€ / pers.</div>
+          <ul class="pack-inclus">
+            <li>✅ Tout L'Éveil du Cinéphile, plus :</li>
+            <li>✅ Hébergement le mieux placé réservé pour vous</li>
+            <li>✅ Table réservée dans les restaurants recommandés</li>
+            <li>✅ Assistance téléphonique pendant le séjour</li>
+          </ul>
+        </div>
+        <div class="pack-carte">
+          <div class="pack-nom">L'Odyssée Sur Mesure</div>
+          <div class="pack-prix">À partir de 219€ / pers.</div>
+          <ul class="pack-inclus">
+            <li>✅ Tout L'Évasion Complète, plus :</li>
+            <li>✅ Transport organisé entre chaque lieu</li>
+            <li>✅ Guide local privé sur place</li>
+            <li>✅ Accès prioritaire aux sites partenaires</li>
+          </ul>
+        </div>
       </div>
-      <div class="pack-carte pack-recommande">
-        <div class="pack-badge">Le plus choisi</div>
-        <div class="pack-nom">Confort</div>
-        <div class="pack-prix">À partir de 89€ / pers.</div>
-        <ul class="pack-inclus">
-          <li>✅ Tout Découverte, plus :</li>
-          <li>✅ Réservation de l'hébergement le mieux placé</li>
-          <li>✅ Table réservée dans les restaurants recommandés</li>
-          <li>✅ Assistance téléphonique pendant le séjour</li>
-        </ul>
-      </div>
-      <div class="pack-carte">
-        <div class="pack-nom">Premium</div>
-        <div class="pack-prix">À partir de 219€ / pers.</div>
-        <ul class="pack-inclus">
-          <li>✅ Tout Confort, plus :</li>
-          <li>✅ Transport organisé entre chaque lieu</li>
-          <li>✅ Guide local sur place pour la visite</li>
-          <li>✅ Accès prioritaire aux sites partenaires</li>
-        </ul>
-      </div>
+
+      <p class="reservation-note">
+        Tarifs indicatifs pour un parcours de 2 jours, hors saison haute —
+        devis exact envoyé sous 24h après votre demande.
+      </p>
+
+      <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
+        📩 Demander un devis pour ce parcours
+      </a>
     </div>
-
-    <p class="reservation-note">
-      Tarifs indicatifs pour un parcours de 2 jours, hors saison haute —
-      devis exact envoyé sous 24h après votre demande.
-    </p>
-
-    <a class="btn-reserver" href="mailto:blogoos1@gmail.com?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
-      📩 Demander un devis pour ce parcours
-    </a>
   `;
+
+  document.getElementById("btn-masquer-tarifs").addEventListener("click", (e) => {
+    const bloc = document.getElementById("bloc-tarifs-circuit");
+    const masque = bloc.style.display === "none";
+    bloc.style.display = masque ? "" : "none";
+    e.target.textContent = masque ? "🙈 Masquer les tarifs" : "👁️ Afficher les tarifs";
+  });
 }
 
 function formatDistance(m) {
@@ -1087,6 +1129,9 @@ async function _recupererAnalyse() {
   return analyseCache;
 }
 
+let _chargementChoroplethe = false;
+let _chargementChaleur = false;
+
 async function toggleChoroplethe() {
   const btn = document.getElementById("btn-choroplethe");
   if (coucheChoroplethe) {
@@ -1095,6 +1140,8 @@ async function toggleChoroplethe() {
     btn.dataset.actif = "false";
     return;
   }
+  if (_chargementChoroplethe) return; // un clic est déjà en cours de traitement
+  _chargementChoroplethe = true;
 
   const [geojsonRes, analyse] = await Promise.all([
     fetch("/departements-occitanie.geojson").then((r) => r.json()),
@@ -1137,6 +1184,7 @@ async function toggleChoroplethe() {
   }).addTo(map);
 
   document.getElementById("btn-choroplethe").dataset.actif = "true";
+  _chargementChoroplethe = false;
 }
 
 async function toggleChaleur() {
@@ -1147,11 +1195,14 @@ async function toggleChaleur() {
     btn.dataset.actif = "false";
     return;
   }
+  if (_chargementChaleur) return;
+  _chargementChaleur = true;
 
   const res = await fetch(`${API_BASE}/api/lieux/tous-points`);
   const data = await res.json();
   coucheChaleur = L.heatLayer(data.points, { radius: 22, blur: 18, maxZoom: 10 }).addTo(map);
   btn.dataset.actif = "true";
+  _chargementChaleur = false;
 }
 
 // ── Écouteurs d'événements ────────────────────────────────────────
@@ -1159,6 +1210,25 @@ async function toggleChaleur() {
 // déplacés dans la sidebar, à côté de Tout/Films/Séries — ça libère de
 // la hauteur pour la carte, qui devenait trop petite. Sur desktop, ils
 // restent au-dessus de la carte (position d'origine).
+// Menu hamburger mobile — la sidebar reste ouverte par défaut au
+// chargement, l'internaute peut l'ouvrir/fermer ensuite à volonté.
+function _initialiserMenuHamburger() {
+  const sidebar = document.getElementById("sidebar");
+  const btnOuvrir = document.getElementById("btn-hamburger");
+  const btnFermer = document.getElementById("btn-fermer-sidebar");
+
+  btnOuvrir.addEventListener("click", () => sidebar.classList.remove("fermee"));
+  btnFermer.addEventListener("click", () => sidebar.classList.add("fermee"));
+
+  // En sélectionnant un film sur mobile, on referme le menu pour
+  // libérer la carte — sans forcer sur desktop où il n'y a pas d'overlay.
+  document.getElementById("cartes-liste").addEventListener("click", (e) => {
+    if (window.matchMedia("(max-width: 600px)").matches && e.target.closest(".carte-film")) {
+      sidebar.classList.add("fermee");
+    }
+  });
+}
+
 function _gererPositionFiltresAvances() {
   const filtresCarte = document.getElementById("filtres-carte");
   const emplacementMobile = document.getElementById("filtres");
@@ -1177,25 +1247,35 @@ function _gererPositionFiltresAvances() {
   media.addEventListener("change", repositionner);
 }
 
-// ════ PUBLICITÉS — mêmes offres Awin que Pelify, rotation 4s (au lieu
-// de 8s sur Pelify), navigable manuellement avec les flèches ════
+// ════ PUBLICITÉS — filtrées pour n'être pertinentes qu'au parcours
+// touristique (transport, hébergement, logistique de voyage) — pas
+// l'intégralité du catalogue Awin de Pelify, qui contient surtout du
+// mobilier/déco/bien-être sans rapport avec un déplacement touristique.
+// Chaque offre porte ses zones de vente réelles (Awin) — n'apparaît
+// que si le pays détecté du visiteur en fait partie. ════
 const PUBS_PELIFY = [
- 
-  { icon: "💡", titre: "Éclairage Déco", desc: "Lustres, suspensions et luminaires design haut de gamme", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4826404&v=128237&q=608878&r=2932851", image: "https://www.awin1.com/cshow.php?s=4826404&v=128237&q=608878&r=2932851" },
-  { icon: "🛒", titre: "AliExpress FR", desc: "Des millions de produits à prix direct usine", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3775159&v=26009&q=501388&r=2932851", image: "https://www.awin1.com/cshow.php?s=3775159&v=26009&q=501388&r=2932851" },
-  { icon: "🛋️", titre: "Moskera", desc: "Mobilier et décoration d'intérieur", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4814317&v=128253&q=608010&r=2932851", image: "https://www.awin1.com/cshow.php?s=4814317&v=128253&q=608010&r=2932851" },
-  { icon: "🔒", titre: "FastestVPN", desc: "Navigation privée et sécurisée — chiffrement 256 bits", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4590561&v=90211&q=566685&r=2932851", image: "https://www.awin1.com/cshow.php?s=4590561&v=90211&q=566685&r=2932851" },
-  { icon: "🎧", titre: "EarFun", desc: "Écouteurs et enceintes sans fil primés", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3996847&v=61233&q=525399&r=2932851", image: "https://www.awin1.com/cshow.php?s=3996847&v=61233&q=525399&r=2932851" },
-  { icon: "🎨", titre: "HTVRont", desc: "Machines, vinyles HTV, vinyles adhésifs et outils créatifs pour personnaliser vos projets", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4819183&v=68106&q=523805&r=2932851", image: "https://www.awin1.com/cshow.php?s=4819183&v=68106&q=523805&r=2932851" },
+  { icon: "valise", titre: "Festivilla", desc: "Villas de groupe pour séjours entre amis ou en famille", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4712338&v=117343&q=599044&r=2932851", image: "https://www.awin1.com/cshow.php?s=4712338&v=117343&q=599044&r=2932851", zones: ["FR"] },
+  { icon: "avion", titre: "Evago", desc: "Plateforme IA pour réserver vols, hôtels et locations de voiture", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4809237&v=127793&q=607479&r=2932851", image: "https://www.awin1.com/cshow.php?s=4809237&v=127793&q=607479&r=2932851", zones: ["US"] },
+  { icon: "voiture", titre: "Allycar", desc: "Location de voiture familiale haut de gamme", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4721783&v=122406&q=599904&r=2932851", image: "https://www.awin1.com/cshow.php?s=4721783&v=122406&q=599904&r=2932851", zones: ["US"] },
+  { icon: "parking", titre: "Purple Parking", desc: "Parking et services aéroport au Royaume-Uni", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=2261337&v=12028&q=348193&r=2932851", image: "https://www.awin1.com/cshow.php?s=2261337&v=12028&q=348193&r=2932851", zones: ["GB"] },
+  { icon: "bouclier", titre: "FastestVPN", desc: "Navigation privée et sécurisée en déplacement", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4590561&v=90211&q=566685&r=2932851", image: "https://www.awin1.com/cshow.php?s=4590561&v=90211&q=566685&r=2932851", zones: ["FR"] },
+  { icon: "casque", titre: "EarFun", desc: "Écouteurs et enceintes sans fil pour vos trajets", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3996847&v=61233&q=525399&r=2932851", image: "https://www.awin1.com/cshow.php?s=3996847&v=61233&q=525399&r=2932851", zones: ["FR"] },
 ];
 
 const _etatsCarrousels = {}; // { "1": { index, intervalId }, "2": {...} }
+
+function _pubsPourVisiteur() {
+  const pays = _detectCountry();
+  const pubsCorrespondantes = PUBS_PELIFY.filter((p) => p.zones.includes(pays));
+  // Repli : si aucune pub ne cible ce pays précis, montrer celles ciblant la France
+  return pubsCorrespondantes.length ? pubsCorrespondantes : PUBS_PELIFY.filter((p) => p.zones.includes("FR"));
+}
 
 function _rendreOffrePub(offre) {
   return `
     <div class="pub-carte">
       <img src="${offre.image}" alt="${offre.titre}"
-           onerror="this.outerHTML='<div class=&quot;pub-icone-repli&quot;>${offre.icon}</div>'">
+           onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'pub-icone-repli', innerHTML: PUB_SVG_FALLBACK['${offre.icon}'] || ''}))">
       <div class="pub-titre">${offre.titre}</div>
       <div class="pub-desc">${offre.desc}</div>
       <a href="${offre.url}" target="_blank" rel="sponsored noopener" class="pub-cta">${offre.cta}</a>
@@ -1207,12 +1287,15 @@ function _initialiserCarrousel(idCarrousel) {
   const conteneur = document.getElementById(`carrousel-pub-${idCarrousel}`);
   if (!conteneur) return;
   const zoneContenu = conteneur.querySelector(".carrousel-contenu");
+  const pubs = _pubsPourVisiteur();
+  if (!pubs.length) { conteneur.classList.add("hidden"); return; }
 
-  _etatsCarrousels[idCarrousel] = { index: 0, intervalId: null };
+  _etatsCarrousels[idCarrousel] = { index: 0, intervalId: null, pubs };
 
   function afficher(index) {
-    _etatsCarrousels[idCarrousel].index = ((index % PUBS_PELIFY.length) + PUBS_PELIFY.length) % PUBS_PELIFY.length;
-    zoneContenu.innerHTML = _rendreOffrePub(PUBS_PELIFY[_etatsCarrousels[idCarrousel].index]);
+    const etat = _etatsCarrousels[idCarrousel];
+    etat.index = ((index % etat.pubs.length) + etat.pubs.length) % etat.pubs.length;
+    zoneContenu.innerHTML = _rendreOffrePub(etat.pubs[etat.index]);
   }
 
   function suivant() { afficher(_etatsCarrousels[idCarrousel].index + 1); _redemarrerAuto(); }
@@ -1241,6 +1324,7 @@ document.addEventListener("DOMContentLoaded", () => {
   chargerOptionsFiltres();
   chargerFilms();
   _gererPositionFiltresAvances();
+  _initialiserMenuHamburger();
   initialiserPublicites();
 
   document.querySelectorAll(".filtre-btn").forEach((btn) => {

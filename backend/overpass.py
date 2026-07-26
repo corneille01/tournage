@@ -36,6 +36,7 @@ _LABEL_GENERIQUE = {
     "hopital": "Établissement de santé",
     "gare": "Gare",
     "aeroport": "Aéroport",
+    "aerodrome": "Aérodrome",
     "arret_bus": "Arrêt de transport",
     "parking": "Parking",
     "distributeur": "Distributeur / banque",
@@ -89,6 +90,10 @@ _CATEGORY_TAGS = {
     ],
 
     "aeroport": [
+        "aeroway=aerodrome",
+    ],
+
+    "aerodrome": [
         "aeroway=aerodrome",
     ],
 
@@ -148,6 +153,7 @@ RAYON_RECHERCHE_M = {
     "hopital": 25_000,
     "gare": 30_000,
     "aeroport": 60_000,
+    "aerodrome": 30_000,
     "arret_bus": 2_000,
     "parking": 5_000,
     "distributeur": 3_000,
@@ -196,6 +202,11 @@ ICONES_CATEGORIE = {
     "aeroport": {
         "emoji": "✈️",
         "couleur": "#4361ee",
+    },
+
+    "aerodrome": {
+        "emoji": "🛩️",
+        "couleur": "#7209b7",
     },
 
     "arret_bus": {
@@ -282,21 +293,30 @@ def _build_query(
     lon = f"{lon:.7f}"
     clauses = []
 
+    # Aéroport et aérodrome utilisent le même tag OSM de base
+    # (aeroway=aerodrome) — la présence d'un code IATA distingue un
+    # vrai aéroport commercial d'un simple terrain d'aviation légère.
+    filtre_supplementaire = ""
+    if categorie == "aeroport":
+        filtre_supplementaire = '["iata"]'
+    elif categorie == "aerodrome":
+        filtre_supplementaire = '["iata"!~"."]'
+
     for tag in _CATEGORY_TAGS[categorie]:
         cle, valeur = tag.split("=", maxsplit=1)
 
         clauses.append(
-            f'node["{cle}"="{valeur}"]'
+            f'node["{cle}"="{valeur}"]{filtre_supplementaire}'
             f"(around:{rayon},{lat},{lon});"
         )
 
         clauses.append(
-            f'way["{cle}"="{valeur}"]'
+            f'way["{cle}"="{valeur}"]{filtre_supplementaire}'
             f"(around:{rayon},{lat},{lon});"
         )
 
         clauses.append(
-            f'relation["{cle}"="{valeur}"]'
+            f'relation["{cle}"="{valeur}"]{filtre_supplementaire}'
             f"(around:{rayon},{lat},{lon});"
         )
 
@@ -482,6 +502,7 @@ async def find_nearby(
                 or tags.get("url")
             ),
             "horaires": tags.get("opening_hours"),
+            "capacite": int(tags["capacity"]) if tags.get("capacity", "").isdigit() else None,
         })
 
     # Classement du plus proche au plus éloigné.

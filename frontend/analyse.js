@@ -12,18 +12,30 @@ async function charger() {
   const analyse = await analyseRes.json();
   const accessibilite = await accessibiliteRes.json();
 
-  afficherTotaux(stats.totaux);
-  afficherSyntheseComparative(analyse.synthese_comparative);
-  afficherFilmsNotables(analyse.films_notables);
-  afficherAccessibilite("accessibilite-francais", accessibilite.francais);
-  afficherAccessibilite("accessibilite-autres", accessibilite.autres);
-  afficherCartesDepartements(analyse.par_departement);
-  afficherGrapheLieux(analyse.par_departement);
-  afficherGrapheEquipement(analyse.par_departement);
-  afficherCompletude(analyse.completude);
+  // Chaque section est indépendante : si une échoue, les suivantes
+  // s'affichent quand même (avant, une seule erreur bloquait toute
+  // la page silencieusement).
+  const etapes = [
+    () => afficherTotaux(stats.totaux),
+    () => afficherSyntheseComparative(analyse.synthese_comparative),
+    () => afficherFilmsNotables(analyse.films_notables),
+    () => afficherAccessibilite("accessibilite-francais", accessibilite?.francais),
+    () => afficherAccessibilite("accessibilite-autres", accessibilite?.autres),
+    () => afficherCartesDepartements(analyse.par_departement),
+    () => afficherGrapheLieux(analyse.par_departement),
+    () => afficherGrapheEquipement(analyse.par_departement),
+    () => afficherCompletude(analyse.completude),
+  ];
+  etapes.forEach((etape, i) => {
+    try { etape(); } catch (e) { console.error(`Section ${i} en échec:`, e); }
+  });
 }
 
-const LABELS_CATEGORIE_ANALYSE = { hebergement: "🏨 Hébergement", restaurant: "🍽️ Restaurant", activite: "🎡 Activité" };
+const LABELS_CATEGORIE_ANALYSE = {
+  hebergement: "🏨 Hébergement", restaurant: "🍽️ Restaurant", activite: "🎡 Activité",
+  parking: "🅿️ Parking", office_tourisme: "ℹ️ Office de tourisme",
+  gare: "🚉 Gare", aeroport: "✈️ Aéroport", aerodrome: "🛩️ Aérodrome",
+};
 const COULEUR_ETIQUETTE = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" };
 
 function afficherAccessibilite(idConteneur, entrees) {
@@ -62,9 +74,13 @@ function afficherAccessibilite(idConteneur, entrees) {
             <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""} de tournage
               ${e.nombre_lieux > 1 ? `<span class="note-multi-lieux">(analyse : meilleure option parmi les ${e.nombre_lieux} lieux)</span>` : ""}
             </div>
+            <div class="score-equipement">Équipement global : <b>${e.score_equipement}</b> catégories bien desservies</div>
           </div>
         </div>
-        ${blocsCategories}
+        <details class="detail-categories">
+          <summary>Voir le détail par catégorie de commodité</summary>
+          ${blocsCategories}
+        </details>
       </div>
     `;
   }).join("");

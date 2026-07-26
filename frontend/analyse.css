@@ -207,3 +207,6 @@ canvas#graphe-lieux, canvas#graphe-equipement { height: 280px !important; max-he
 @media (max-width: 600px) {
   canvas#graphe-lieux, canvas#graphe-equipement { height: 320px !important; max-height: 320px; }
 }
+
+.score-equipement { font-size: 0.75rem; margin-top: 4px; color: var(--primary); }
+.detail-categories summary { cursor: pointer; font-size: 0.78rem; color: var(--couleur-texte-muted); margin: 8px 0; }

@@ -714,7 +714,8 @@ async def amenities_proches(lieu_id: int):
     rows = await fetch_all(
         """
         SELECT categorie, nom, latitude, longitude, distance_metres,
-               adresse, telephone, site_web, horaires, photo_url, rang,
+               adresse, telephone, email, site_web, horaires, photo_url, rang,
+               tarif_min, tarif_max, devise,
                distance_pied_metres, duree_pied_secondes,
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache

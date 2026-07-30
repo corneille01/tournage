@@ -210,3 +210,8 @@ canvas#graphe-lieux, canvas#graphe-equipement { height: 280px !important; max-he
 
 .score-equipement { font-size: 0.75rem; margin-top: 4px; color: var(--primary); }
 .detail-categories summary { cursor: pointer; font-size: 0.78rem; color: var(--couleur-texte-muted); margin: 8px 0; }
+
+.risque-surfrequentation { font-size: 0.75rem; margin-top: 6px; padding: 6px 8px; border-radius: 6px; }
+.risque-eleve { background: rgba(255,107,107,0.12); color: #ff6b6b; }
+.risque-modere { background: rgba(255,215,0,0.12); color: #ffd700; }
+.risque-faible { background: rgba(0,255,204,0.08); color: #00ffcc; }

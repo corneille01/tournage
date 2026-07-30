@@ -1069,3 +1069,7 @@ body.page-film-ssr {
   cursor: pointer;
   margin-bottom: 8px;
 }
+
+.liens-legaux { margin-top: 8px; font-size: 0.62rem; text-align: center; }
+.liens-legaux a { color: var(--couleur-texte-muted); text-decoration: none; }
+.liens-legaux a:hover { text-decoration: underline; }

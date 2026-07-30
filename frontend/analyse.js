@@ -75,6 +75,10 @@ function afficherAccessibilite(idConteneur, entrees) {
               ${e.nombre_lieux > 1 ? `<span class="note-multi-lieux">(analyse : meilleure option parmi les ${e.nombre_lieux} lieux)</span>` : ""}
             </div>
             <div class="score-equipement">Équipement global : <b>${e.score_equipement}</b> catégories bien desservies</div>
+            <div class="risque-surfrequentation risque-${e.risque_surfrequentation === 'élevé' ? 'eleve' : e.risque_surfrequentation === 'modéré' ? 'modere' : 'faible'}">
+              ⚠️ Risque de sur-fréquentation : <b>${e.risque_surfrequentation}</b>
+              <p class="action-accessibilite">→ ${e.action_surfrequentation}</p>
+            </div>
           </div>
         </div>
         <details class="detail-categories">

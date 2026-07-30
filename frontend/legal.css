@@ -1,0 +1,25 @@
+body.page-legal {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  overflow-y: auto;
+  padding-bottom: 60px;
+}
+
+.legal-header {
+  padding: 20px 16px;
+  border-bottom: 1px solid var(--border);
+  max-width: 720px;
+  margin: 0 auto;
+}
+.legal-header .ssr-logo { color: var(--primary); text-decoration: none; font-weight: 700; font-size: 0.9rem; }
+.legal-header h1 { font-family: var(--font-display); font-size: 1.3rem; margin-top: 8px; }
+
+.legal-contenu { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+.legal-contenu section { margin-bottom: 26px; }
+.legal-contenu h2 { font-family: var(--font-display); font-size: 1rem; margin-bottom: 8px; color: var(--primary); }
+.legal-contenu p { font-size: 0.85rem; line-height: 1.6; margin-bottom: 8px; }
+.legal-contenu ul { padding-left: 20px; margin-bottom: 8px; }
+.legal-contenu li { font-size: 0.85rem; line-height: 1.6; margin-bottom: 4px; }
+.legal-contenu a { color: var(--primary); }
+.note-legal { font-size: 0.75rem; font-style: italic; color: var(--muted); background: rgba(255,215,0,0.08); padding: 8px; border-radius: 2px; }

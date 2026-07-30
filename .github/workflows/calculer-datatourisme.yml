@@ -1,0 +1,42 @@
+name: Calcul distances DATAtourisme
+
+# 100% SQL local, aucun appel réseau — rapide (quelques minutes pour
+# tous les lieux), contrairement aux workflows Overpass équivalents.
+on:
+  workflow_dispatch:
+    inputs:
+      categorie:
+        description: "Catégorie à calculer"
+        required: true
+        type: choice
+        options:
+          - hebergement
+          - restaurant
+          - activite
+      lieu_id:
+        description: "ID d'un seul lieu à tester (laisser vide pour tous)"
+        required: false
+        default: ""
+
+jobs:
+  calcul:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install asyncpg python-dotenv
+      - name: Calculer les distances
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
+            python calculer_amenities_datatourisme.py --categorie "${{ github.event.inputs.categorie }}" --lieu-id ${{ github.event.inputs.lieu_id }}
+          else
+            python calculer_amenities_datatourisme.py --categorie "${{ github.event.inputs.categorie }}"
+          fi

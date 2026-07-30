@@ -1,0 +1,66 @@
+name: DATAtourisme — téléchargement + import automatique
+
+# Télécharge directement depuis l'API DATAtourisme (webservice), sans
+# jamais committer de fichier ni exposer la clé API en clair — les URL
+# complètes (avec clé) sont stockées en secrets GitHub.
+#
+# À faire une seule fois : Settings > Secrets and variables > Actions
+# > New repository secret, un secret par catégorie :
+#   DATATOURISME_URL_HEBERGEMENT = https://diffuseur.datatourisme.fr/webservice/30fec4835299ff7d5fda6b8b2518a7ab/TA_CLE
+#   DATATOURISME_URL_RESTAURANT  = https://diffuseur.datatourisme.fr/webservice/87a8b8a3f1aae48931534f9828d8b61f/TA_CLE
+#   DATATOURISME_URL_ACTIVITE    = https://diffuseur.datatourisme.fr/webservice/c32596b82fe70832a95f4a39bbb203a4/TA_CLE
+on:
+  workflow_dispatch:
+    inputs:
+      categorie:
+        description: "Catégorie à importer (le secret correspondant doit exister)"
+        required: true
+        type: choice
+        options:
+          - hebergement
+          - restaurant
+          - activite
+  # Rafraîchissement automatique — décommente pour l'activer (le flux
+  # DATAtourisme se régénère chaque jour côté serveur, mais un
+  # rafraîchissement hebdomadaire suffit largement pour de l'hébergement/
+  # restauration, qui changent rarement d'un jour à l'autre).
+  # schedule:
+  #   - cron: "0 3 * * 1"  # chaque lundi à 3h du matin
+
+jobs:
+  telecharger-et-importer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install asyncpg python-dotenv ijson
+
+      - name: Télécharger le flux (URL jamais affichée dans les logs)
+        env:
+          URL_HEBERGEMENT: ${{ secrets.DATATOURISME_URL_HEBERGEMENT }}
+          URL_RESTAURANT: ${{ secrets.DATATOURISME_URL_RESTAURANT }}
+          URL_ACTIVITE: ${{ secrets.DATATOURISME_URL_ACTIVITE }}
+        run: |
+          case "${{ github.event.inputs.categorie }}" in
+            hebergement) URL="$URL_HEBERGEMENT" ;;
+            restaurant) URL="$URL_RESTAURANT" ;;
+            activite) URL="$URL_ACTIVITE" ;;
+          esac
+          if [ -z "$URL" ]; then
+            echo "❌ Secret manquant pour cette catégorie — configure-le dans Settings > Secrets"
+            exit 1
+          fi
+          mkdir -p data
+          curl -sL "$URL" -o data/flux_telecharge.jsonld
+          echo "Taille téléchargée : $(du -h data/flux_telecharge.jsonld | cut -f1)"
+
+      - name: Importer en base
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python import_datatourisme_jsonld.py --fichier data/flux_telecharge.jsonld --categorie "${{ github.event.inputs.categorie }}"

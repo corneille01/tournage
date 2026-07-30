@@ -125,7 +125,7 @@ let map, clusterGroup, clusterActivites;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
-  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 8);
+  map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
   // Le zoom par défaut est en haut-gauche, comme notre barre de
   // filtres — on le déplace à droite pour ne plus se chevaucher.
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -440,7 +440,7 @@ function ouvrirPopupLieu(film, lieu) {
   conteneurPlateformes.innerHTML = plateformesTriees.length ? (
     `<p class="plateformes-intro">Disponible sur :</p>` +
     plateformesTriees.map((p) => `
-      <a class="plateforme-logo" href="${_lienPlateforme(p, film.titre)}" target="_blank" rel="noopener sponsored" onclick="_trackerClic('plateforme_streaming', {nom_partenaire: '${p.nom.replace(/'/g, "")}', film_id: ${film.id}})">
+      <a class="plateforme-logo" href="${_lienPlateforme(p, film.titre)}" target="_blank" rel="noopener sponsored">
         <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
       </a>
     `).join("")
@@ -564,7 +564,7 @@ function _rendreCategorie() {
         ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
         ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
         ${item.telephone ? `<div class="telephone">📞 ${item.telephone}</div>` : ""}
-        ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer" onclick="_trackerClic('site_web_commodite', {nom_partenaire: '${item.nom.replace(/'/g, "")}', categorie: '${categorie}'})">Voir le site</a></div>` : ""}
+        ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
         <div class="boutons-itineraire">
           <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
           <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
@@ -622,12 +622,12 @@ async function afficherItineraireVersCommodite(bouton, idConteneurOverride) {
       <button class="btn-demarrer-navigation" data-lat="${arriveeLat}" data-lon="${arriveeLon}" data-mode="${mode}">
         🧭 Démarrer la navigation
       </button>
-      <a href="#" class="lien-voir-carte">🗺️ Voir sur la carte</a>
+      ${idConteneurOverride ? "" : `<a href="#" class="lien-voir-carte">🗺️ Voir sur la carte</a>`}
     `;
     conteneurResultat.querySelector(".btn-demarrer-navigation").addEventListener("click", (e) => {
       demarrerNavigation(parseFloat(e.target.dataset.lat), parseFloat(e.target.dataset.lon), e.target.dataset.mode);
     });
-    conteneurResultat.querySelector(".lien-voir-carte").addEventListener("click", (e) => {
+    conteneurResultat.querySelector(".lien-voir-carte")?.addEventListener("click", (e) => {
       e.preventDefault();
       fermerPopup();
     });
@@ -702,7 +702,7 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
       ${item.adresse ? `<br>${item.adresse}` : ""}
       ${item.horaires ? `<br>${_texteHoraires(item.horaires)}` : ""}
       ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
-      ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer" onclick="_trackerClic('site_web_commodite', {nom_partenaire: '${item.nom.replace(/'/g, "")}', categorie: '${categorie}'})">Voir le site</a>` : ""}
+      ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
       <div class="boutons-itineraire" style="margin-top:6px;">
         <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
         <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
@@ -969,7 +969,7 @@ function afficherSectionReservation() {
         devis exact envoyé sous 24h après votre demande.
       </p>
 
-      <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}" onclick="_trackerClic('devis_reservation', {nom_partenaire: '${titre.replace(/'/g, "")}'})">
+      <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
         📩 Demander un devis pour ce parcours
       </a>
     </div>
@@ -981,14 +981,6 @@ function afficherSectionReservation() {
     bloc.style.display = masque ? "" : "none";
     e.target.textContent = masque ? "🙈 Masquer les tarifs" : "👁️ Afficher les tarifs";
   });
-}
-
-// ── Tracking des clics partenaires — preuve de trafic pour négocier
-// de vraies commissions plus tard. Ne bloque JAMAIS la navigation de
-// l'utilisateur (fire-and-forget, aucun await avant le clic réel).
-function _trackerClic(typeLien, options = {}) {
-  const params = new URLSearchParams({ type_lien: typeLien, ...options });
-  fetch(`${API_BASE}/api/tracking/clic?${params}`, { method: "POST" }).catch(() => {});
 }
 
 function formatDistance(m) {
@@ -1262,7 +1254,7 @@ function _gererPositionFiltresAvances() {
 // Chaque offre porte ses zones de vente réelles (Awin) — n'apparaît
 // que si le pays détecté du visiteur en fait partie. ════
 const PUBS_PELIFY = [
-  { icon: "valise", titre: "Festivilla", desc: "Villas de groupe pour séjours entre amis ou en famille", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4712338&v=117343&q=599044&r=2932851", image: "https://www.awin1.com/cshow.php?s=4712338&v=117343&q=599044&r=2932851", zones: ["FR"] },
+  
   { icon: "avion", titre: "Evago", desc: "Plateforme IA pour réserver vols, hôtels et locations de voiture", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4809237&v=127793&q=607479&r=2932851", image: "https://www.awin1.com/cshow.php?s=4809237&v=127793&q=607479&r=2932851", zones: ["US"] },
   { icon: "voiture", titre: "Allycar", desc: "Location de voiture familiale haut de gamme", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4721783&v=122406&q=599904&r=2932851", image: "https://www.awin1.com/cshow.php?s=4721783&v=122406&q=599904&r=2932851", zones: ["US"] },
   { icon: "parking", titre: "Purple Parking", desc: "Parking et services aéroport au Royaume-Uni", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=2261337&v=12028&q=348193&r=2932851", image: "https://www.awin1.com/cshow.php?s=2261337&v=12028&q=348193&r=2932851", zones: ["GB"] },
@@ -1286,7 +1278,7 @@ function _rendreOffrePub(offre) {
            onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'pub-icone-repli', innerHTML: PUB_SVG_FALLBACK['${offre.icon}'] || ''}))">
       <div class="pub-titre">${offre.titre}</div>
       <div class="pub-desc">${offre.desc}</div>
-      <a href="${offre.url}" target="_blank" rel="sponsored noopener" class="pub-cta" onclick="_trackerClic('pub_awin', {nom_partenaire: '${offre.titre}'})">${offre.cta}</a>
+      <a href="${offre.url}" target="_blank" rel="sponsored noopener" class="pub-cta">${offre.cta}</a>
     </div>
   `;
 }
@@ -1377,7 +1369,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-chaleur").addEventListener("click", toggleChaleur);
 
   document.getElementById("filtre-notoriete").addEventListener("click", (e) => {
-    const actif = e.target.classList.toggle("active");
+    const actif = e.currentTarget.classList.toggle("active");
     state.filtres.tri = actif ? "popularite" : "titre";
     chargerFilms();
   });

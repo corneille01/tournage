@@ -168,6 +168,141 @@ def _extraire_tarifs(offre) -> tuple:
     return (min(tous_min) if tous_min else None, max(tous_max) if tous_max else None, devise)
 
 
+def _extraire_photo(poi: dict) -> str | None:
+    """La photo (quand elle existe) est nichée derrière plusieurs
+    niveaux : hasMainRepresentation > ebucore:hasRelatedResource >
+    ebucore:locator — vérifié sur un vrai export avant de coder ça."""
+    repr_ = poi.get("hasMainRepresentation")
+    if not repr_:
+        repr_secondaire = poi.get("hasRepresentation")
+        if isinstance(repr_secondaire, list):
+            repr_ = repr_secondaire[0] if repr_secondaire else None
+        else:
+            repr_ = repr_secondaire
+    if not isinstance(repr_, dict):
+        return None
+    ressource = repr_.get("ebucore:hasRelatedResource")
+    if not isinstance(ressource, dict):
+        return None
+    locator = ressource.get("ebucore:locator")
+    return _texte_simple(locator)
+
+
+def _extraire_equipements(poi: dict) -> str | None:
+    """Deux sources possibles, combinées : isEquippedWith (références
+    de thésaurus, ex: kb:Wifi) et hasFeature (booléens explicites, ex:
+    internetAccess=true) — vérifiées sur un vrai export."""
+    noms = []
+
+    equip_brut = poi.get("isEquippedWith")
+    if equip_brut:
+        if not isinstance(equip_brut, list):
+            equip_brut = [equip_brut]
+        for e in equip_brut:
+            if isinstance(e, dict) and e.get("@id"):
+                noms.append(_libelle_thesaurus(e["@id"]))
+
+    feature = poi.get("hasFeature")
+    if isinstance(feature, dict):
+        traductions_feature = {
+            "internetAccess": "Wifi", "petsAllowed": "Animaux acceptés",
+            "airConditioning": "Climatisation", "smokeFree": "Non fumeur",
+        }
+        for cle, libelle in traductions_feature.items():
+            valeur = feature.get(cle)
+            if isinstance(valeur, dict) and valeur.get("@value") == "true":
+                noms.append(libelle)
+        # "charged" est un cas particulier : true ET false sont tous les
+        # deux des informations utiles (payant vs gratuit), contrairement
+        # aux autres qui ne valent la peine d'être affichés que si vrais.
+        charge = feature.get("charged")
+        if isinstance(charge, dict):
+            noms.append("Service payant" if charge.get("@value") == "true" else "Service gratuit")
+
+    return ", ".join(dict.fromkeys(noms)) or None  # dict.fromkeys = dédoublonne en gardant l'ordre
+
+
+TRADUCTIONS_LANGUES = {
+    "fr": "Français", "en": "Anglais", "es": "Espagnol", "de": "Allemand",
+    "it": "Italien", "nl": "Néerlandais", "pt": "Portugais", "zh": "Chinois",
+}
+
+
+def _extraire_notation(poi: dict) -> tuple:
+    """hasReview mélange deux choses différentes : un classement en
+    étoiles (ScaleRating, ex: '3 étoiles') et des labels qualité
+    (LabelRating, ex: 'Accueil Vélo') — on sépare les deux plutôt que
+    de les mélanger dans un seul champ confus."""
+    reviews = poi.get("hasReview")
+    if not reviews:
+        return None, None
+    if not isinstance(reviews, list):
+        reviews = [reviews]
+
+    etoiles = None
+    labels = []
+    for r in reviews:
+        if not isinstance(r, dict):
+            continue
+        rv = r.get("hasReviewValue")
+        if not isinstance(rv, dict):
+            continue
+        type_ = rv.get("@type", [])
+        if isinstance(type_, str):
+            type_ = [type_]
+        if "ScaleRating" in type_:
+            valeur = rv.get("schema:ratingValue")
+            if isinstance(valeur, dict):
+                etoiles = valeur.get("@value")
+        elif "LabelRating" in type_:
+            libelle = _valeur_langue(rv.get("rdfs:label"))
+            if libelle:
+                labels.append(libelle)
+
+    return (float(etoiles) if etoiles else None), (", ".join(labels) or None)
+
+
+def _extraire_accessibilite(poi: dict) -> str | None:
+    """Lien direct vers la fiche accessibilité officielle (Acceslibre,
+    plateforme gouvernementale) quand le lieu y est référencé."""
+    refs = poi.get("hasExternalReference")
+    if not refs:
+        return None
+    if not isinstance(refs, list):
+        refs = [refs]
+    for r in refs:
+        if not isinstance(r, dict):
+            continue
+        plateforme = r.get("hasExternalPlatform")
+        if isinstance(plateforme, dict) and plateforme.get("@id") == "kb:AcceslibrePlatform":
+            identifiant = r.get("hasExternalIdentifier")
+            if identifiant:
+                return f"https://acceslibre.beta.gouv.fr/erp/{identifiant}/"
+    return None
+
+
+def _extraire_langues(poi: dict) -> str | None:
+    langues = poi.get("availableLanguage")
+    if not langues:
+        return None
+    if not isinstance(langues, list):
+        langues = [langues]
+    noms = [TRADUCTIONS_LANGUES.get(l, l) for l in langues if isinstance(l, str)]
+    return ", ".join(dict.fromkeys(noms)) or None
+
+
+def _tronquer(valeur, longueur_max: int = 495):
+    """Sécurité : certains champs texte (équipements, horaires...)
+    peuvent dépasser la limite des colonnes VARCHAR(500) sur des cas
+    rares (établissement avec énormément d'équipements listés, texte
+    d'horaires très détaillé...). On tronque plutôt que de planter
+    tout l'import pour une seule ligne récalcitrante."""
+    if valeur is None:
+        return None
+    valeur = str(valeur)
+    return valeur[:longueur_max] if len(valeur) > longueur_max else valeur
+
+
 def _extraire_objet(poi: dict, categorie: str) -> dict | None:
     identifiant = poi.get("dc:identifier")
     nom = _valeur_langue(poi.get("rdfs:label"))
@@ -235,24 +370,69 @@ def _extraire_objet(poi: dict, categorie: str) -> dict | None:
                 noms_cuisine.append(label)
         cuisine = ", ".join(noms_cuisine) or None
 
+    # hasTheme a des libellés plus riches quand il contient des
+    # catégories de cuisine (ex: "Cuisine traditionnelle française" au
+    # lieu de notre "Cuisine traditionnelle" deviné) — on préfère cette
+    # version si elle existe, sans écraser le résultat s'il n'y en a pas.
+    themes = poi.get("hasTheme")
+    if themes:
+        if not isinstance(themes, list):
+            themes = [themes]
+        noms_cuisine_theme = []
+        for t in themes:
+            if not isinstance(t, dict):
+                continue
+            type_ = t.get("@type", [])
+            if isinstance(type_, str):
+                type_ = [type_]
+            if "CuisineCategory" in type_:
+                libelle = _valeur_langue(t.get("rdfs:label"))
+                if libelle:
+                    noms_cuisine_theme.append(libelle)
+        if noms_cuisine_theme:
+            cuisine = ", ".join(dict.fromkeys(noms_cuisine_theme))
+
+    photo_url = _extraire_photo(poi)
+    equipements = _extraire_equipements(poi)
+
+    capacite = None
+    allowed = poi.get("allowedPersons")
+    if isinstance(allowed, dict):
+        capacite = allowed.get("@value")
+
+    note_etoiles, labels_qualite = _extraire_notation(poi)
+    lien_accessibilite = _extraire_accessibilite(poi)
+    langues_parlees = _extraire_langues(poi)
+
+    contact_reservation = _resoudre(poi.get("hasBookingContact") or {}, index_local)
+    telephone = _texte_simple(contact.get("schema:telephone")) or _texte_simple(contact_reservation.get("schema:telephone"))
+    email = _texte_simple(contact.get("schema:email")) or _texte_simple(contact_reservation.get("schema:email"))
+
     return {
-        "identifiant_dt": identifiant,
-        "nom": nom,
+        "identifiant_dt": _tronquer(identifiant, 95),
+        "nom": _tronquer(nom, 250),
         "categorie": categorie,
-        "classification": _classification(poi.get("@type", [])),
-        "commune": commune,
-        "departement": departement,
+        "classification": _tronquer(_classification(poi.get("@type", [])), 250),
+        "commune": _tronquer(commune, 250),
+        "departement": _tronquer(departement, 95),
         "latitude": float(lat_brut),
         "longitude": float(lon_brut),
-        "adresse": adresse_complete,
-        "telephone": _texte_simple(contact.get("schema:telephone")),
-        "email": _texte_simple(contact.get("schema:email")),
-        "site_web": _texte_simple(contact.get("foaf:homepage")),
-        "horaires": horaires,
+        "adresse": _tronquer(adresse_complete, 495),
+        "telephone": _tronquer(telephone, 45),
+        "email": _tronquer(email, 250),
+        "site_web": _tronquer(_texte_simple(contact.get("foaf:homepage")), 495),
+        "horaires": _tronquer(horaires, 495),
         "tarif_min": tarif_min,
         "tarif_max": tarif_max,
-        "devise": devise,
-        "cuisine": cuisine,
+        "devise": _tronquer(devise, 10),
+        "cuisine": _tronquer(cuisine, 250),
+        "photo_url": _tronquer(photo_url, 495),
+        "equipements": _tronquer(equipements, 495),
+        "capacite": int(capacite) if capacite else None,
+        "note_etoiles": note_etoiles,
+        "labels_qualite": _tronquer(labels_qualite, 495),
+        "lien_accessibilite": _tronquer(lien_accessibilite, 495),
+        "langues_parlees": _tronquer(langues_parlees, 250),
     }
 
 
@@ -290,8 +470,9 @@ async def main(fichier: str, categorie: str):
                     INSERT INTO datatourisme_objets
                         (identifiant_dt, nom, categorie, classification, commune, departement,
                          latitude, longitude, adresse, telephone, email, site_web,
-                         horaires, tarif_min, tarif_max, devise, cuisine)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         horaires, tarif_min, tarif_max, devise, cuisine, photo_url, equipements, capacite,
+                         note_etoiles, labels_qualite, lien_accessibilite, langues_parlees)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (identifiant_dt) DO UPDATE SET
                         nom = EXCLUDED.nom, classification = EXCLUDED.classification,
                         commune = EXCLUDED.commune, departement = EXCLUDED.departement,
@@ -300,14 +481,19 @@ async def main(fichier: str, categorie: str):
                         email = EXCLUDED.email, site_web = EXCLUDED.site_web,
                         horaires = EXCLUDED.horaires, tarif_min = EXCLUDED.tarif_min,
                         tarif_max = EXCLUDED.tarif_max, devise = EXCLUDED.devise,
-                        cuisine = EXCLUDED.cuisine
+                        cuisine = EXCLUDED.cuisine, photo_url = EXCLUDED.photo_url,
+                        equipements = EXCLUDED.equipements, capacite = EXCLUDED.capacite,
+                        note_etoiles = EXCLUDED.note_etoiles, labels_qualite = EXCLUDED.labels_qualite,
+                        lien_accessibilite = EXCLUDED.lien_accessibilite, langues_parlees = EXCLUDED.langues_parlees
                     """,
                     (
                         objet["identifiant_dt"], objet["nom"], objet["categorie"], objet["classification"],
                         objet["commune"], objet["departement"], objet["latitude"], objet["longitude"],
                         objet["adresse"], objet["telephone"], objet["email"], objet["site_web"],
                         objet["horaires"], objet["tarif_min"], objet["tarif_max"], objet["devise"],
-                        objet["cuisine"],
+                        objet["cuisine"], objet["photo_url"], objet["equipements"], objet["capacite"],
+                        objet["note_etoiles"], objet["labels_qualite"], objet["lien_accessibilite"],
+                        objet["langues_parlees"],
                     ),
                 )
                 importes += 1

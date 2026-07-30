@@ -43,11 +43,15 @@ async def main(categorie: str, lieu_id: int | None):
             resultats = await fetch_all(
                 """
                 SELECT nom, latitude, longitude, site_web, telephone, email,
-                       horaires, tarif_min, tarif_max, devise, adresse, distance_metres
+                       horaires, tarif_min, tarif_max, devise, adresse, photo_url,
+                       equipements, capacite, note_etoiles, labels_qualite,
+                       lien_accessibilite, langues_parlees, distance_metres
                 FROM (
                     SELECT
                         nom, latitude, longitude, site_web, telephone, email,
                         horaires, tarif_min, tarif_max, devise, adresse,
+                        photo_url, equipements, capacite, note_etoiles, labels_qualite,
+                        lien_accessibilite, langues_parlees,
                         (
                             6371000 * acos(
                                 LEAST(1.0, GREATEST(-1.0,
@@ -102,14 +106,17 @@ async def main(categorie: str, lieu_id: int | None):
                     INSERT INTO amenity_cache
                         (lieu_tournage_id, categorie, nom, latitude, longitude,
                          distance_metres, site_web, telephone, email, horaires,
-                         tarif_min, tarif_max, devise, adresse, rang)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         tarif_min, tarif_max, devise, adresse, photo_url, equipements, capacite,
+                         note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, rang)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         lieu["id"], categorie, r["nom"], r["latitude"], r["longitude"],
                         r["distance_metres"], r["site_web"], r["telephone"], r["email"],
                         r["horaires"], r["tarif_min"], r["tarif_max"], r["devise"],
-                        r["adresse"], rang,
+                        r["adresse"], r["photo_url"], r["equipements"], r["capacite"],
+                        r["note_etoiles"], r["labels_qualite"], r["lien_accessibilite"],
+                        r["langues_parlees"], rang,
                     ),
                 )
 

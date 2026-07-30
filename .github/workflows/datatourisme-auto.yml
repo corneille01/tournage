@@ -1,14 +1,16 @@
 name: DATAtourisme — téléchargement + import automatique
 
-# Télécharge directement depuis l'API DATAtourisme (webservice), sans
-# jamais committer de fichier ni exposer la clé API en clair — les URL
-# complètes (avec clé) sont stockées en secrets GitHub.
+# Deux façons de le déclencher :
+# - À la main (workflow_dispatch) : tu choisis UNE catégorie précise
+# - Automatique (schedule, tous les jours à 3h) : les 4 catégories sont
+#   traitées l'une après l'autre, dans des jobs séparés en parallèle
 #
 # À faire une seule fois : Settings > Secrets and variables > Actions
 # > New repository secret, un secret par catégorie :
 #   DATATOURISME_URL_HEBERGEMENT = https://diffuseur.datatourisme.fr/webservice/30fec4835299ff7d5fda6b8b2518a7ab/TA_CLE
 #   DATATOURISME_URL_RESTAURANT  = https://diffuseur.datatourisme.fr/webservice/87a8b8a3f1aae48931534f9828d8b61f/TA_CLE
 #   DATATOURISME_URL_ACTIVITE    = https://diffuseur.datatourisme.fr/webservice/c32596b82fe70832a95f4a39bbb203a4/TA_CLE
+#   DATATOURISME_URL_OFFICE_TOURISME = https://diffuseur.datatourisme.fr/webservice/{ID}/TA_CLE
 on:
   workflow_dispatch:
     inputs:
@@ -21,17 +23,33 @@ on:
           - restaurant
           - activite
           - office_tourisme
-  # Rafraîchissement automatique — décommente pour l'activer (le flux
-  # DATAtourisme se régénère chaque jour côté serveur, mais un
-  # rafraîchissement hebdomadaire suffit largement pour de l'hébergement/
-  # restauration, qui changent rarement d'un jour à l'autre).
-  #
-schedule:
-  - cron: "0 3 * * *"
+  schedule:
+    - cron: "0 3 * * *" # tous les jours à 3h du matin (UTC)
+
 jobs:
+  # Détermine QUELLES catégories traiter selon le déclencheur : une
+  # seule si lancé à la main, les 4 si lancé automatiquement.
+  determiner-categories:
+    runs-on: ubuntu-latest
+    outputs:
+      categories: ${{ steps.choix.outputs.categories }}
+    steps:
+      - id: choix
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo 'categories=["hebergement","restaurant","activite","office_tourisme"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'categories=["${{ github.event.inputs.categorie }}"]' >> "$GITHUB_OUTPUT"
+          fi
+
   telecharger-et-importer:
+    needs: determiner-categories
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false # une catégorie qui échoue n'arrête pas les autres
+      matrix:
+        categorie: ${{ fromJson(needs.determiner-categories.outputs.categories) }}
     defaults:
       run:
         working-directory: backend
@@ -49,7 +67,7 @@ jobs:
           URL_ACTIVITE: ${{ secrets.DATATOURISME_URL_ACTIVITE }}
           URL_OFFICE_TOURISME: ${{ secrets.DATATOURISME_URL_OFFICE_TOURISME }}
         run: |
-          case "${{ github.event.inputs.categorie }}" in
+          case "${{ matrix.categorie }}" in
             hebergement) URL="$URL_HEBERGEMENT" ;;
             restaurant) URL="$URL_RESTAURANT" ;;
             activite) URL="$URL_ACTIVITE" ;;
@@ -60,10 +78,10 @@ jobs:
             exit 1
           fi
           mkdir -p data
-          curl -sL --compressed "$URL" -o data/flux_telecharge.jsonld
-          echo "Taille téléchargée : $(du -h data/flux_telecharge.jsonld | cut -f1)"
+          curl -sL --compressed "$URL" -o "data/flux_telecharge_${{ matrix.categorie }}.jsonld"
+          echo "Taille téléchargée : $(du -h data/flux_telecharge_${{ matrix.categorie }}.jsonld | cut -f1)"
 
       - name: Importer en base
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python import_datatourisme_jsonld.py --fichier data/flux_telecharge.jsonld --categorie "${{ github.event.inputs.categorie }}"
+        run: python import_datatourisme_jsonld.py --fichier "data/flux_telecharge_${{ matrix.categorie }}.jsonld" --categorie "${{ matrix.categorie }}"

@@ -32,7 +32,7 @@ import gzip
 
 import ijson
 
-from db import init_db_pool, close_db_pool, execute
+from db import init_db_pool, close_db_pool, execute, executemany
 
 CLASSIFICATIONS_CONNUES = [
     "Hotel", "Camping", "GuestHouse", "BedAndBreakfast", "HolidayVillage",
@@ -452,6 +452,35 @@ async def main(fichier: str, categorie: str):
     try:
         importes = 0
         ignores = 0
+        lot: list[tuple] = []
+        TAILLE_LOT = 500
+
+        requete = """
+            INSERT INTO datatourisme_objets
+                (identifiant_dt, nom, categorie, classification, commune, departement,
+                 latitude, longitude, adresse, telephone, email, site_web,
+                 horaires, tarif_min, tarif_max, devise, cuisine, photo_url, equipements, capacite,
+                 note_etoiles, labels_qualite, lien_accessibilite, langues_parlees)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (identifiant_dt) DO UPDATE SET
+                nom = EXCLUDED.nom, classification = EXCLUDED.classification,
+                commune = EXCLUDED.commune, departement = EXCLUDED.departement,
+                latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
+                adresse = EXCLUDED.adresse, telephone = EXCLUDED.telephone,
+                email = EXCLUDED.email, site_web = EXCLUDED.site_web,
+                horaires = EXCLUDED.horaires, tarif_min = EXCLUDED.tarif_min,
+                tarif_max = EXCLUDED.tarif_max, devise = EXCLUDED.devise,
+                cuisine = EXCLUDED.cuisine, photo_url = EXCLUDED.photo_url,
+                equipements = EXCLUDED.equipements, capacite = EXCLUDED.capacite,
+                note_etoiles = EXCLUDED.note_etoiles, labels_qualite = EXCLUDED.labels_qualite,
+                lien_accessibilite = EXCLUDED.lien_accessibilite, langues_parlees = EXCLUDED.langues_parlees
+        """
+
+        async def _vider_le_lot():
+            nonlocal lot
+            if lot:
+                await executemany(requete, lot)
+                lot = []
 
         with _ouvrir_fichier(fichier) as f:
             for poi in ijson.items(f, "@graph.item"):
@@ -465,41 +494,24 @@ async def main(fichier: str, categorie: str):
                     ignores += 1
                     continue
 
-                await execute(
-                    """
-                    INSERT INTO datatourisme_objets
-                        (identifiant_dt, nom, categorie, classification, commune, departement,
-                         latitude, longitude, adresse, telephone, email, site_web,
-                         horaires, tarif_min, tarif_max, devise, cuisine, photo_url, equipements, capacite,
-                         note_etoiles, labels_qualite, lien_accessibilite, langues_parlees)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (identifiant_dt) DO UPDATE SET
-                        nom = EXCLUDED.nom, classification = EXCLUDED.classification,
-                        commune = EXCLUDED.commune, departement = EXCLUDED.departement,
-                        latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-                        adresse = EXCLUDED.adresse, telephone = EXCLUDED.telephone,
-                        email = EXCLUDED.email, site_web = EXCLUDED.site_web,
-                        horaires = EXCLUDED.horaires, tarif_min = EXCLUDED.tarif_min,
-                        tarif_max = EXCLUDED.tarif_max, devise = EXCLUDED.devise,
-                        cuisine = EXCLUDED.cuisine, photo_url = EXCLUDED.photo_url,
-                        equipements = EXCLUDED.equipements, capacite = EXCLUDED.capacite,
-                        note_etoiles = EXCLUDED.note_etoiles, labels_qualite = EXCLUDED.labels_qualite,
-                        lien_accessibilite = EXCLUDED.lien_accessibilite, langues_parlees = EXCLUDED.langues_parlees
-                    """,
-                    (
-                        objet["identifiant_dt"], objet["nom"], objet["categorie"], objet["classification"],
-                        objet["commune"], objet["departement"], objet["latitude"], objet["longitude"],
-                        objet["adresse"], objet["telephone"], objet["email"], objet["site_web"],
-                        objet["horaires"], objet["tarif_min"], objet["tarif_max"], objet["devise"],
-                        objet["cuisine"], objet["photo_url"], objet["equipements"], objet["capacite"],
-                        objet["note_etoiles"], objet["labels_qualite"], objet["lien_accessibilite"],
-                        objet["langues_parlees"],
-                    ),
-                )
+                lot.append((
+                    objet["identifiant_dt"], objet["nom"], objet["categorie"], objet["classification"],
+                    objet["commune"], objet["departement"], objet["latitude"], objet["longitude"],
+                    objet["adresse"], objet["telephone"], objet["email"], objet["site_web"],
+                    objet["horaires"], objet["tarif_min"], objet["tarif_max"], objet["devise"],
+                    objet["cuisine"], objet["photo_url"], objet["equipements"], objet["capacite"],
+                    objet["note_etoiles"], objet["labels_qualite"], objet["lien_accessibilite"],
+                    objet["langues_parlees"],
+                ))
                 importes += 1
+
+                if len(lot) >= TAILLE_LOT:
+                    await _vider_le_lot()
 
                 if importes % 2000 == 0:
                     print(f"  … {importes} importés (+ {ignores} ignorés)", flush=True)
+
+        await _vider_le_lot()  # dernier lot, potentiellement incomplet
 
         print(f"\nTerminé : {importes} importé(s), {ignores} ignoré(s).", flush=True)
     finally:

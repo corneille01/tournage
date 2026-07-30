@@ -99,3 +99,20 @@ async def execute(query: str, params: tuple = ()):
         if "RETURNING" in query.upper():
             return await conn.fetchval(query_pg, *params)
         return await conn.execute(query_pg, *params)
+
+
+async def executemany(query: str, liste_params: list[tuple]) -> None:
+    """
+    Pour insérer BEAUCOUP de lignes d'un coup (ex: import DATAtourisme,
+    dizaines de milliers de lignes) — une seule connexion pour tout le
+    lot au lieu d'un aller-retour réseau par ligne avec execute().
+    Bien plus rapide sur de gros volumes.
+    """
+    if not liste_params:
+        return
+    # _convertir_placeholders attend des params pour convertir %s -> $1 etc.
+    # — le premier jeu de paramètres suffit, la requête est identique pour
+    # toutes les lignes du lot.
+    query_pg = _convertir_placeholders(query, liste_params[0])
+    async with _pool.acquire() as conn:
+        await conn.executemany(query_pg, liste_params)

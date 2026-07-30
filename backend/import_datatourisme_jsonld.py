@@ -256,14 +256,24 @@ def _extraire_objet(poi: dict, categorie: str) -> dict | None:
     }
 
 
+def _ouvrir_fichier(chemin: str):
+    """Détecte un fichier gzip par ses octets magiques (1f 8b), peu
+    importe l'extension — le serveur DATAtourisme renvoie parfois le
+    flux compressé même quand on ne s'y attend pas."""
+    with open(chemin, "rb") as f:
+        entete = f.read(2)
+    if entete == b"\x1f\x8b":
+        return gzip.open(chemin, "rb")
+    return open(chemin, "rb")
+
+
 async def main(fichier: str, categorie: str):
     await init_db_pool()
     try:
         importes = 0
         ignores = 0
 
-        ouvrir = gzip.open if fichier.endswith(".gz") else open
-        with ouvrir(fichier, "rb") as f:
+        with _ouvrir_fichier(fichier) as f:
             for poi in ijson.items(f, "@graph.item"):
                 try:
                     objet = _extraire_objet(poi, categorie)

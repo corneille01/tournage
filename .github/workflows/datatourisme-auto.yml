@@ -20,6 +20,7 @@ on:
           - hebergement
           - restaurant
           - activite
+          - office_tourisme
   # Rafraîchissement automatique — décommente pour l'activer (le flux
   # DATAtourisme se régénère chaque jour côté serveur, mais un
   # rafraîchissement hebdomadaire suffit largement pour de l'hébergement/
@@ -38,7 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - run: pip install asyncpg python-dotenv ijson
 
       - name: Télécharger le flux (URL jamais affichée dans les logs)
@@ -46,18 +47,20 @@ jobs:
           URL_HEBERGEMENT: ${{ secrets.DATATOURISME_URL_HEBERGEMENT }}
           URL_RESTAURANT: ${{ secrets.DATATOURISME_URL_RESTAURANT }}
           URL_ACTIVITE: ${{ secrets.DATATOURISME_URL_ACTIVITE }}
+          URL_OFFICE_TOURISME: ${{ secrets.DATATOURISME_URL_OFFICE_TOURISME }}
         run: |
           case "${{ github.event.inputs.categorie }}" in
             hebergement) URL="$URL_HEBERGEMENT" ;;
             restaurant) URL="$URL_RESTAURANT" ;;
             activite) URL="$URL_ACTIVITE" ;;
+            office_tourisme) URL="$URL_OFFICE_TOURISME" ;;
           esac
           if [ -z "$URL" ]; then
             echo "❌ Secret manquant pour cette catégorie — configure-le dans Settings > Secrets"
             exit 1
           fi
           mkdir -p data
-          curl -sL "$URL" -o data/flux_telecharge.jsonld
+          curl -sL --compressed "$URL" -o data/flux_telecharge.jsonld
           echo "Taille téléchargée : $(du -h data/flux_telecharge.jsonld | cut -f1)"
 
       - name: Importer en base

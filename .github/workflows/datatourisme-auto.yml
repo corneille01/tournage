@@ -25,9 +25,9 @@ on:
   # DATAtourisme se régénère chaque jour côté serveur, mais un
   # rafraîchissement hebdomadaire suffit largement pour de l'hébergement/
   # restauration, qui changent rarement d'un jour à l'autre).
-  # schedule:
-  #   - cron: "0 3 * * 1"  # chaque lundi à 3h du matin
-
+  #
+schedule:
+  - cron: "0 3 * * *"
 jobs:
   telecharger-et-importer:
     runs-on: ubuntu-latest

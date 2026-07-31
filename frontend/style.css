@@ -756,12 +756,22 @@ body.page-film-ssr {
 /* ── Photo, horaires et itinéraires par commodité ── */
 .resultat-photo {
   width: 100%;
-  max-height: 120px;
+  max-height: 220px;
   object-fit: cover;
   border-radius: 8px;
   margin-bottom: 6px;
 }
 .horaires { font-size: 0.75rem; color: var(--couleur-texte-muted); margin-top: 2px; }
+.etoiles { color: var(--gold); font-size: 0.72rem; }
+.equipements, .langues { font-size: 0.72rem; color: var(--couleur-texte-muted); margin-top: 2px; }
+.accessibilite a { font-size: 0.72rem; color: var(--primary); }
+.description-commodite {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--couleur-texte-muted);
+  margin-top: 4px;
+}
+.description-commodite.scrollable { max-height: 120px; overflow-y: auto; }
 
 .boutons-itineraire {
   display: flex;
@@ -1069,7 +1079,3 @@ body.page-film-ssr {
   cursor: pointer;
   margin-bottom: 8px;
 }
-
-.liens-legaux { margin-top: 8px; font-size: 0.62rem; text-align: center; }
-.liens-legaux a { color: var(--couleur-texte-muted); text-decoration: none; }
-.liens-legaux a:hover { text-decoration: underline; }

@@ -559,11 +559,16 @@ function _rendreCategorie() {
     return `
       <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
         ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
-        <div class="nom">${estPlusProche ? "⭐ " : ""}${item.nom}</div>
+        <div class="nom">${estPlusProche ? "⭐ " : ""}${item.nom}${item.note_etoiles ? ` <span class="etoiles">${"⭐".repeat(Math.round(item.note_etoiles))}</span>` : ""}</div>
         <div class="distance">${_texteDistanceDynamique(item, modeTriCourant)}</div>
         ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
         ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
         ${item.telephone ? `<div class="telephone">📞 ${item.telephone}</div>` : ""}
+        ${item.tarif_min ? `<div class="tarif">💰 ${_texteTarif(item)}</div>` : ""}
+        ${item.equipements ? `<div class="equipements">🔧 ${item.equipements}</div>` : ""}
+        ${item.langues_parlees ? `<div class="langues">🗣️ ${item.langues_parlees}</div>` : ""}
+        ${item.description ? `<div class="description-commodite scrollable">${item.description}</div>` : ""}
+        ${item.lien_accessibilite ? `<div class="accessibilite"><a href="${item.lien_accessibilite}" target="_blank" rel="noopener noreferrer">♿ Infos accessibilité</a></div>` : ""}
         ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
         <div class="boutons-itineraire">
           <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
@@ -697,12 +702,16 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
     const texteDistance = _texteDistanceDynamique(item, modeTri);
     const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
       ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy" style="margin-bottom:6px;">` : ""}
-      <b>${estPlusProche ? "⭐ " : ""}${item.nom}</b><br>
+      <b>${estPlusProche ? "⭐ " : ""}${item.nom}${item.note_etoiles ? ` ${"⭐".repeat(Math.round(item.note_etoiles))}` : ""}</b><br>
       ${texteDistance} du lieu de tournage
       ${item.adresse ? `<br>${item.adresse}` : ""}
       ${item.horaires ? `<br>${_texteHoraires(item.horaires)}` : ""}
       ${item.telephone ? `<br>📞 ${item.telephone}` : ""}
-      ${item.site_web ? `<br><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
+      ${item.tarif_min ? `<br>💰 ${_texteTarif(item)}` : ""}
+      ${item.equipements ? `<br>🔧 ${item.equipements}` : ""}
+      ${item.langues_parlees ? `<br>🗣️ ${item.langues_parlees}` : ""}
+      ${item.description ? `<div class="description-commodite scrollable">${item.description}</div>` : ""}
+      ${item.lien_accessibilite ? `<br><a href="${item.lien_accessibilite}" target="_blank" rel="noopener noreferrer">♿ Infos accessibilité</a>` : ""}
       <div class="boutons-itineraire" style="margin-top:6px;">
         <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
         <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
@@ -734,6 +743,14 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
 
   if (bounds.length) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   if (state.dernierBounds) document.getElementById("btn-recentrer").classList.remove("hidden");
+}
+
+function _texteTarif(item) {
+  const devise = item.devise === "EUR" ? "€" : (item.devise || "");
+  if (item.tarif_max && item.tarif_max !== item.tarif_min) {
+    return `${item.tarif_min} — ${item.tarif_max} ${devise}`;
+  }
+  return `${item.tarif_min} ${devise}`;
 }
 
 function _texteHoraires(horaires) {
@@ -859,25 +876,28 @@ async function afficherTraceFilm() {
       const marker = L.marker([etape.latitude, etape.longitude], { icon: icone });
 
       const estDernierPoint = index === data.etapes.length - 1;
-      const trajetSuivant = !estDernierPoint ? data.trajets?.[index] : null;
       const etapeSuivante = !estDernierPoint ? data.etapes[index + 1] : null;
+      const trajetSuivant = etapeSuivante ? data.trajets?.[index] : null;
 
       let contenuPopup = `<b>Étape ${index + 1}</b><br>${data.adresses[index]}`;
-      if (trajetSuivant && etapeSuivante) {
+      if (estDernierPoint) {
+        contenuPopup += `<div class="itineraire-resultat" style="margin-top:6px;">🏁 Dernière étape du trajet</div>`;
+      } else if (etapeSuivante) {
+        // On a toujours l'étape suivante et son point GPS, même si la
+        // distance précalculée (trajetSuivant) manque parce qu'OSRM n'a
+        // pas pu calculer l'itinéraire complet — le bouton reste utile
+        // dans les deux cas, juste sans l'aperçu de distance/durée.
         contenuPopup += `
           <div class="boutons-itineraire" style="margin-top:8px;">
             <button class="btn-etape-suivante"
-                    data-lat="${etapeSuivante.latitude}" data-lon="${etapeSuivante.longitude}"
-                    data-distance="${trajetSuivant.distance_metres}" data-duree="${trajetSuivant.duree_secondes}">
+                    data-lat="${etapeSuivante.latitude}" data-lon="${etapeSuivante.longitude}">
               🚗 Vers l'étape ${index + 2}
             </button>
           </div>
           <div class="itineraire-resultat">
-            ${formatDistance(trajetSuivant.distance_metres)} · ${formatDuree(trajetSuivant.duree_secondes)}
+            ${trajetSuivant ? `${formatDistance(trajetSuivant.distance_metres)} · ${formatDuree(trajetSuivant.duree_secondes)}` : "Distance non calculée pour ce tronçon"}
           </div>
         `;
-      } else {
-        contenuPopup += `<div class="itineraire-resultat" style="margin-top:6px;">🏁 Dernière étape du trajet</div>`;
       }
 
       marker.bindPopup(contenuPopup);
@@ -914,74 +934,61 @@ async function afficherTraceFilm() {
   }
 }
 
+// ── Réglage caché : contrôle l'affichage de la section réservation
+// depuis le code (pas de bouton visible pour l'utilisateur final) —
+// change juste cette valeur pour masquer toute la section avant de
+// partager un lien avec quelqu'un.
+const AFFICHER_SECTION_RESERVATION = true;
+
+// ── Visites déjà organisées par de vraies structures (offices de
+// tourisme, guides locaux...) pour certains films/séries précis —
+// vide pour l'instant : à remplir au fur et à mesure des partenariats
+// confirmés. Clé = id du film. "lienAffiliation" reste null tant
+// qu'aucun contrat d'affiliation n'est signé avec la structure ; une
+// fois signé, remplace juste cette valeur par le lien avec l'identifiant
+// d'affiliation, rien d'autre à changer dans le code.
+const VISITES_PARTENAIRES = {
+  // Exemple à dupliquer une fois un partenariat confirmé :
+  // 42: { nom: "Office de tourisme de Montpellier", description: "Visite guidée sur les lieux de tournage d'Un si grand soleil.", lien: "https://...", lienAffiliation: null },
+};
+
 function afficherSectionReservation() {
   const conteneur = document.getElementById("section-reservation");
+  if (!AFFICHER_SECTION_RESERVATION) { conteneur.innerHTML = ""; return; }
+
+  const filmId = Number(document.getElementById("popup-overlay").dataset.filmId);
   const titre = state.filmSelectionne?.titre || "ce parcours";
+  const partenaire = VISITES_PARTENAIRES[filmId];
 
-  conteneur.innerHTML = `
-    <p class="anecdote-titre">🎟️ Vivez ce parcours comme si vous y étiez</p>
-    <p class="reservation-intro">
-      Pelify Voyages Cinéma raconte les coulisses de "${titre}" directement
-      sur place, avec un guide qui connaît chaque secret de tournage — même
-      si vous gérez vous-même votre hébergement et vos trajets, la visite
-      guidée reste au programme : c'est elle qui transforme un simple lieu
-      en souvenir.
-    </p>
-
-    <button id="btn-masquer-tarifs" class="btn-masquer-tarifs">🙈 Masquer les tarifs</button>
-
-    <div id="bloc-tarifs-circuit">
-      <div class="packs-reservation">
-        <div class="pack-carte">
-          <div class="pack-nom">L'Éveil du Cinéphile</div>
-          <div class="pack-prix">39€ / pers.</div>
-          <ul class="pack-inclus">
-            <li>✅ Visite guidée sur place, coulisses et anecdotes</li>
-            <li>✅ Itinéraire optimisé, fiches lieux</li>
-            <li>❌ Hébergement / repas / transport à votre charge</li>
-          </ul>
-        </div>
-        <div class="pack-carte pack-recommande">
-          <div class="pack-badge">Le plus choisi</div>
-          <div class="pack-nom">L'Évasion Complète</div>
-          <div class="pack-prix">À partir de 89€ / pers.</div>
-          <ul class="pack-inclus">
-            <li>✅ Tout L'Éveil du Cinéphile, plus :</li>
-            <li>✅ Hébergement le mieux placé réservé pour vous</li>
-            <li>✅ Table réservée dans les restaurants recommandés</li>
-            <li>✅ Assistance téléphonique pendant le séjour</li>
-          </ul>
-        </div>
-        <div class="pack-carte">
-          <div class="pack-nom">L'Odyssée Sur Mesure</div>
-          <div class="pack-prix">À partir de 219€ / pers.</div>
-          <ul class="pack-inclus">
-            <li>✅ Tout L'Évasion Complète, plus :</li>
-            <li>✅ Transport organisé entre chaque lieu</li>
-            <li>✅ Guide local privé sur place</li>
-            <li>✅ Accès prioritaire aux sites partenaires</li>
-          </ul>
-        </div>
-      </div>
-
-      <p class="reservation-note">
-        Tarifs indicatifs pour un parcours de 2 jours, hors saison haute —
-        devis exact envoyé sous 24h après votre demande.
+  if (partenaire) {
+    // Une vraie structure organise déjà une visite pour ce film — on
+    // renvoie vers elle plutôt que de proposer nos propres tarifs.
+    const lien = partenaire.lienAffiliation || partenaire.lien;
+    conteneur.innerHTML = `
+      <p class="anecdote-titre">🎟️ Une visite existe déjà pour ce parcours</p>
+      <p class="reservation-intro">
+        <strong>${partenaire.nom}</strong> propose une visite guidée sur les lieux de tournage de "${titre}".
+        ${partenaire.description || ""}
       </p>
-
-      <a class="btn-reserver" href="mailto:reservations@pelify.app?subject=Demande%20de%20devis%20-%20${encodeURIComponent(titre)}">
-        📩 Demander un devis pour ce parcours
+      <a class="btn-reserver" href="${lien}" target="_blank" rel="noopener noreferrer">
+        📩 Voir cette visite chez ${partenaire.nom}
       </a>
-    </div>
-  `;
+    `;
+    return;
+  }
 
-  document.getElementById("btn-masquer-tarifs").addEventListener("click", (e) => {
-    const bloc = document.getElementById("bloc-tarifs-circuit");
-    const masque = bloc.style.display === "none";
-    bloc.style.display = masque ? "" : "none";
-    e.target.textContent = masque ? "🙈 Masquer les tarifs" : "👁️ Afficher les tarifs";
-  });
+  // Aucune visite organisée connue pour ce film — message honnête,
+  // pas de tarifs inventés tant qu'aucune structure réelle n'a été
+  // identifiée pour ce parcours précis.
+  conteneur.innerHTML = `
+    <p class="anecdote-titre">🎟️ Envie de visiter ce lieu accompagné ?</p>
+    <p class="reservation-intro">
+      Aucune visite guidée organisée n'est référencée pour "${titre}" pour l'instant.
+      L'office de tourisme le plus proche du lieu peut avoir plus d'informations sur les visites disponibles.
+    </p>
+  `;
 }
+
 
 function formatDistance(m) {
   return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;

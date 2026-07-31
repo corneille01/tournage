@@ -317,15 +317,6 @@ def _classer_accessibilite(duree_secondes: int | None) -> tuple[str, str]:
     return ("isolé", "Nécessite une action avant valorisation : partenariat avec un hébergeur/restaurateur plus proche, navette dédiée, ou signalétique renforcée sur les distances réelles.")
 
 
-@app.get("/api/analyse/accessibilite")
-async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = Query(20)):
-    """
-    Pour les films/séries les plus connus (popularité TMDB), analyse
-    concrète de l'accessibilité réelle en voiture aux commodités
-    essentielles (hébergement, restaurant) — pas juste "il y a des
-    commodités", mais "combien de temps pour s'y rendre en voiture".
-    Sépare le contenu français du reste, comme demandé.
-    """
 CATEGORIES_ANALYSE_ACCESSIBILITE = (
     "hebergement", "restaurant", "activite", "parking",
     "office_tourisme", "gare", "aeroport", "aerodrome",
@@ -1001,13 +992,64 @@ def _adresse_complete(lieu: dict) -> str:
     return ", ".join(p for p in (lieu["nom"], lieu.get("commune"), lieu.get("departement")) if p)
 
 
+async def _itineraire_multi_etapes(lieux_ordonnes: list[dict], mode: str) -> dict:
+    """
+    Calcule le trajet complet tronçon par tronçon (2 points à la fois),
+    plutôt qu'un seul appel OSRM avec tous les points d'un coup — un
+    appel à 15-20+ points échoue souvent sur le serveur public (limite
+    de points ou timeout), alors que des petits appels 2 points
+    réussissent presque toujours (c'est déjà ce que font les boutons
+    piéton/voiture individuels des commodités, avec succès).
+
+    Si UN tronçon précis échoue malgré tout, seul CE tronçon retombe en
+    ligne droite (annoncé comme tel) — le reste du trajet garde son
+    tracé réel, plutôt que de tout dégrader d'un coup.
+    """
+    geometries = []
+    trajets = []
+    distance_totale = 0
+    duree_totale = 0
+    tout_reel = True
+
+    for i in range(len(lieux_ordonnes) - 1):
+        depart = lieux_ordonnes[i]
+        arrivee = lieux_ordonnes[i + 1]
+        coords = [[float(depart["longitude"]), float(depart["latitude"])],
+                  [float(arrivee["longitude"]), float(arrivee["latitude"])]]
+
+        resultat = await _itineraire_osrm(coords, mode)
+        if resultat:
+            geometries.append(resultat["geometry"])
+            trajets.append({"distance_metres": resultat["distance_metres"], "duree_secondes": resultat["duree_secondes"]})
+            distance_totale += resultat["distance_metres"]
+            duree_totale += resultat["duree_secondes"]
+        else:
+            tout_reel = False
+            dist = haversine_metres(
+                float(depart["latitude"]), float(depart["longitude"]),
+                float(arrivee["latitude"]), float(arrivee["longitude"]),
+            )
+            geometries.append({"type": "LineString", "coordinates": coords})
+            trajets.append({"distance_metres": round(dist), "duree_secondes": None})
+            distance_totale += dist
+
+    return {
+        "type": "route_reelle" if tout_reel else "route_partielle",
+        "geometry": {"type": "MultiLineString", "coordinates": [g["coordinates"] for g in geometries]},
+        "distance_metres": round(distance_totale),
+        "duree_secondes": round(duree_totale) if tout_reel else None,
+        "trajets": trajets,
+    }
+
+
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):
     """
     "Sur les traces de {film}" — relie tous les lieux de tournage d'un
     film en Occitanie par le trajet EN VOITURE le plus rapide (pas
-    juste le plus proche voisin), via OSRM. Repli en lignes droites,
-    clairement annoncé comme estimation, si OSRM est indisponible.
+    juste le plus proche voisin), calculé tronçon par tronçon pour
+    rester fiable même avec beaucoup de lieux (voir
+    _itineraire_multi_etapes pour le pourquoi).
     """
     lieux = await fetch_all(
         "SELECT id, nom, commune, departement, latitude, longitude FROM lieux_tournage WHERE film_id = %s",
@@ -1017,33 +1059,10 @@ async def trace_film(film_id: int):
         raise HTTPException(400, "Ce film n'a qu'un seul lieu recensé — pas de tracé possible.")
 
     lieux_ordonnes = await _ordre_optimise(lieux)
-    coords_lonlat = [[float(l["longitude"]), float(l["latitude"])] for l in lieux_ordonnes]
-
-    resultat_osrm = await _itineraire_osrm(coords_lonlat, "driving-car")
-    if resultat_osrm:
-        resultat_osrm["etapes"] = lieux_ordonnes
-        resultat_osrm["adresses"] = [_adresse_complete(l) for l in lieux_ordonnes]
-        return resultat_osrm
-
-    # Repli : lignes droites, distance clairement annoncée comme estimation
-    distance_totale = sum(
-        haversine_metres(
-            float(lieux_ordonnes[i]["latitude"]), float(lieux_ordonnes[i]["longitude"]),
-            float(lieux_ordonnes[i + 1]["latitude"]), float(lieux_ordonnes[i + 1]["longitude"]),
-        )
-        for i in range(len(lieux_ordonnes) - 1)
-    )
-    return {
-        "type": "estimation_vol_oiseau",
-        "geometry": {
-            "type": "LineString",
-            "coordinates": coords_lonlat,
-        },
-        "distance_metres": round(distance_totale),
-        "duree_secondes": None,
-        "etapes": lieux_ordonnes,
-        "adresses": [_adresse_complete(l) for l in lieux_ordonnes],
-    }
+    resultat = await _itineraire_multi_etapes(lieux_ordonnes, "driving-car")
+    resultat["etapes"] = lieux_ordonnes
+    resultat["adresses"] = [_adresse_complete(l) for l in lieux_ordonnes]
+    return resultat
 
 
 # ══════════════════════════════════════════════════════════════

@@ -917,6 +917,8 @@ async function afficherTraceFilm() {
     const dureeTxt = data.duree_secondes ? formatDuree(data.duree_secondes) : null;
     const typeTexte = data.type === "route_reelle"
       ? `Voici le trajet le plus optimisé en temps et en distance en voiture (${distanceKm} km, environ ${dureeTxt}) :`
+      : data.type === "route_partielle"
+      ? `Trajet en voiture (${distanceKm} km) — la plupart des tronçons suivent les routes réelles, quelques-uns en estimation à vol d'oiseau (itinéraire indisponible pour ce tronçon précis) :`
       : `Estimation à vol d'oiseau (${distanceKm} km, itinéraire routier indisponible) :`;
 
     const listeAdresses = data.adresses.map((adresse, i) => `<li>${adresse}</li>`).join("");

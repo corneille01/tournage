@@ -44,36 +44,18 @@ _LABEL_GENERIQUE = {
 }
 
 _CATEGORY_TAGS = {
-    "hebergement": [
-        # Hébergements classiques
-        "tourism=hotel",
-        "tourism=motel",
-        "tourism=hostel",
-
-        # Chambres d'hôtes, gîtes et locations de vacances
-        "tourism=guest_house",
-        "tourism=chalet",
-        "tourism=apartment",
-
-        # Campings et caravanes
-        "tourism=camp_site",
-        "tourism=caravan_site",
-    ],
+    # hebergement, restaurant, office_tourisme et activite sont repris
+    # par DATAtourisme (données officielles, plus complètes) depuis
+    # juillet 2026 — retirés d'ici pour ne plus solliciter Overpass
+    # inutilement sur ces catégories. Les dicts ci-dessous (labels,
+    # rayons, phrases) gardent leurs entrées pour ces 4 catégories —
+    # inoffensif, elles ne sont juste plus jamais consultées puisque
+    # la boucle dans refresh_cache.py itère sur _CATEGORY_TAGS.
 
     # Refuges et étapes de randonnée
     "refuge": [
         "tourism=alpine_hut",
         "tourism=wilderness_hut",
-    ],
-
-    "restaurant": [
-        "amenity=restaurant",
-        "amenity=cafe",
-        "amenity=fast_food",
-    ],
-
-    "office_tourisme": [
-        "tourism=information",
     ],
 
     "police": [
@@ -109,36 +91,6 @@ _CATEGORY_TAGS = {
     "distributeur": [
         "amenity=atm",
         "amenity=bank",
-    ],
-
-    # Que faire aux alentours
-    "activite": [
-        # Lieux touristiques
-        "tourism=attraction",
-        "tourism=museum",
-        "tourism=viewpoint",
-        "tourism=artwork",
-        "tourism=gallery",
-
-        # Patrimoine
-        "historic=castle",
-        "historic=monument",
-        "historic=memorial",
-        "historic=ruins",
-        "historic=archaeological_site",
-
-        # Nature et loisirs
-        "leisure=park",
-        "leisure=nature_reserve",
-        "leisure=garden",
-        "leisure=water_park",
-        "leisure=swimming_pool",
-
-        # Randonnée et découverte
-        "natural=peak",
-        "natural=cave_entrance",
-        "natural=waterfall",
-        "man_made=observation_tower",
     ],
 }
 

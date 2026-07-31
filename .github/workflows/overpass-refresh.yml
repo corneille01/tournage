@@ -1,11 +1,17 @@
-name: Remplissage du cache Overpass (hébergements, restaurants, etc.)
+name: Remplissage du cache Overpass (refuges, parking, gare, etc.)
 
-# Trois modes possibles :
-# 1. "lieu_id" renseigné → traite UNIQUEMENT ce lieu (test rapide, ~30s)
-# 2. "departement" choisi dans le menu (autre que "tous") → traite CE
-#    seul département
-# 3. Rien renseigné (ou "tous" choisi) → lance les 13 départements
-#    d'Occitanie EN PARALLÈLE (matrice), chacun dans son propre job
+# hébergement, restaurant, office_tourisme et activite sont retirés
+# d'ici — repris par DATAtourisme (données officielles, plus
+# complètes). Ce workflow ne traite plus que les catégories encore
+# utiles via OSM (refuge, police, hôpital, gare, aéroport, aérodrome,
+# arrêt de bus, parking, distributeur).
+#
+# Hebdomadaire (pas quotidien) : les données OSM ne changent pas
+# d'un jour à l'autre, et d'ne pas martyriser le serveur Overpass
+# public tous les jours pour rien.
+#
+# Départements traités en SÉQUENCE (un attend que le précédent soit
+# fini) — pas en parallèle — pour ne jamais saturer Overpass d'un coup.
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +39,8 @@ on:
           - Pyrénées-Orientales
           - Tarn
           - Tarn-et-Garonne
+  schedule:
+    - cron: "0 2 * * 1" # chaque lundi à 2h du matin (UTC)
 
 jobs:
   test-un-lieu:
@@ -54,9 +62,9 @@ jobs:
         run: python refresh_cache.py --lieu-id ${{ github.event.inputs.lieu_id }}
 
   un-seul-departement:
-    if: ${{ github.event.inputs.lieu_id == '' && github.event.inputs.departement != 'tous' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lieu_id == '' && github.event.inputs.departement != 'tous' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # large marge, certains départements (ex: Pyrénées-Orientales) sont volumineux
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: backend
@@ -72,12 +80,14 @@ jobs:
         run: python refresh_cache.py --departement "${{ github.event.inputs.departement }}"
 
   tous-les-departements:
-    if: ${{ github.event.inputs.lieu_id == '' && github.event.inputs.departement == 'tous' }}
+    # Se déclenche soit sur le cron hebdomadaire, soit manuellement
+    # avec "tous" choisi.
+    if: ${{ github.event_name == 'schedule' || (github.event.inputs.lieu_id == '' && github.event.inputs.departement == 'tous') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90 # large marge par département (~20-30 min attendues)
+    timeout-minutes: 180 # marge par département, exécutés un par un
     strategy:
       fail-fast: false # un département qui échoue n'arrête pas les autres
-      max-parallel: 6 # évite de saturer overpass-api.de d'un coup avec 13 requêtes simultanées
+      max-parallel: 1 # SÉQUENTIEL — un département attend la fin du précédent
       matrix:
         departement:
           - "Ariège"

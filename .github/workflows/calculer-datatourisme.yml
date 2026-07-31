@@ -2,11 +2,14 @@ name: Calcul distances DATAtourisme
 
 # 100% SQL local, aucun appel réseau — rapide (quelques minutes pour
 # tous les lieux), contrairement aux workflows Overpass équivalents.
+#
+# Quotidien, juste après l'import DATAtourisme (3h) — les 4 catégories
+# sont traitées en SÉQUENCE (une attend la fin de la précédente).
 on:
   workflow_dispatch:
     inputs:
       categorie:
-        description: "Catégorie à calculer"
+        description: "Catégorie à calculer (ignoré sur le déclenchement automatique, qui traite les 4)"
         required: true
         type: choice
         options:
@@ -18,9 +21,12 @@ on:
         description: "ID d'un seul lieu à tester (laisser vide pour tous)"
         required: false
         default: ""
+  schedule:
+    - cron: "0 6 * * *" # tous les jours à 6h (UTC) — large marge après l'import séquentiel (3h)
 
 jobs:
-  calcul:
+  calcul-manuel:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -41,3 +47,26 @@ jobs:
           else
             python calculer_amenities_datatourisme.py --categorie "${{ github.event.inputs.categorie }}"
           fi
+
+  calcul-quotidien-4-categories:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # SÉQUENTIEL — une catégorie attend la fin de la précédente
+      matrix:
+        categorie: [hebergement, restaurant, activite, office_tourisme]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg python-dotenv
+      - name: Calculer les distances — ${{ matrix.categorie }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python calculer_amenities_datatourisme.py --categorie "${{ matrix.categorie }}"

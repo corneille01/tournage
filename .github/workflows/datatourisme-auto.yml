@@ -3,7 +3,7 @@ name: DATAtourisme — téléchargement + import automatique
 # Deux façons de le déclencher :
 # - À la main (workflow_dispatch) : tu choisis UNE catégorie précise
 # - Automatique (schedule, tous les jours à 3h) : les 4 catégories sont
-#   traitées l'une après l'autre, dans des jobs séparés en parallèle
+#   traitées l'une après l'autre, EN SÉQUENCE (jamais en parallèle)
 #
 # À faire une seule fois : Settings > Secrets and variables > Actions
 # > New repository secret, un secret par catégorie :
@@ -48,6 +48,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false # une catégorie qui échoue n'arrête pas les autres
+      max-parallel: 1 # SÉQUENTIEL — une catégorie attend la fin de la précédente
       matrix:
         categorie: ${{ fromJson(needs.determiner-categories.outputs.categories) }}
     defaults:

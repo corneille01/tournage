@@ -30,6 +30,8 @@ on:
           - Pyrénées-Orientales
           - Tarn
           - Tarn-et-Garonne
+  schedule:
+    - cron: "0 4 * * 1" # chaque lundi à 4h du matin (UTC) — après Overpass (2h)
 
 jobs:
   precalcul:
@@ -48,7 +50,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python enrich_itineraires.py
+          elif [ -n "${{ github.event.inputs.lieu_id }}" ]; then
             python enrich_itineraires.py --lieu-id ${{ github.event.inputs.lieu_id }}
           elif [ "${{ github.event.inputs.departement }}" != "tous" ]; then
             python enrich_itineraires.py --departement "${{ github.event.inputs.departement }}"

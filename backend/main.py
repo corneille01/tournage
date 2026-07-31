@@ -62,6 +62,22 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def _interdire_cache_api(request: Request, call_next):
+    """
+    Empêche explicitement Cloudflare (ou tout autre cache intermédiaire)
+    de mettre en cache les réponses des routes /api/* — sans ça, un
+    cache agressif peut continuer à servir une VIEILLE réponse (y
+    compris une erreur déjà corrigée côté code) indéfiniment, ce qui
+    s'est déjà produit une fois.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["CDN-Cache-Control"] = "no-store"
+    return response
+
+
 # ── Liste des films (barre latérale) ─────────────────────────────
 @app.get("/api/films")
 async def liste_films(

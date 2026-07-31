@@ -16,7 +16,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from contextlib import asynccontextmanager
@@ -344,117 +344,143 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
     lieux du film est toujours indiqué pour que cette agrégation soit
     transparente plutôt qu'implicite.
     """
-    films = await fetch_all(
-        """
-        SELECT id, titre, annee, media_type, poster_url, popularite, nationalite
-        FROM films
-        WHERE region = %s AND statut = 'publie' AND popularite IS NOT NULL
-        ORDER BY popularite DESC
-        LIMIT %s
-        """,
-        (region, limite),
-    )
-    if not films:
-        return {"francais": [], "autres": []}
-    film_ids = [f["id"] for f in films]
+    try:
+        films = await fetch_all(
+            """
+            SELECT id, titre, annee, media_type, poster_url, popularite, nationalite
+            FROM films
+            WHERE region = %s AND statut = 'publie' AND popularite IS NOT NULL
+            ORDER BY popularite DESC
+            LIMIT %s
+            """,
+            (region, limite),
+        )
+        if not films:
+            return {"francais": [], "autres": []}
+        film_ids = [f["id"] for f in films]
 
-    lieux = await fetch_all(
-        "SELECT id, film_id FROM lieux_tournage WHERE film_id = ANY(%s)", (film_ids,)
-    )
-    lieux_par_film: dict[int, list[int]] = {}
-    for l in lieux:
-        lieux_par_film.setdefault(l["film_id"], []).append(l["id"])
-    tous_lieu_ids = [l["id"] for l in lieux]
+        lieux = await fetch_all(
+            "SELECT id, film_id FROM lieux_tournage WHERE film_id = ANY(%s)", (film_ids,)
+        )
+        lieux_par_film: dict[int, list[int]] = {}
+        for l in lieux:
+            lieux_par_film.setdefault(l["film_id"], []).append(l["id"])
+        tous_lieu_ids = [l["id"] for l in lieux]
 
-    if not tous_lieu_ids:
-        return {"francais": [], "autres": []}
+        if not tous_lieu_ids:
+            return {"francais": [], "autres": []}
 
-    # Une seule requête pour TOUTES les commodités, tous films et
-    # catégories confondus — regroupé en Python ensuite.
-    toutes_commodites = await fetch_all(
-        """
-        SELECT lieu_tournage_id, categorie, nom, distance_voiture_metres,
-               duree_voiture_secondes, capacite
-        FROM amenity_cache
-        WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
-              AND duree_voiture_secondes IS NOT NULL
-        ORDER BY duree_voiture_secondes ASC
-        """,
-        (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
-    )
-    toutes_stats = await fetch_all(
-        """
-        SELECT lieu_tournage_id, categorie, nombre_total
-        FROM amenity_stats
-        WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
-        """,
-        (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
-    )
+        # Une seule requête pour TOUTES les commodités, tous films et
+        # catégories confondus — regroupé en Python ensuite.
+        toutes_commodites = await fetch_all(
+            """
+            SELECT lieu_tournage_id, categorie, nom, distance_voiture_metres,
+                   duree_voiture_secondes, capacite
+            FROM amenity_cache
+            WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
+                  AND duree_voiture_secondes IS NOT NULL
+            ORDER BY duree_voiture_secondes ASC
+            """,
+            (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
+        )
+        toutes_stats = await fetch_all(
+            """
+            SELECT lieu_tournage_id, categorie, nombre_total
+            FROM amenity_stats
+            WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
+            """,
+            (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
+        )
 
-    # Index en mémoire : (lieu_id, categorie) → [commodités triées par durée]
-    commodites_par_lieu_categorie: dict[tuple[int, str], list[dict]] = {}
-    for c in toutes_commodites:
-        cle = (c["lieu_tournage_id"], c["categorie"])
-        commodites_par_lieu_categorie.setdefault(cle, []).append(c)
+        # Index en mémoire : (lieu_id, categorie) → [commodités triées par durée]
+        commodites_par_lieu_categorie: dict[tuple[int, str], list[dict]] = {}
+        for c in toutes_commodites:
+            cle = (c["lieu_tournage_id"], c["categorie"])
+            commodites_par_lieu_categorie.setdefault(cle, []).append(c)
 
-    stats_par_lieu_categorie: dict[tuple[int, str], int] = {}
-    for s in toutes_stats:
-        cle = (s["lieu_tournage_id"], s["categorie"])
-        stats_par_lieu_categorie[cle] = (stats_par_lieu_categorie.get(cle, 0) or 0) + (s["nombre_total"] or 0)
+        stats_par_lieu_categorie: dict[tuple[int, str], int] = {}
+        for s in toutes_stats:
+            cle = (s["lieu_tournage_id"], s["categorie"])
+            stats_par_lieu_categorie[cle] = (stats_par_lieu_categorie.get(cle, 0) or 0) + (s["nombre_total"] or 0)
 
-    resultat = {"francais": [], "autres": []}
+        resultat = {"francais": [], "autres": []}
 
-    for film in films:
-        lieu_ids = lieux_par_film.get(film["id"], [])
-        if not lieu_ids:
-            continue
+        for film in films:
+            lieu_ids = lieux_par_film.get(film["id"], [])
+            if not lieu_ids:
+                continue
 
-        categories_analysees = {}
-        score_bien_dessservi = 0
-        for categorie in CATEGORIES_ANALYSE_ACCESSIBILITE:
-            candidats = []
-            for lid in lieu_ids:
-                candidats.extend(commodites_par_lieu_categorie.get((lid, categorie), []))
-            candidats.sort(key=lambda c: c["duree_voiture_secondes"])
-            top3 = candidats[:3]
+            categories_analysees = {}
+            score_bien_dessservi = 0
+            for categorie in CATEGORIES_ANALYSE_ACCESSIBILITE:
+                candidats = []
+                for lid in lieu_ids:
+                    candidats.extend(commodites_par_lieu_categorie.get((lid, categorie), []))
+                candidats.sort(key=lambda c: c["duree_voiture_secondes"])
+                top3 = candidats[:3]
 
-            nombre_total_rayon = sum(stats_par_lieu_categorie.get((lid, categorie), 0) for lid in lieu_ids)
+                nombre_total_rayon = sum(stats_par_lieu_categorie.get((lid, categorie), 0) for lid in lieu_ids)
 
-            meilleur = top3[0] if top3 else None
-            etiquette, action = _classer_accessibilite(
-                meilleur["duree_voiture_secondes"] if meilleur else None
-            )
-            if etiquette == "bien desservi":
-                score_bien_dessservi += 1
+                meilleur = top3[0] if top3 else None
+                etiquette, action = _classer_accessibilite(
+                    meilleur["duree_voiture_secondes"] if meilleur else None
+                )
+                if etiquette == "bien desservi":
+                    score_bien_dessservi += 1
 
-            categories_analysees[categorie] = {
-                "rayon_metres": RAYON_RECHERCHE_M.get(categorie),
-                "nombre_total_rayon": nombre_total_rayon,
-                "top_plus_proches": [
-                    {
-                        "nom": m["nom"],
-                        "duree_minutes": round(m["duree_voiture_secondes"] / 60),
-                        "distance_metres": m["distance_voiture_metres"],
-                        "capacite": m["capacite"],
-                    }
-                    for m in top3
-                ],
-                "etiquette": etiquette,
-                "action": action,
+                categories_analysees[categorie] = {
+                    "rayon_metres": RAYON_RECHERCHE_M.get(categorie),
+                    "nombre_total_rayon": nombre_total_rayon,
+                    "top_plus_proches": [
+                        {
+                            "nom": m["nom"],
+                            "duree_minutes": round(m["duree_voiture_secondes"] / 60),
+                            "distance_metres": m["distance_voiture_metres"],
+                            "capacite": m["capacite"],
+                        }
+                        for m in top3
+                    ],
+                    "etiquette": etiquette,
+                    "action": action,
+                }
+
+            entree = {
+                "id": film["id"], "titre": film["titre"], "annee": film["annee"],
+                "media_type": film["media_type"], "poster_url": film["poster_url"],
+                "nombre_lieux": len(lieu_ids),
+                "score_equipement": f"{score_bien_dessservi}/{len(CATEGORIES_ANALYSE_ACCESSIBILITE)}",
+                "categories": categories_analysees,
             }
 
-        entree = {
-            "id": film["id"], "titre": film["titre"], "annee": film["annee"],
-            "media_type": film["media_type"], "poster_url": film["poster_url"],
-            "nombre_lieux": len(lieu_ids),
-            "score_equipement": f"{score_bien_dessservi}/{len(CATEGORIES_ANALYSE_ACCESSIBILITE)}",
-            "categories": categories_analysees,
-        }
+            # Risque de sur-fréquentation : popularité forte + équipement
+            # faible = afflux à anticiper plutôt qu'à subir (leçon de
+            # Dubrovnik/San Juan de Gaztelugatxe après Game of Thrones).
+            ratio_equipement = score_bien_dessservi / len(CATEGORIES_ANALYSE_ACCESSIBILITE)
+            if film["popularite"] >= 20 and ratio_equipement < 0.375:
+                entree["risque_surfrequentation"] = "élevé"
+                entree["action_surfrequentation"] = "Anticiper dès maintenant : renforcer l'offre locale (hébergement, transport, accès) avant qu'un afflux imprévu ne dégrade l'expérience et le site lui-même."
+            elif film["popularite"] >= 10 and ratio_equipement < 0.5:
+                entree["risque_surfrequentation"] = "modéré"
+                entree["action_surfrequentation"] = "À surveiller : la notoriété du titre dépasse déjà légèrement la capacité d'accueil locale actuelle."
+            else:
+                entree["risque_surfrequentation"] = "faible"
+                entree["action_surfrequentation"] = "Équipement cohérent avec la notoriété actuelle — pas d'action urgente."
 
-        categorie_liste = "francais" if film["nationalite"] and "Français" in film["nationalite"] else "autres"
-        resultat[categorie_liste].append(entree)
+            categorie_liste = "francais" if film["nationalite"] and "Français" in film["nationalite"] else "autres"
+            resultat[categorie_liste].append(entree)
 
-    return resultat
+        return resultat
+    except Exception as e:
+        # Ne JAMAIS renvoyer null silencieusement — au moins un message
+        # d'erreur exploitable, visible dans l'onglet Réseau du navigateur,
+        # plutôt qu'un échec invisible.
+        import traceback
+        print(f"❌ /api/analyse/accessibilite a échoué : {e}", flush=True)
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"erreur": str(e), "francais": [], "autres": []},
+        )
 
 
 @app.get("/api/analyse")

@@ -944,14 +944,29 @@ const AFFICHER_SECTION_RESERVATION = true;
 
 // ── Visites déjà organisées par de vraies structures (offices de
 // tourisme, guides locaux...) pour certains films/séries précis —
-// vide pour l'instant : à remplir au fur et à mesure des partenariats
-// confirmés. Clé = id du film. "lienAffiliation" reste null tant
-// qu'aucun contrat d'affiliation n'est signé avec la structure ; une
-// fois signé, remplace juste cette valeur par le lien avec l'identifiant
-// d'affiliation, rien d'autre à changer dans le code.
+// un film peut avoir PLUSIEURS visites possibles (ex: Un si grand
+// soleil, proposé par deux offices différents). Vide pour l'instant :
+// à remplir au fur et à mesure des partenariats confirmés. Clé = id
+// du film. "lienAffiliation" reste null tant qu'aucun contrat n'est
+// signé avec la structure ; une fois signé, remplace juste cette
+// valeur, rien d'autre à changer dans le code.
 const VISITES_PARTENAIRES = {
-  // Exemple à dupliquer une fois un partenariat confirmé :
-  // 42: { nom: "Office de tourisme de Montpellier", description: "Visite guidée sur les lieux de tournage d'Un si grand soleil.", lien: "https://...", lienAffiliation: null },
+  // Le Petit Baigneur — ciné-balade le jeudi
+  15: [
+    { nom: "Office de tourisme de Collioure", description: "Ciné-balade sur les traces des films tournés à Collioure, dont Le Petit Baigneur — tous les jeudis.", lien: "https://www.tourisme-collioure.com/", lienAffiliation: null },
+  ],
+  // Les Visiteurs — visite gratuite, réservation obligatoire par mail
+  24: [
+    { nom: "Office de tourisme de Carcassonne", description: "Visite « sur les traces des films tournés dans la Cité », dont Les Visiteurs. Gratuit, réservation obligatoire.", lien: "https://www.tourisme-carcassonne.fr/preparer/visites/visites-guidees/", lienAffiliation: null },
+  ],
+  // Demain nous appartient — Cinétour à pied ou en bateau
+  128: [
+    { nom: "Office de tourisme Sète Archipel de Thau", description: "Cinétour, à pied (2h) ou en bateau — sur les traces de la série à travers Sète, avec un(e) comédien(ne) professionnel(le).", lien: "https://www.tourisme-sete.com/cinetour-pedestre-prive-dna-aujourd-hui-vous-appartient-sete.html", lienAffiliation: null },
+  ],
+  // Candice Renoir (44) volontairement laissé vide — le Cinétour de
+  // Sète trouvé concerne "Demain nous appartient", pas cette série.
+  // À compléter si un vrai circuit Candice Renoir existe, ou si
+  // "Demain nous appartient" rejoint la base de films.
 };
 
 function afficherSectionReservation() {
@@ -960,21 +975,30 @@ function afficherSectionReservation() {
 
   const filmId = Number(document.getElementById("popup-overlay").dataset.filmId);
   const titre = state.filmSelectionne?.titre || "ce parcours";
-  const partenaire = VISITES_PARTENAIRES[filmId];
+  const partenaires = VISITES_PARTENAIRES[filmId];
 
-  if (partenaire) {
-    // Une vraie structure organise déjà une visite pour ce film — on
-    // renvoie vers elle plutôt que de proposer nos propres tarifs.
-    const lien = partenaire.lienAffiliation || partenaire.lien;
+  if (partenaires && partenaires.length) {
+    // Une ou plusieurs structures organisent déjà une visite pour ce
+    // film — on renvoie vers elles plutôt que de proposer nos propres
+    // tarifs.
+    const blocsPartenaires = partenaires.map((partenaire) => {
+      const lien = partenaire.lienAffiliation || partenaire.lien;
+      return `
+        <div class="partenaire-visite">
+          <p class="reservation-intro">
+            <strong>${partenaire.nom}</strong> propose une visite guidée sur les lieux de tournage de "${titre}".
+            ${partenaire.description || ""}
+          </p>
+          <a class="btn-reserver" href="${lien}" target="_blank" rel="noopener noreferrer" onclick="_trackerClic('visite_partenaire', {nom_partenaire: '${partenaire.nom.replace(/'/g, "")}'})">
+            📩 Voir cette visite chez ${partenaire.nom}
+          </a>
+        </div>
+      `;
+    }).join("");
+
     conteneur.innerHTML = `
-      <p class="anecdote-titre">🎟️ Une visite existe déjà pour ce parcours</p>
-      <p class="reservation-intro">
-        <strong>${partenaire.nom}</strong> propose une visite guidée sur les lieux de tournage de "${titre}".
-        ${partenaire.description || ""}
-      </p>
-      <a class="btn-reserver" href="${lien}" target="_blank" rel="noopener noreferrer">
-        📩 Voir cette visite chez ${partenaire.nom}
-      </a>
+      <p class="anecdote-titre">🎟️ ${partenaires.length > 1 ? "Des visites existent déjà" : "Une visite existe déjà"} pour ce parcours</p>
+      ${blocsPartenaires}
     `;
     return;
   }
@@ -990,6 +1014,7 @@ function afficherSectionReservation() {
     </p>
   `;
 }
+
 
 
 function formatDistance(m) {

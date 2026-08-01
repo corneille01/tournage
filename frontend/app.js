@@ -362,6 +362,12 @@ function _rendreVideo(media, nomLieu) {
   if (idVimeo) {
     return `<iframe class="media-video" src="https://player.vimeo.com/video/${idVimeo[1]}" title="${media.legende || nomLieu}" frameborder="0" allowfullscreen loading="lazy"></iframe>`;
   }
+  // TikTok — lecteur officiel intégré, la vidéo reste hébergée chez
+  // TikTok (on ne télécharge/republie jamais le fichier nous-mêmes).
+  const idTiktok = url.match(/tiktok\.com\/@[\w.-]+\/video\/(\d+)/);
+  if (idTiktok) {
+    return `<iframe class="media-video media-tiktok" src="https://www.tiktok.com/embed/v2/${idTiktok[1]}" title="${media.legende || nomLieu}" frameborder="0" allowfullscreen loading="lazy"></iframe>`;
+  }
   return `<video class="media-video" src="${url}" controls preload="metadata"></video>`;
 }
 

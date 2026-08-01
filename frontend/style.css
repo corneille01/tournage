@@ -1079,3 +1079,7 @@ body.page-film-ssr {
   cursor: pointer;
   margin-bottom: 8px;
 }
+.partenaire-visite { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.partenaire-visite:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+

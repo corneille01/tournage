@@ -906,6 +906,15 @@ body.page-film-ssr {
 }
 .galerie-medias .media-video { border: none; }
 
+/* TikTok est en format vertical (portrait), contrairement à YouTube/
+   Vimeo — dimensions dédiées, sinon la vidéo apparaît minuscule et
+   écrasée dans le format paysage prévu pour les autres plateformes. */
+.galerie-medias .media-tiktok {
+  width: 260px;
+  height: 460px;
+  object-fit: contain;
+}
+
 /* ── Numéros d'étape sur la carte (trace du film) ── */
 .numero-etape {
   position: relative;
@@ -1081,5 +1090,3 @@ body.page-film-ssr {
 }
 .partenaire-visite { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .partenaire-visite:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-
-

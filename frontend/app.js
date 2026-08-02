@@ -965,9 +965,10 @@ const VISITES_PARTENAIRES = {
   24: [
     { nom: "Office de tourisme de Carcassonne", description: "Visite « sur les traces des films tournés dans la Cité », dont Les Visiteurs. Gratuit, réservation obligatoire.", lien: "https://www.tourisme-carcassonne.fr/preparer/visites/visites-guidees/", lienAffiliation: null },
   ],
-  // Demain nous appartient — Cinétour à pied ou en bateau
+  // Demain nous appartient — deux formules de Cinétour
   128: [
-    { nom: "Office de tourisme Sète Archipel de Thau", description: "Cinétour, à pied (2h) ou en bateau — sur les traces de la série à travers Sète, avec un(e) comédien(ne) professionnel(le).", lien: "https://www.tourisme-sete.com/cinetour-pedestre-prive-dna-aujourd-hui-vous-appartient-sete.html", lienAffiliation: null },
+    { nom: "Office de tourisme Archipel de Thau — Cinétour à pied", description: "Balade immersive depuis Le Spoon, le long des canaux jusqu'à la Pointe Courte — plus de 20 lieux emblématiques de la série.", lien: "https://billetterie.archipel-thau.com/loisirs/visites-guidees-a-pied/cinetour-pedestre-dna-aujourdhui-vous-appartient", lienAffiliation: null },
+    { nom: "Office de tourisme Archipel de Thau — Cinétour en bateau", description: "Balade en bateau (Canauxrama) commentée par une comédienne professionnelle, sur les traces des lieux de tournage vus à l'écran.", lien: "https://billetterie.archipel-thau.com/loisirs/excursions-et-promenades-en-bateau/cinetour-bateau-dna-lequipage-vous-appartient", lienAffiliation: null },
   ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
   // Sète trouvé concerne "Demain nous appartient", pas cette série.

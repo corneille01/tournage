@@ -26,7 +26,7 @@ from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, 
 from seo import slugify, url_film, json_ld_film, meta_description
 
 templates = Jinja2Templates(directory="templates")
-BASE_URL = "https://tonsite.fr"  # à remplacer par le vrai domaine en prod
+BASE_URL = "https://tournage.pelify.app"  # à remplacer par le vrai domaine en prod
 
 _LABELS_CATEGORIE = {
     "hebergement":     "L'hébergement",
@@ -63,16 +63,28 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def _interdire_cache_api(request: Request, call_next):
+async def _gerer_cache_api(request: Request, call_next):
     """
-    Empêche explicitement Cloudflare (ou tout autre cache intermédiaire)
-    de mettre en cache les réponses des routes /api/* — sans ça, un
-    cache agressif peut continuer à servir une VIEILLE réponse (y
-    compris une erreur déjà corrigée côté code) indéfiniment, ce qui
-    s'est déjà produit une fois.
+    Par défaut, empêche Cloudflare (ou tout autre cache intermédiaire)
+    de mettre en cache les réponses /api/* — sans ça, un cache agressif
+    peut continuer à servir une VIEILLE réponse (y compris une erreur
+    déjà corrigée côté code) indéfiniment, ce qui s'est déjà produit
+    une fois.
+
+    Exception explicite pour les routes qui changent rarement (mise à
+    jour seulement par les workflows programmés, pas par requête) et où
+    servir une version vieille de quelques heures ne pose aucun
+    problème — ça évite de solliciter Neon pour rien sur les lieux les
+    plus consultés.
     """
     response = await call_next(request)
-    if request.url.path.startswith("/api/"):
+    if not request.url.path.startswith("/api/"):
+        return response
+
+    ROUTES_CACHABLES_1H = ("/api/lieux/", "/api/films/")  # amenities, détail film, trace...
+    if any(request.url.path.startswith(p) for p in ROUTES_CACHABLES_1H) and "/amenities" in request.url.path:
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600"
+    else:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["CDN-Cache-Control"] = "no-store"
     return response

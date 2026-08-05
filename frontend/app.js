@@ -970,6 +970,13 @@ const VISITES_PARTENAIRES = {
     { nom: "Office de tourisme Archipel de Thau — Cinétour à pied", description: "Balade immersive depuis Le Spoon, le long des canaux jusqu'à la Pointe Courte — plus de 20 lieux emblématiques de la série.", lien: "https://billetterie.archipel-thau.com/loisirs/visites-guidees-a-pied/cinetour-pedestre-dna-aujourdhui-vous-appartient", lienAffiliation: null },
     { nom: "Office de tourisme Archipel de Thau — Cinétour en bateau", description: "Balade en bateau (Canauxrama) commentée par une comédienne professionnelle, sur les traces des lieux de tournage vus à l'écran.", lien: "https://billetterie.archipel-thau.com/loisirs/excursions-et-promenades-en-bateau/cinetour-bateau-dna-lequipage-vous-appartient", lienAffiliation: null },
   ],
+  // Un si grand soleil — visite Montpellier confirmée avec page dédiée ;
+  // Palavas-les-Flots propose une visite cinéma plus générale (plusieurs
+  // films/séries tournés sur place), pas un circuit dédié à cette seule
+  // série — honnêteté avant tout, pas de lien inventé.
+  131: [
+    { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Réservation obligatoire.", lien: "https://www.montpellier-tourisme.fr/offre/fiche/montpellier-au-coeur-de-la-serie-un-si-grand-soleil/FMALAR034V528SHH", lienAffiliation: null },
+  ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
   // Sète trouvé concerne "Demain nous appartient", pas cette série.
   // À compléter si un vrai circuit Candice Renoir existe, ou si

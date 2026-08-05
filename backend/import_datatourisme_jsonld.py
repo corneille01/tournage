@@ -57,6 +57,17 @@ TRADUCTIONS_THESAURUS = {
     "SeafoodCuisine": "Cuisine de la mer",
     "GrilledFoodCuisine": "Grillades",
     "FastFoodCuisine": "Restauration rapide",
+    # Moyens de paiement
+    "Cash": "Espèces",
+    "Check": "Chèque",
+    "Transfers": "Virement",
+    "CreditCard": "Carte bancaire",
+    "BankCard": "Carte bancaire",
+    "MealVoucher": "Chèque-restaurant",
+    "HolidayVoucher": "Chèque-vacances",
+    "TravellersCheck": "Chèque de voyage",
+    "MobilePayment": "Paiement mobile",
+    "Cryptocurrency": "Cryptomonnaie",
 }
 
 
@@ -303,6 +314,63 @@ def _tronquer(valeur, longueur_max: int = 495):
     return valeur[:longueur_max] if len(valeur) > longueur_max else valeur
 
 
+def _extraire_description(poi: dict) -> str | None:
+    """rdfs:comment est le chemin le plus direct et fiable (vérifié sur
+    plusieurs exports réels) — on ne creuse dans owl:topObjectProperty
+    que si rdfs:comment est absent."""
+    direct = _valeur_langue(poi.get("rdfs:comment"))
+    if direct:
+        return direct
+
+    conteneur = poi.get("owl:topObjectProperty")
+    if isinstance(conteneur, list):
+        conteneur = conteneur[0] if conteneur else None
+    if not isinstance(conteneur, dict):
+        return None
+    return _valeur_langue(conteneur.get("owl:topDataProperty"))
+
+
+def _extraire_moyens_paiement(poi: dict) -> str | None:
+    """schema:acceptedPaymentMethod — références de thésaurus (comme
+    la cuisine/les équipements), à décoder avec le même helper."""
+    offre = poi.get("schema:offers")
+    if isinstance(offre, list):
+        offre = offre[0] if offre else None
+    if not isinstance(offre, dict):
+        return None
+
+    moyens = offre.get("schema:acceptedPaymentMethod")
+    if not moyens:
+        return None
+    if not isinstance(moyens, list):
+        moyens = [moyens]
+
+    noms = []
+    for m in moyens:
+        if isinstance(m, dict) and m.get("@id"):
+            noms.append(_libelle_thesaurus(m["@id"]))
+    return ", ".join(dict.fromkeys(noms)) or None
+
+
+def _extraire_note_tarif(poi: dict) -> str | None:
+    """additionalInformation sur priceSpecification — une précision
+    utile (ex: supplément petit-déjeuner), en plus du prix min/max déjà
+    récupéré ailleurs."""
+    offre = poi.get("schema:offers")
+    if isinstance(offre, list):
+        offre = offre[0] if offre else None
+    if not isinstance(offre, dict):
+        return None
+
+    specs = offre.get("schema:priceSpecification")
+    if isinstance(specs, list):
+        specs = specs[0] if specs else None
+    if not isinstance(specs, dict):
+        return None
+
+    return _valeur_langue(specs.get("additionalInformation"))
+
+
 def _extraire_objet(poi: dict, categorie: str) -> dict | None:
     identifiant = poi.get("dc:identifier")
     nom = _valeur_langue(poi.get("rdfs:label"))
@@ -394,6 +462,9 @@ def _extraire_objet(poi: dict, categorie: str) -> dict | None:
 
     photo_url = _extraire_photo(poi)
     equipements = _extraire_equipements(poi)
+    description = _extraire_description(poi)
+    moyens_paiement = _extraire_moyens_paiement(poi)
+    note_tarif = _extraire_note_tarif(poi)
 
     capacite = None
     allowed = poi.get("allowedPersons")
@@ -428,6 +499,9 @@ def _extraire_objet(poi: dict, categorie: str) -> dict | None:
         "cuisine": _tronquer(cuisine, 250),
         "photo_url": _tronquer(photo_url, 495),
         "equipements": _tronquer(equipements, 495),
+        "description": _tronquer(description, 1990),
+        "moyens_paiement": _tronquer(moyens_paiement, 250),
+        "note_tarif": _tronquer(note_tarif, 250),
         "capacite": int(capacite) if capacite else None,
         "note_etoiles": note_etoiles,
         "labels_qualite": _tronquer(labels_qualite, 495),
@@ -460,8 +534,9 @@ async def main(fichier: str, categorie: str):
                 (identifiant_dt, nom, categorie, classification, commune, departement,
                  latitude, longitude, adresse, telephone, email, site_web,
                  horaires, tarif_min, tarif_max, devise, cuisine, photo_url, equipements, capacite,
-                 note_etoiles, labels_qualite, lien_accessibilite, langues_parlees)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, description,
+                 moyens_paiement, note_tarif)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (identifiant_dt) DO UPDATE SET
                 nom = EXCLUDED.nom, classification = EXCLUDED.classification,
                 commune = EXCLUDED.commune, departement = EXCLUDED.departement,
@@ -473,7 +548,9 @@ async def main(fichier: str, categorie: str):
                 cuisine = EXCLUDED.cuisine, photo_url = EXCLUDED.photo_url,
                 equipements = EXCLUDED.equipements, capacite = EXCLUDED.capacite,
                 note_etoiles = EXCLUDED.note_etoiles, labels_qualite = EXCLUDED.labels_qualite,
-                lien_accessibilite = EXCLUDED.lien_accessibilite, langues_parlees = EXCLUDED.langues_parlees
+                lien_accessibilite = EXCLUDED.lien_accessibilite, langues_parlees = EXCLUDED.langues_parlees,
+                description = EXCLUDED.description, moyens_paiement = EXCLUDED.moyens_paiement,
+                note_tarif = EXCLUDED.note_tarif
         """
 
         async def _vider_le_lot():
@@ -501,7 +578,8 @@ async def main(fichier: str, categorie: str):
                     objet["horaires"], objet["tarif_min"], objet["tarif_max"], objet["devise"],
                     objet["cuisine"], objet["photo_url"], objet["equipements"], objet["capacite"],
                     objet["note_etoiles"], objet["labels_qualite"], objet["lien_accessibilite"],
-                    objet["langues_parlees"],
+                    objet["langues_parlees"], objet["description"],
+                    objet["moyens_paiement"], objet["note_tarif"],
                 ))
                 importes += 1
 

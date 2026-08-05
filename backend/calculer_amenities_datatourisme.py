@@ -45,13 +45,15 @@ async def main(categorie: str, lieu_id: int | None):
                 SELECT nom, latitude, longitude, site_web, telephone, email,
                        horaires, tarif_min, tarif_max, devise, adresse, photo_url,
                        equipements, capacite, note_etoiles, labels_qualite,
-                       lien_accessibilite, langues_parlees, distance_metres
+                       lien_accessibilite, langues_parlees, description,
+                       moyens_paiement, note_tarif, distance_metres
                 FROM (
                     SELECT
                         nom, latitude, longitude, site_web, telephone, email,
                         horaires, tarif_min, tarif_max, devise, adresse,
                         photo_url, equipements, capacite, note_etoiles, labels_qualite,
-                        lien_accessibilite, langues_parlees,
+                        lien_accessibilite, langues_parlees, description,
+                        moyens_paiement, note_tarif,
                         (
                             6371000 * acos(
                                 LEAST(1.0, GREATEST(-1.0,
@@ -107,8 +109,9 @@ async def main(categorie: str, lieu_id: int | None):
                         (lieu_tournage_id, categorie, nom, latitude, longitude,
                          distance_metres, site_web, telephone, email, horaires,
                          tarif_min, tarif_max, devise, adresse, photo_url, equipements, capacite,
-                         note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, rang)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, description,
+                         moyens_paiement, note_tarif, rang)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         lieu["id"], categorie, r["nom"], r["latitude"], r["longitude"],
@@ -116,7 +119,8 @@ async def main(categorie: str, lieu_id: int | None):
                         r["horaires"], r["tarif_min"], r["tarif_max"], r["devise"],
                         r["adresse"], r["photo_url"], r["equipements"], r["capacite"],
                         r["note_etoiles"], r["labels_qualite"], r["lien_accessibilite"],
-                        r["langues_parlees"], rang,
+                        r["langues_parlees"], r["description"],
+                        r["moyens_paiement"], r["note_tarif"], rang,
                     ),
                 )
 

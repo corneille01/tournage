@@ -1,121 +1,144 @@
 <!doctype html>
 <html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Analyse territoriale — Pelify Lieux de tournage</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-<meta name="description" content="Analyse territoriale du potentiel ciné-touristique en Occitanie : équipement réel, comparaison chiffrée entre départements, aide à la décision pour les acteurs publics.">
-<link rel="stylesheet" href="/style.css">
-<link rel="stylesheet" href="/analyse.css">
-</head>
-<body class="page-analyse">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analyse territoriale — Pelify Lieux de tournage</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <meta
+      name="description"
+      content="Analyse territoriale du potentiel ciné-touristique en Occitanie : équipement réel, comparaison chiffrée entre départements, aide à la décision pour les acteurs publics."
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/analyse.css" />
+  </head>
+  <body class="page-analyse">
+    <header class="analyse-header">
+      <a href="/" class="ssr-logo">← Lieux de tournage</a>
+      <a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
+      <h1>Analyse territoriale</h1>
+      <p class="sous-titre">
+        Outil d'aide à la décision pour les acteurs publics de l'aménagement
+        touristique : équipement réel autour des lieux de tournage, comparé
+        département par département, avec une lecture objective des chiffres.
+      </p>
+    </header>
 
-<header class="analyse-header">
-  <a href="/" class="ssr-logo">← Lieux de tournage</a>
-  <a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
-  <h1>Analyse territoriale</h1>
-  <p class="sous-titre">
-    Outil d'aide à la décision pour les acteurs publics de l'aménagement
-    touristique : équipement réel autour des lieux de tournage, comparé
-    département par département, avec une lecture objective des chiffres.
-  </p>
-</header>
+    <main id="analyse-contenu">
+      <section id="totaux-globaux" class="analyse-section">
+        <div id="totaux-cartes"><!-- rempli par analyse.js --></div>
+      </section>
 
-<main id="analyse-contenu">
-  <section id="totaux-globaux" class="analyse-section">
-    <div id="totaux-cartes"><!-- rempli par analyse.js --></div>
-  </section>
+      <section class="analyse-section">
+        <div id="synthese-comparative" class="carte-synthese">
+          <!-- rempli par analyse.js -->
+        </div>
+      </section>
 
-  <section class="analyse-section">
-    <div id="synthese-comparative" class="carte-synthese"><!-- rempli par analyse.js --></div>
-  </section>
-
-  <!-- ═══ VUE D'ENSEMBLE EN PREMIER : l'internaute comprend le sujet
+      <!-- ═══ VUE D'ENSEMBLE EN PREMIER : l'internaute comprend le sujet
        avant d'aller consulter le détail département par département ═══ -->
-  <section class="analyse-section">
-    <h2>Vue d'ensemble — nombre de lieux de tournage par département</h2>
-    <canvas id="graphe-lieux" height="100"></canvas>
-    <p class="interpretation-graphe" id="interpretation-lieux"><!-- rempli par analyse.js --></p>
-  </section>
+      <section class="analyse-section">
+        <h2>Vue d'ensemble — nombre de lieux de tournage par département</h2>
+        <canvas id="graphe-lieux" height="100"></canvas>
+        <p class="interpretation-graphe" id="interpretation-lieux">
+          <!-- rempli par analyse.js -->
+        </p>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Vue d'ensemble — équipement moyen par département (hébergements vs restaurants)</h2>
-    <canvas id="graphe-equipement" height="100"></canvas>
-    <p class="interpretation-graphe" id="interpretation-equipement"><!-- rempli par analyse.js --></p>
-    <p class="analyse-note">
-      <b>Comment cette moyenne est calculée :</b> pour chaque lieu de
-      tournage du département, on compte le nombre réel d'hébergements
-      dans un rayon de 15 km et de restaurants dans un rayon de 8 km
-      (données OpenStreetMap), puis on fait la moyenne de ce chiffre
-      sur tous les lieux du département. Un lieu pas encore traité par
-      le calcul est simplement exclu de la moyenne (pas compté comme 0).
-    </p>
-  </section>
+      <section class="analyse-section">
+        <h2>
+          Vue d'ensemble — équipement moyen par département (hébergements vs
+          restaurants)
+        </h2>
+        <canvas id="graphe-equipement" height="100"></canvas>
+        <p class="interpretation-graphe" id="interpretation-equipement">
+          <!-- rempli par analyse.js -->
+        </p>
+        <p class="analyse-note">
+          <b>Comment cette moyenne est calculée :</b> pour chaque lieu de
+          tournage du département, on compte le nombre réel d'hébergements dans
+          un rayon de 15 km et de restaurants dans un rayon de 8 km (données
+          OpenStreetMap), puis on fait la moyenne de ce chiffre sur tous les
+          lieux du département. Un lieu pas encore traité par le calcul est
+          simplement exclu de la moyenne (pas compté comme 0).
+        </p>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Films et séries les plus reconnus</h2>
-    <p class="analyse-note">
-      Classés par popularité TMDB — un indicateur de notoriété auprès du
-      grand public, utile pour prioriser quels tournages mettre en avant
-      dans une communication touristique.
-    </p>
-    <div id="films-notables-cartes" class="cartes-films-notables"><!-- rempli par analyse.js --></div>
-  </section>
+      <section class="analyse-section">
+        <h2>Films et séries les plus reconnus</h2>
+        <p class="analyse-note">
+          Classés par popularité TMDB — un indicateur de notoriété auprès du
+          grand public, utile pour prioriser quels tournages mettre en avant
+          dans une communication touristique.
+        </p>
+        <div id="films-notables-cartes" class="cartes-films-notables">
+          <!-- rempli par analyse.js -->
+        </div>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Accessibilité réelle des lieux les plus connus</h2>
-    <p class="analyse-note">
-      Pour chaque film/série populaire, temps réel en voiture jusqu'à
-      l'hébergement et au restaurant les plus proches (mêmes données
-      que ci-dessus, au niveau du lieu précis cette fois) — l'objectif :
-      identifier les lieux "prêts à valoriser" et ceux qui nécessitent
-      un aménagement avant toute promotion touristique.
-      <br><b>NB :</b> cette analyse ne porte que sur les lieux déjà
-      traités par le précalcul des distances — elle s'enrichira au fur
-      et à mesure, comme le reste du site dépend de la complétude des
-      données Wikidata/Overpass.
-    </p>
-    <h3 class="sous-section-titre">🇫🇷 Films et séries français</h3>
-    <div id="accessibilite-francais" class="cartes-accessibilite"><!-- rempli par analyse.js --></div>
-    <h3 class="sous-section-titre">🌍 Autres nationalités</h3>
-    <div id="accessibilite-autres" class="cartes-accessibilite"><!-- rempli par analyse.js --></div>
-  </section>
+      <section class="analyse-section">
+        <h2>Accessibilité réelle des lieux les plus connus</h2>
+        <p class="analyse-note">
+          Pour chaque film/série populaire, temps réel en voiture jusqu'à
+          l'hébergement et au restaurant les plus proches (mêmes données que
+          ci-dessus, au niveau du lieu précis cette fois) — l'objectif :
+          identifier les lieux "prêts à valoriser" et ceux qui nécessitent un
+          aménagement avant toute promotion touristique.
+          <br /><b>NB :</b> cette analyse ne porte que sur les lieux déjà
+          traités par le précalcul des distances — elle s'enrichira au fur et à
+          mesure, comme le reste du site dépend de la complétude des données
+          Wikidata/Overpass.
+        </p>
+        <h3 class="sous-section-titre">🇫🇷 Films et séries français</h3>
+        <div id="accessibilite-francais" class="cartes-accessibilite">
+          <!-- rempli par analyse.js -->
+        </div>
+        <h3 class="sous-section-titre">🌍 Autres nationalités</h3>
+        <div id="accessibilite-autres" class="cartes-accessibilite">
+          <!-- rempli par analyse.js -->
+        </div>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Détail par département</h2>
-    <div class="analyse-note">
-      "Lieux isolés" = aucun hébergement recensé dans le rayon de 15 km
-      — un signal direct de besoin d'aménagement avant toute
-      valorisation touristique.
-    </div>
-    <div id="cartes-departements" class="cartes-departements"><!-- rempli par analyse.js --></div>
-  </section>
+      <section class="analyse-section">
+        <h2>Détail par département</h2>
+        <div class="analyse-note">
+          "Lieux isolés" = aucun hébergement recensé dans le rayon de 15 km — un
+          signal direct de besoin d'aménagement avant toute valorisation
+          touristique.
+        </div>
+        <div id="cartes-departements" class="cartes-departements">
+          <!-- rempli par analyse.js -->
+        </div>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Complétude des données</h2>
-    <div id="completude-contenu"><!-- rempli par analyse.js --></div>
-  </section>
+      <section class="analyse-section">
+        <h2>Complétude des données</h2>
+        <div id="completude-contenu"><!-- rempli par analyse.js --></div>
+      </section>
 
-  <section class="analyse-section">
-    <h2>Carte interactive</h2>
-    <p>
-      La choroplèthe par département (couleur selon le nombre de lieux)
-      et la carte de chaleur (densité réelle des points) sont disponibles
-      directement sur la <a href="/">carte principale</a>, boutons en bas
-      à droite.
-    </p>
-  </section>
-</main>
+      <section class="analyse-section">
+        <h2>Carte interactive</h2>
+        <p>
+          La choroplèthe par département (couleur selon le nombre de lieux) et
+          la carte de chaleur (densité réelle des points) sont disponibles
+          directement sur la <a href="/">carte principale</a>, boutons en bas à
+          droite.
+        </p>
+      </section>
+    </main>
 
-<footer class="liens-legaux" style="padding: 20px;">
-  <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a>
-</footer>
+    <footer class="liens-legaux" style="padding: 20px">
+      <a href="/mentions-legales.html">Mentions légales</a> ·
+      <a href="/cgu.html">CGU</a>
+    </footer>
 
-<script src="/vendor/chartjs/chart.umd.js"></script>
-<script src="/i18n.js" defer></script>
-<script src="/analyse.js" defer></script>
-</body>
+    <script src="/vendor/chartjs/chart.umd.js"></script>
+    <script src="/i18n.js" defer></script>
+    <script src="/analyse.js" defer></script>
+  </body>
 </html>

@@ -68,7 +68,7 @@ function afficherAccessibilite(idConteneur, entrees) {
     return `
       <div class="carte-accessibilite">
         <div class="entete-accessibilite">
-          <img src="${e.poster_url || '/placeholder-poster.png'}" alt="${e.titre}">
+          <img src="${e.poster_url || '/icons/placeholder-poster.png'}" alt="${e.titre}">
           <div>
             <div class="titre-accessibilite">${e.titre}</div>
             <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""} de tournage
@@ -114,7 +114,7 @@ function afficherFilmsNotables(films) {
   conteneur.innerHTML = films.map((f, i) => `
     <div class="carte-film-notable">
       <div class="rang-notable">#${i + 1}</div>
-      <img src="${f.poster_url || '/placeholder-poster.png'}" alt="${f.titre}" loading="lazy">
+      <img src="${f.poster_url || '/icons/placeholder-poster.png'}" alt="${f.titre}" loading="lazy">
       <div class="infos-notable">
         <div class="titre-notable">${f.titre}</div>
         <div class="meta-notable">${f.annee || "?"} · ${f.media_type === "movie" ? "Film" : f.media_type === "tv" ? "Série" : "Animé"}</div>

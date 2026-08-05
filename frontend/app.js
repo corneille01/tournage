@@ -248,7 +248,7 @@ function afficherCartesFilms(films) {
     div.className = "carte-film";
     div.dataset.filmId = film.id;
     div.innerHTML = `
-      <img src="${film.poster_url || '/placeholder-poster.png'}" alt="${titreCarte}" loading="lazy">
+      <img src="${film.poster_url || '/icons/placeholder-poster.png'}" alt="${titreCarte}" loading="lazy">
       <div class="infos">
         <h3>${titreCarte}</h3>
         <div class="meta">${labelMediaType(film.media_type)} · ${film.annee || "?"}</div>
@@ -393,7 +393,7 @@ function ouvrirPopupLieu(film, lieu) {
   const anecdoteAffichee = lieuTexte.anecdote || lieu.anecdote;
   const descriptionLieuAffichee = lieuTexte.description_wikipedia || lieu.description_wikipedia;
 
-  document.getElementById("popup-poster").src = film.poster_url || "/placeholder-poster.png";
+  document.getElementById("popup-poster").src = film.poster_url || "/icons/placeholder-poster.png";
   document.getElementById("popup-titre").textContent = titreAffiche;
   document.getElementById("popup-meta").textContent =
     `${labelMediaType(film.media_type)}${film.nationalite ? " " + _accorderNationalite(film.nationalite, film.media_type) : ""} · ${film.annee || "année inconnue"}`;

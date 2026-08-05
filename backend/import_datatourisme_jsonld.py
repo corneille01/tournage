@@ -274,22 +274,45 @@ def _extraire_notation(poi: dict) -> tuple:
 
 
 def _extraire_accessibilite(poi: dict) -> str | None:
-    """Lien direct vers la fiche accessibilité officielle (Acceslibre,
-    plateforme gouvernementale) quand le lieu y est référencé."""
+    """
+    Pas de lien direct fiable possible : Acceslibre n'expose aucune
+    URL construite à partir du seul identifiant qu'on récupère
+    (hasExternalIdentifier) — vérifié, y compris un ticket resté
+    ouvert sur leur propre dépôt GitHub demandant cette fonctionnalité,
+    qui n'existe donc pas. L'URL réelle d'une fiche suit un format
+    /app/{departement-ville}/a/{categorie}/erp/{nom-slug}/ qu'on ne
+    peut pas reconstituer sans interroger leur API (nécessite une clé,
+    demande manuelle).
+
+    On renvoie donc un lien vers leur page de RECHERCHE, avec le nom
+    de l'établissement pré-rempli — un vrai lien qui fonctionne,
+    quitte à ce que l'utilisateur doive cliquer une fois de plus pour
+    confirmer le bon résultat, plutôt qu'un lien direct qui tombe
+    systématiquement en erreur 404.
+    """
     refs = poi.get("hasExternalReference")
     if not refs:
         return None
     if not isinstance(refs, list):
         refs = [refs]
+
+    a_une_reference_acceslibre = False
     for r in refs:
         if not isinstance(r, dict):
             continue
         plateforme = r.get("hasExternalPlatform")
         if isinstance(plateforme, dict) and plateforme.get("@id") == "kb:AcceslibrePlatform":
-            identifiant = r.get("hasExternalIdentifier")
-            if identifiant:
-                return f"https://acceslibre.beta.gouv.fr/erp/{identifiant}/"
-    return None
+            a_une_reference_acceslibre = True
+            break
+
+    if not a_une_reference_acceslibre:
+        return None
+
+    nom = _valeur_langue(poi.get("rdfs:label"))
+    if not nom:
+        return None
+    from urllib.parse import quote_plus
+    return f"https://acceslibre.beta.gouv.fr/recherche/?q={quote_plus(nom)}"
 
 
 def _extraire_langues(poi: dict) -> str | None:

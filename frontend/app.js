@@ -959,7 +959,7 @@ const AFFICHER_SECTION_RESERVATION = true;
 const VISITES_PARTENAIRES = {
   // Le Petit Baigneur — ciné-balade le jeudi
   15: [
-    { nom: "Office de tourisme de Collioure", description: "Ciné-balade sur les traces des films tournés à Collioure, dont Le Petit Baigneur — tous les jeudis.", lien: "https://www.tourisme-collioure.com/", lienAffiliation: null },
+    { nom: "Office de tourisme de Collioure", description: "Ciné-balade sur les traces des films tournés à Collioure, dont Le Petit Baigneur — tous les jeudis.", lien: "https://boutique.tourisme-collioure.com/cine-balades/cine-balades", lienAffiliation: null },
   ],
   // Les Visiteurs — visite gratuite, réservation obligatoire par mail
   24: [

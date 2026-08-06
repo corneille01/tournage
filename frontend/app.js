@@ -975,7 +975,7 @@ const VISITES_PARTENAIRES = {
   // films/séries tournés sur place), pas un circuit dédié à cette seule
   // série — honnêteté avant tout, pas de lien inventé.
   131: [
-    { nom: "Office de tourisme Montpellier — Visites guidées et excursions", description: "Cherchez « Un si grand soleil » dans leur programme de visites guidées — la visite existe mais change de dates/fiche régulièrement, ce lien reste stable contrairement à une fiche d'événement ponctuelle.", lien: "https://www.montpellier-tourisme.fr/sejourner/loisirs-activites/visites-guidees-et-excursions/", lienAffiliation: null },
+    { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Réservation obligatoire.", lien: "https://book.montpellier-tourisme.fr/fr/voir-faire/1999897/au-c%C5%93ur-de-la-s%C3%A9rie-un-si-grand-soleil-centre-historique/afficher-les-details", lienAffiliation: null },
   ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
   // Sète trouvé concerne "Demain nous appartient", pas cette série.

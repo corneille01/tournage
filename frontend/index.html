@@ -7,9 +7,12 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <title>Pelify — Lieux de tournage en Occitanie</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <meta
       name="description"
       content="Découvrez où ont été tournés vos films, séries et animés préférés en Occitanie, et tout ce qu'il faut pour visiter : hébergements, restaurants, offices de tourisme, transports."
@@ -32,8 +35,13 @@
       <aside id="sidebar">
         <button id="btn-fermer-sidebar" aria-label="Fermer le menu">✕</button>
         <header id="sidebar-header">
-          <h1><a href="https://pelify.app" class="lien-pelify">Pelify</a> <span class="sous-nom">Lieux de tournage</span></h1>
-          <p class="sous-titre" data-i18n="sousTitre">Lieux de tournage en Occitanie</p>
+          <h1>
+            <a href="https://pelify.app" class="lien-pelify">Pelify</a>
+            <span class="sous-nom">Lieux de tournage</span>
+          </h1>
+          <p class="sous-titre" data-i18n="sousTitre">
+            Lieux de tournage en Occitanie
+          </p>
 
           <input
             type="search"
@@ -43,15 +51,27 @@
           />
 
           <div id="filtres">
-            <button class="filtre-btn active" data-type="" data-i18n="tout">Tout</button>
-            <button class="filtre-btn" data-type="movie" data-i18n="films">Films</button>
-            <button class="filtre-btn" data-type="tv" data-i18n="series">Séries</button>
+            <button class="filtre-btn active" data-type="" data-i18n="tout">
+              Tout
+            </button>
+            <button class="filtre-btn" data-type="movie" data-i18n="films">
+              Films
+            </button>
+            <button class="filtre-btn" data-type="tv" data-i18n="series">
+              Séries
+            </button>
           </div>
 
-          <a href="/analyse.html" id="stats-toggle">📊 <span data-i18n="analyseComplete">Analyse territoriale complète</span></a>
+          <a href="/analyse.html" id="stats-toggle"
+            >📊
+            <span data-i18n="analyseComplete"
+              >Analyse territoriale complète</span
+            ></a
+          >
 
           <div class="liens-legaux">
-            <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a>
+            <a href="/mentions-legales.html">Mentions légales</a> ·
+            <a href="/cgu.html">CGU</a>
           </div>
         </header>
 
@@ -70,20 +90,30 @@
              le zoom Leaflet est déplacé à droite (voir app.js) pour ne
              plus se chevaucher avec cette barre. -->
         <div id="filtres-carte">
-          <select id="filtre-annee"><option value="">Année</option></select>
-          <select id="filtre-departement"><option value="">Département</option></select>
+          <select id="filtre-annee">
+            <option value="">Année</option>
+          </select>
+          <select id="filtre-departement">
+            <option value="">Département</option>
+          </select>
           <!-- Filtre commune désactivé temporairement : données Wikidata
                trop imprécises pour ce niveau de granularité (voir historique).
                À réactiver une fois une meilleure source trouvée.
           <select id="filtre-commune"><option value="">Commune</option></select>
           -->
-          <select id="filtre-nationalite"><option value="">Nationalité</option></select>
+          <select id="filtre-nationalite">
+            <option value="">Nationalité</option>
+          </select>
           <button id="filtre-notoriete" data-tri="titre">
             ⭐ <span data-i18n="plusConnus">Les plus connus</span>
           </button>
         </div>
 
-        <button id="btn-recentrer" class="hidden" title="Revenir à la vue initiale">
+        <button
+          id="btn-recentrer"
+          class="hidden"
+          title="Revenir à la vue initiale"
+        >
           ⟲ <span data-i18n="recentrer">Recentrer</span>
         </button>
 
@@ -94,8 +124,12 @@
         </div>
 
         <div id="calques-carte">
-          <button id="btn-choroplethe" data-actif="false">🗺️ <span data-i18n="departements">Départements</span></button>
-          <button id="btn-chaleur" data-actif="false">🔥 <span data-i18n="carteChaleur">Carte de chaleur</span></button>
+          <button id="btn-choroplethe" data-actif="false">
+            🗺️ <span data-i18n="departements">Départements</span>
+          </button>
+          <button id="btn-chaleur" data-actif="false">
+            🔥 <span data-i18n="carteChaleur">Carte de chaleur</span>
+          </button>
         </div>
 
         <div id="map"></div>
@@ -113,7 +147,9 @@
           <p id="popup-adresse"></p>
 
           <div id="popup-synopsis" class="scrollable"></div>
-          <div id="popup-anecdote"><!-- rempli par app.js si disponible --></div>
+          <div id="popup-anecdote">
+            <!-- rempli par app.js si disponible -->
+          </div>
 
           <div class="carrousel-pub" id="carrousel-pub-1" data-carrousel-id="1">
             <button class="carrousel-fleche carrousel-gauche">‹</button>
@@ -121,7 +157,9 @@
             <button class="carrousel-fleche carrousel-droite">›</button>
           </div>
 
-          <div id="popup-description-lieu"><!-- rempli par app.js si disponible --></div>
+          <div id="popup-description-lieu">
+            <!-- rempli par app.js si disponible -->
+          </div>
           <div id="popup-plateformes">
             <!-- logos streaming, rempli par app.js -->
           </div>
@@ -141,9 +179,14 @@
           <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
 
           <div id="popup-actions-globales">
-            <button id="btn-trace">🎬 <span data-i18n="surLesTraces">Sur les traces de ce film…</span></button>
+            <button id="btn-trace">
+              🎬
+              <span data-i18n="surLesTraces">Sur les traces de ce film…</span>
+            </button>
             <div id="resultat-trace"><!-- rempli au clic --></div>
-            <div id="section-reservation" class="scrollable"><!-- rempli au clic sur 'Voir sur la carte' --></div>
+            <div id="section-reservation" class="scrollable">
+              <!-- rempli au clic sur 'Voir sur la carte' -->
+            </div>
           </div>
 
           <div class="carrousel-pub" id="carrousel-pub-2" data-carrousel-id="2">

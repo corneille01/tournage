@@ -996,12 +996,51 @@ body.page-film-ssr {
 }
 .carrousel-contenu { flex: 1; min-width: 0; }
 .pub-carte {
-  background: linear-gradient(135deg, var(--select-bg), var(--card2));
+  position: relative;
+  overflow: hidden;
   border-radius: 12px;
-  padding: 16px;
+  min-height: 220px;
+  background: linear-gradient(135deg, var(--select-bg), var(--card2)); /* visible tant que l'image charge, ou en repli si absente */
   text-align: center;
+  display: flex;
+  align-items: flex-end; /* pousse le contenu textuel vers le bas */
 }
-.pub-carte img { max-width: 100%; max-height: 90px; border-radius: 8px; margin-bottom: 10px; }
+.pub-carte img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* remplit toute la carte, recadrée proprement, pas déformée */
+  z-index: 0;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  border-radius: 12px;
+}
+.pub-carte::after {
+  /* Dégradé sombre en bas de carte, pour que le texte reste lisible
+     quelle que soit la luminosité de l'image en dessous */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(5,5,8,0.92) 0%, rgba(5,5,8,0.55) 45%, transparent 80%);
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
+}
+.pub-carte > .pub-icone-repli,
+.pub-carte > .pub-titre,
+.pub-carte > .pub-desc,
+.pub-carte > .pub-cta {
+  position: relative;
+  z-index: 2; /* au-dessus de l'image et du dégradé */
+}
+.pub-carte-contenu {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 16px;
+}
 .pub-icone-repli { font-size: 2.2rem; margin-bottom: 10px; }
 .pub-titre { color: var(--primary); font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 4px; }
 .pub-desc { color: var(--couleur-texte-muted); font-size: 0.75rem; margin-bottom: 10px; }

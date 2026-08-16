@@ -1018,41 +1018,34 @@ body.page-film-ssr {
   border-radius: 12px;
 }
 .pub-carte::after {
-  /* Dégradé sombre en bas de carte, pour que le texte reste lisible
-     quelle que soit la luminosité de l'image en dessous */
+  /* Dégradé léger, juste assez pour que le bouton reste lisible —
+     l'affiche garde son propre texte visible, on ne le recouvre plus */
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to top, rgba(5,5,8,0.92) 0%, rgba(5,5,8,0.55) 45%, transparent 80%);
+  background: linear-gradient(to top, rgba(5,5,8,0.75) 0%, rgba(5,5,8,0.35) 25%, transparent 50%);
   z-index: 1;
   pointer-events: none;
   border-radius: 12px;
 }
 .pub-carte > .pub-icone-repli,
-.pub-carte > .pub-titre,
-.pub-carte > .pub-desc,
 .pub-carte > .pub-cta {
   position: relative;
-  z-index: 2; /* au-dessus de l'image et du dégradé */
-}
-.pub-carte-contenu {
-  position: relative;
   z-index: 2;
-  width: 100%;
-  padding: 16px;
 }
-.pub-icone-repli { font-size: 2.2rem; margin-bottom: 10px; }
-.pub-titre { color: var(--primary); font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 4px; }
-.pub-desc { color: var(--couleur-texte-muted); font-size: 0.75rem; margin-bottom: 10px; }
+.pub-icone-repli { font-size: 2.2rem; margin: auto; }
 .pub-cta {
-  display: inline-block;
+  display: block;
+  width: fit-content;
+  margin: 0 auto 16px; /* centré horizontalement, marge respirante en bas */
   background: var(--primary);
   color: #050508;
-  padding: 7px 16px;
+  padding: 9px 22px;
   border-radius: 8px;
   font-weight: 700;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35); /* détache bien le bouton de l'image derrière */
 }
 .carrousel-fleche {
   flex: 0 0 auto;

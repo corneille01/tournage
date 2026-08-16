@@ -1313,6 +1313,7 @@ const PUBS_PELIFY = [
   { icon: "navette", titre: "Flibco", desc: "Navettes aéroport écoresponsables entre villes et aéroports en Europe", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=3412832&v=53945&q=467508&r=2932851", image: "https://www.awin1.com/cshow.php?s=3412832&v=53945&q=467508&r=2932851", zones: ["FR", "BE", "DE", "IT", "NL", "GB"] },
   { icon: "sim", titre: "Saily", desc: "eSIM voyage, data mobile dans plus de 200 destinations, sans frais d'itinérance", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4853773&v=128609&q=611399&r=2932851", image: "https://www.awin1.com/cshow.php?s=4853773&v=128609&q=611399&r=2932851", zones: ["US"] },
   { icon: "camping", titre: "Flextail", desc: "Accessoires de camping ultralégers pour explorer les lieux les plus reculés", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4722075&v=60295&q=539696&r=2932851", image: "https://www.awin1.com/cshow.php?s=4722075&v=60295&q=539696&r=2932851", zones: ["US"] },
+  { icon: "deco", titre: "Éclairage Déco", desc: "Luminaires et éclairage décoratif haut de gamme pour la maison", cta: "Découvrir →", url: "https://www.awin1.com/cread.php?s=4826404&v=128237&q=608878&r=2932851", image: "https://www.awin1.com/cshow.php?s=4826404&v=128237&q=608878&r=2932851", zones: ["FR"] },
 ];
 
 const _etatsCarrousels = {}; // { "1": { index, intervalId }, "2": {...} }
@@ -1329,8 +1330,6 @@ function _rendreOffrePub(offre) {
     <div class="pub-carte">
       <img src="${offre.image}" alt="${offre.titre}"
            onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'pub-icone-repli', innerHTML: PUB_SVG_FALLBACK['${offre.icon}'] || ''}))">
-      <div class="pub-titre">${offre.titre}</div>
-      <div class="pub-desc">${offre.desc}</div>
       <a href="${offre.url}" target="_blank" rel="sponsored noopener" class="pub-cta">${offre.cta}</a>
     </div>
   `;

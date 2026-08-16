@@ -228,7 +228,15 @@ async function chargerFilms() {
   try {
     const res = await fetch(`${API_BASE}/api/films?${params}`);
     const data = await res.json();
-    afficherCartesFilms(data.films);
+    let films = data.films;
+    if (state.filtres.avecVisiteGuidee) {
+      // Filtrage côté client — VISITES_PARTENAIRES est une donnée du
+      // frontend, pas connue du backend. Toute nouvelle entrée ajoutée
+      // à cet objet apparaît donc automatiquement ici, sans rien
+      // d'autre à faire ni côté base de données ni côté API.
+      films = films.filter((f) => VISITES_PARTENAIRES[f.id]?.length > 0);
+    }
+    afficherCartesFilms(films);
   } catch (e) {
     document.getElementById("cartes-liste").innerHTML =
       `<p style="color:#9a9ea8;padding:10px;">Erreur de chargement.</p>`;
@@ -1379,13 +1387,21 @@ document.addEventListener("DOMContentLoaded", () => {
   _initialiserMenuHamburger();
   initialiserPublicites();
 
-  document.querySelectorAll(".filtre-btn").forEach((btn) => {
+  document.querySelectorAll(".filtre-btn:not(.filtre-independant)").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".filtre-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".filtre-btn:not(.filtre-independant)").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       state.filtres.mediaType = btn.dataset.type;
       chargerFilms();
     });
+  });
+
+  document.getElementById("filtre-visites-toggle").addEventListener("click", (e) => {
+    // Bascule indépendante — se combine avec Tout/Films/Séries plutôt
+    // que de les remplacer, contrairement aux 3 boutons ci-dessus.
+    state.filtres.avecVisiteGuidee = !state.filtres.avecVisiteGuidee;
+    e.currentTarget.classList.toggle("active", state.filtres.avecVisiteGuidee);
+    chargerFilms();
   });
 
   ["filtre-annee", "filtre-departement", "filtre-commune", "filtre-nationalite"].forEach((id) => {

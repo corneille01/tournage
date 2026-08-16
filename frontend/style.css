@@ -98,6 +98,11 @@ body {
   color: #fff;
   border-color: var(--couleur-accent);
 }
+.filtre-independant {
+  margin-left: 8px;
+  border-left: 1px solid #3a3d45;
+  padding-left: 14px;
+}
 
 /* ── Zone scrollable des cartes films, hauteur fixe sous l'en-tête ── */
 #cartes-scroll {

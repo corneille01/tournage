@@ -224,6 +224,14 @@ async function chargerFilms() {
   if (state.filtres.nationalite) params.set("nationalite", state.filtres.nationalite);
   if (state.filtres.q) params.set("q", state.filtres.q);
   if (state.filtres.tri) params.set("tri", state.filtres.tri);
+  if (state.filtres.avecVisiteGuidee) {
+    // Sans ça, la pagination par défaut (60 résultats, triés par
+    // titre) peut exclure des films ayant pourtant une visite guidée
+    // — le filtre ne peut agir que sur ce qui a été récupéré. 200 est
+    // le maximum accepté par l'API, largement suffisant pour couvrir
+    // tout le catalogue actuel.
+    params.set("par_page", "200");
+  }
 
   try {
     const res = await fetch(`${API_BASE}/api/films?${params}`);

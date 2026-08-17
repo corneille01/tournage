@@ -1000,6 +1000,14 @@ const VISITES_PARTENAIRES = {
   135: [
     { nom: "Office de tourisme de Gruissan — Filets Gourmands", description: "Balade en petit train jusqu'aux cabanes de pêcheurs de l'Ayrolle, rencontre avec les pêcheurs et ostréiculteurs locaux, dégustation. Inscription à l'office de tourisme (le vendredi matin).", lien: "https://www.gruissan-mediterranee.com/top5-des-visites-guidees/", lienAffiliation: null },
   ],
+  // D'Artagnan (Auch) — 2 visites guidées + 1 escape game, signalés
+  // par Séverine Teulières (chargée de mission tourisme) en commentaire
+  // du post LinkedIn du 17/08/2026 — merci à elle !
+  3: [
+    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan", description: "Sur les traces de d'Artagnan à Auch, lieux et anecdotes liés au tournage et à l'histoire du personnage.", lien: "https://www.mysportsession.com/activites/search/activity/3110/2112", lienAffiliation: null },
+    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan (2)", description: "Seconde formule de visite guidée autour de d'Artagnan à Auch.", lien: "https://www.mysportsession.com/activites/search/details/activity/3108/3272", lienAffiliation: null },
+    { nom: "Office de tourisme du Grand Auch — Escape game d'Artagnan", description: "Un escape game pour découvrir l'histoire de d'Artagnan à Auch, en famille ou entre amis.", lien: "https://www.mysportsession.com/activites/search/activity/3140/2129", lienAffiliation: null },
+  ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
   // Sète trouvé concerne "Demain nous appartient", pas cette série.
   // À compléter si un vrai circuit Candice Renoir existe, ou si

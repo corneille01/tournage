@@ -992,6 +992,7 @@ const VISITES_PARTENAIRES = {
   // série — honnêteté avant tout, pas de lien inventé.
   131: [
     { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Réservation obligatoire.", lien: "https://book.montpellier-tourisme.fr/fr/voir-faire/1999897/au-c%C5%93ur-de-la-s%C3%A9rie-un-si-grand-soleil-centre-historique/afficher-les-details", lienAffiliation: null },
+    { nom: "Office de tourisme de Palavas-les-Flots — Visite spéciale cinéma", description: "Partez à la découverte des icônes du 7ème art qui ont foulé le sol palavasien, dont Un si grand soleil. Rendez-vous au pied du Phare de la Méditerranée. Réservation en ligne.", lien: "https://billetterie.palavas-tourisme.com/fr", lienAffiliation: null },
   ],
   // L'Homme qui a vu l'ours qui a vu l'homme — pas de réservation en
   // ligne directe trouvée pour "Filets Gourmands" (inscription à

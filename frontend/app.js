@@ -993,6 +993,13 @@ const VISITES_PARTENAIRES = {
   131: [
     { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Réservation obligatoire.", lien: "https://book.montpellier-tourisme.fr/fr/voir-faire/1999897/au-c%C5%93ur-de-la-s%C3%A9rie-un-si-grand-soleil-centre-historique/afficher-les-details", lienAffiliation: null },
   ],
+  // L'Homme qui a vu l'ours qui a vu l'homme — pas de réservation en
+  // ligne directe trouvée pour "Filets Gourmands" (inscription à
+  // l'office de tourisme uniquement), lien vers leur page qui décrit
+  // précisément cette visite plutôt qu'un lien de billetterie inventé
+  135: [
+    { nom: "Office de tourisme de Gruissan — Filets Gourmands", description: "Balade en petit train jusqu'aux cabanes de pêcheurs de l'Ayrolle, rencontre avec les pêcheurs et ostréiculteurs locaux, dégustation. Inscription à l'office de tourisme (le vendredi matin).", lien: "https://www.gruissan-mediterranee.com/top5-des-visites-guidees/", lienAffiliation: null },
+  ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
   // Sète trouvé concerne "Demain nous appartient", pas cette série.
   // À compléter si un vrai circuit Candice Renoir existe, ou si

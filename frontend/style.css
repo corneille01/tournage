@@ -217,8 +217,10 @@ body {
 
 #popup-poster {
   width: 100%;
-  max-height: 240px;
-  object-fit: cover;
+  max-height: 420px;
+  min-height: 280px;
+  object-fit: contain; /* montre l'affiche en entier, jamais coupée — au prix d'un léger bandeau de fond si le ratio ne correspond pas exactement */
+  background: #0a0a0f; /* comble les bords quand le ratio de l'image ne remplit pas tout le cadre */
   display: block;
 }
 
@@ -1110,6 +1112,20 @@ body.page-film-ssr {
     flex: none;
     transition: transform 0.25s ease;
     transform: translateX(0);
+  }
+
+  /* Le bouton hamburger (fixe, en haut à gauche) se superposait au
+     titre "Pelify Lieux de tournage" — on pousse le header sous lui
+     et on centre le texte pour que ça reste lisible et équilibré. */
+  #sidebar-header {
+    padding-top: 56px; /* dégage l'espace occupé par le hamburger (40px + marge) */
+    text-align: center;
+  }
+  #sidebar-header h1 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
   }
   #sidebar.fermee { transform: translateX(-100%); }
 

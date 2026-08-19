@@ -1173,28 +1173,60 @@ async def page_film(request: Request, slug_id: str):
 
 @app.get("/sitemap.xml", response_class=PlainTextResponse)
 async def sitemap():
+    """
+    Sitemap XML dynamique pour Google.
+    Inclut uniquement les contenus publiés en Occitanie.
+    Les URLs des films sont générées avec la même logique canonique
+    que les pages /films/{slug}-{id}.
+    """
     films = await fetch_all(
-        "SELECT id, titre, date_maj FROM films WHERE statut = 'publie'"
+        """
+        SELECT id, titre, date_maj
+        FROM films
+        WHERE statut = 'publie'
+          AND region = 'Occitanie'
+        ORDER BY id
+        """
     )
-    urls = "\n".join(
+
+    urls = []
+
+    # Page d'accueil
+    urls.append(
         f"""  <url>
-    <loc>{BASE_URL}{url_film(f)}</loc>
-    <lastmod>{f['date_maj'].date().isoformat()}</lastmod>
-    <changefreq>monthly</changefreq>
-  </url>"""
-        for f in films
-    )
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
     <loc>{BASE_URL}/</loc>
     <changefreq>weekly</changefreq>
-  </url>
-{urls}
-</urlset>"""
-    return PlainTextResponse(content=xml, media_type="application/xml")
+    <priority>1.0</priority>
+  </url>"""
+    )
 
+    # Pages films
+    for film in films:
+        lastmod = ""
+        if film.get("date_maj"):
+            date_maj = film["date_maj"]
+            if hasattr(date_maj, "date"):
+                date_maj = date_maj.date()
+            lastmod = f"\n    <lastmod>{date_maj.isoformat()}</lastmod>"
 
+        urls.append(
+            f"""  <url>
+    <loc>{BASE_URL}{url_film(film)}</loc>{lastmod}
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>"""
+        )
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{chr(10).join(urls)}
+</urlset>
+"""
+
+    return PlainTextResponse(
+        content=xml,
+        media_type="application/xml",
+    )
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
     return f"""User-agent: *

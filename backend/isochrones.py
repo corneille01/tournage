@@ -4,10 +4,10 @@ backend/isochrones.py
 Précalcule les zones accessibles autour des lieux de tournage.
 
 Voiture :
-    10 / 20 / 30 minutes
+    5 / 10 / 15 / 30 minutes
 
 À pied :
-    10 / 20 minutes
+    5 / 10 / 15 / 30 minutes
 
 Les résultats sont stockés dans PostgreSQL.
 """
@@ -35,8 +35,8 @@ DELAI = 0.25
 
 
 ISOCHRONES = {
-    "driving-car": (10, 20, 30),
-    "foot-walking": (10, 20),
+    "driving-car": (5, 10, 15, 30),
+    "foot-walking": (5, 10, 15, 30),
 }
 
 

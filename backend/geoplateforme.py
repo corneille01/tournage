@@ -35,60 +35,9 @@ def _profil(mode: str) -> str:
     except KeyError:
         raise ValueError(
             "mode doit être 'foot-walking' ou 'driving-car'"
-        )
+        ) from None
 
 
-def _extraire_route(data: dict) -> dict:
-    """
-    Normalise différentes formes possibles de réponse
-    de l'API Géoplateforme.
-    """
-
-    # Réponse GeoJSON Feature
-    if data.get("type") == "Feature":
-        return data
-
-    # FeatureCollection
-    if data.get("type") == "FeatureCollection":
-        features = data.get("features") or []
-
-        if not features:
-            raise GeoplateformeError(
-                "Réponse GeoJSON sans feature."
-            )
-
-        return features[0]
-
-    # Réponse enveloppée
-    for cle in ("route", "result"):
-        valeur = data.get(cle)
-
-        if isinstance(valeur, dict):
-            if valeur.get("type") == "Feature":
-                return valeur
-
-            return valeur
-
-    return data
-
-
-def _extraire_valeur(data: dict, *cles):
-    for cle in cles:
-        valeur = data.get(cle)
-
-        if valeur is not None:
-            return valeur
-
-    properties = data.get("properties")
-
-    if isinstance(properties, dict):
-        for cle in cles:
-            valeur = properties.get(cle)
-
-            if valeur is not None:
-                return valeur
-
-    return None
 
 
 async def calculer_itineraire(
@@ -110,10 +59,14 @@ async def calculer_itineraire(
 
     Retour :
         {
+            "type": "route_reelle",
             "geometry": GeoJSON,
             "distance_metres": float,
             "duree_secondes": float | None,
-            "etapes": list
+            "etapes": list,
+            "provider": "geoplateforme",
+            "resource": "bdtopo-osrm",
+            "mode": str,
         }
 
     Aucun fallback vers un autre moteur de routage.
@@ -159,7 +112,6 @@ async def calculer_itineraire(
                 pool=10.0,
             )
         ) as client:
-
             response = await client.get(
                 url,
                 params=params,
@@ -170,13 +122,19 @@ async def calculer_itineraire(
 
     except httpx.TimeoutException as exc:
         raise GeoplateformeError(
-            "La Géoplateforme IGN a dépassé le délai d'attente."
+            "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
         ) from exc
 
     except httpx.RequestError as exc:
         raise GeoplateformeError(
-            f"Impossible de contacter la Géoplateforme IGN : {exc}"
+            f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
         ) from exc
+
+    except ValueError as exc:
+        raise GeoplateformeError(
+            "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
+        ) from exc
+
 
     if response.status_code >= 400:
         try:
@@ -185,7 +143,8 @@ async def calculer_itineraire(
             detail = response.text[:1000]
 
         raise GeoplateformeError(
-            f"Erreur HTTP {response.status_code} de la Géoplateforme IGN : {detail}"
+            f"Erreur HTTP {response.status_code} de la "
+            f"Géoplateforme IGN : {detail}"
         )
 
     try:
@@ -224,8 +183,13 @@ async def calculer_itineraire(
             )
 
         feature = features[0]
-        properties = feature.get("properties") or {}
 
+        if not isinstance(feature, dict):
+            raise GeoplateformeError(
+                "La Géoplateforme IGN a retourné une feature invalide."
+            )
+
+        properties = feature.get("properties") or {}
         geometry = feature.get("geometry")
 
         distance = (
@@ -292,137 +256,222 @@ async def calculer_itineraire(
         except (TypeError, ValueError):
             duree = None
 
-     # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # ÉTAPES DE NAVIGATION IGN
     # ---------------------------------------------------------
 
     etapes = []
 
-    # La réponse Géoplateforme utilise :
+    # La réponse Géoplateforme utilise généralement :
     #
     # portions[]
-    #   └── steps[]
+    #     └── steps[]
     #
     # Chaque step contient notamment :
     # geometry, distance, duration, instruction, attributes.
 
     portions = route.get("portions") or []
 
-    if isinstance(portions, list):
+    def _derniere_coordonnee(geometry_step):
+        """
+        Retourne la dernière coordonnée d'une géométrie GeoJSON.
+        Compatible LineString et MultiLineString.
+        """
 
-        def _derniere_coordonnee(geometry):
-            if not isinstance(geometry, dict):
-                return None
-
-            coords = geometry.get("coordinates")
-
-            if not coords:
-                return None
-
-            # LineString
-            if (
-                isinstance(coords, list)
-                and coords
-                and isinstance(coords[0], (list, tuple))
-                and len(coords[0]) >= 2
-                and isinstance(coords[0][0], (int, float))
-            ):
-                return coords[-1]
-
-            # MultiLineString
-            if (
-                isinstance(coords, list)
-                and coords
-                and isinstance(coords[0], list)
-            ):
-                for ligne in reversed(coords):
-                    if ligne:
-                        return ligne[-1]
-
+        if not isinstance(geometry_step, dict):
             return None
 
-        def _instruction_fr(step):
-            instruction = step.get("instruction")
+        coords = geometry_step.get("coordinates")
 
-            if not isinstance(instruction, dict):
-                return (
-                    step.get("message")
-                    or step.get("text")
-                    or step.get("name")
-                    or ""
-                )
+        if not coords:
+            return None
 
-            type_instruction = (
-                instruction.get("type")
-                or ""
-            ).lower()
+        # LineString
+        if (
+            isinstance(coords, list)
+            and coords
+            and isinstance(coords[0], (list, tuple))
+            and len(coords[0]) >= 2
+            and isinstance(coords[0][0], (int, float))
+        ):
+            return coords[-1]
 
-            modifier = (
-                instruction.get("modifier")
-                or ""
-            ).lower()
+        # MultiLineString
+        if (
+            isinstance(coords, list)
+            and coords
+            and isinstance(coords[0], list)
+        ):
+            for ligne in reversed(coords):
+                if ligne:
+                    return ligne[-1]
 
-            nom = (
-                step.get("name")
-                or (step.get("attributes") or {}).get("name")
-                or ""
-            )
+        return None
 
-            modificateurs = {
-                "left": "à gauche",
-                "right": "à droite",
-                "slight left": "légèrement à gauche",
-                "slight right": "légèrement à droite",
-                "straight": "tout droit",
-            }
+    def _instruction_fr(step):
+        """
+        Transforme une instruction IGN en phrase française.
 
-            if type_instruction == "depart":
-                texte = "Départ"
+        Cette fonction protège notamment contre le cas où
+        attributes["name"] est un dictionnaire au lieu d'une chaîne.
+        """
 
-            elif type_instruction == "arrive":
-                texte = "Vous êtes arrivé à destination"
+        instruction = step.get("instruction")
 
-            elif type_instruction == "turn":
-                direction = modificateurs.get(
-                    modifier,
-                    modifier or ""
-                )
+        if not isinstance(instruction, dict):
+            instruction = {}
 
-                texte = (
-                    f"Tourner {direction}".strip()
-                )
+        type_instruction = str(
+            instruction.get("type") or ""
+        ).lower()
 
-            elif type_instruction == "fork":
-                direction = modificateurs.get(
-                    modifier,
-                    modifier or ""
-                )
+        modifier = str(
+            instruction.get("modifier") or ""
+        ).lower()
 
-                texte = (
-                    f"Prendre la bifurcation {direction}".strip()
-                )
+        # -----------------------------------------------------
+        # NOM DE LA VOIE
+        # -----------------------------------------------------
 
-            elif type_instruction in (
-                "continue",
-                "new name",
-            ):
-                if modifier == "straight":
-                    texte = "Continuer tout droit"
-                else:
-                    texte = "Continuer"
+        attributes = step.get("attributes")
 
+        if not isinstance(attributes, dict):
+            attributes = {}
+
+        candidats_nom = [
+            step.get("name"),
+            attributes.get("name"),
+            attributes.get("cpx_toponyme_route_nommee"),
+            attributes.get("cpx_toponyme"),
+            attributes.get("cpx_numero"),
+            attributes.get("nom_1_droite"),
+            attributes.get("nom_1_gauche"),
+        ]
+
+        nom = ""
+
+        for candidat in candidats_nom:
+            if isinstance(candidat, str) and candidat.strip():
+                nom = candidat.strip()
+                break
+
+        # -----------------------------------------------------
+        # TRADUCTION DES DIRECTIONS
+        # -----------------------------------------------------
+
+        modificateurs = {
+            "left": "à gauche",
+            "right": "à droite",
+            "slight left": "légèrement à gauche",
+            "slight right": "légèrement à droite",
+            "sharp left": "fortement à gauche",
+            "sharp right": "fortement à droite",
+            "straight": "tout droit",
+            "uturn": "faites demi-tour",
+            "u-turn": "faites demi-tour",
+        }
+
+        direction = modificateurs.get(
+            modifier,
+            modifier,
+        )
+
+        # -----------------------------------------------------
+        # INSTRUCTION
+        # -----------------------------------------------------
+
+        if type_instruction in (
+            "depart",
+            "start",
+        ):
+            texte = "Départ"
+
+        elif type_instruction in (
+            "arrive",
+            "destination",
+            "end",
+        ):
+            texte = "Vous êtes arrivé à destination"
+
+        elif type_instruction in (
+            "turn",
+            "turn-left",
+            "turn-right",
+        ):
+            if direction:
+                texte = f"Tourner {direction}"
+            else:
+                texte = "Tourner"
+
+        elif type_instruction == "fork":
+            if direction:
+                texte = f"Prendre la bifurcation {direction}"
+            else:
+                texte = "Prendre la bifurcation"
+
+        elif type_instruction in (
+            "continue",
+            "new name",
+            "new_name",
+        ):
+            if direction == "tout droit":
+                texte = "Continuer tout droit"
+            elif direction:
+                texte = f"Continuer {direction}"
             else:
                 texte = "Continuer"
 
-            if nom and type_instruction not in ("arrive",):
-                texte += f" sur {nom}"
+        elif type_instruction in (
+            "merge",
+            "on ramp",
+            "on_ramp",
+        ):
+            if direction:
+                texte = f"Rejoindre {direction}"
+            else:
+                texte = "Rejoindre la voie"
 
-            return texte
+        elif type_instruction in (
+            "off ramp",
+            "off_ramp",
+        ):
+            if direction:
+                texte = f"Prendre la sortie {direction}"
+            else:
+                texte = "Prendre la sortie"
 
-        index = 0
+        elif type_instruction in (
+            "roundabout",
+            "rotary",
+        ):
+            texte = "Prendre le rond-point"
 
+        else:
+            # On évite absolument de fabriquer une phrase
+            # avec un objet/dictionnaire Python.
+            texte = "Continuer"
+
+        # -----------------------------------------------------
+        # AJOUT DU NOM DE LA VOIE
+        # -----------------------------------------------------
+
+        if nom and type_instruction not in (
+            "arrive",
+            "destination",
+            "end",
+        ):
+            texte += f" sur {nom}"
+
+        return texte
+
+    # ---------------------------------------------------------
+    # EXTRACTION DES ÉTAPES
+    # ---------------------------------------------------------
+
+    index = 0
+
+    if isinstance(portions, list):
         for portion in portions:
-
             if not isinstance(portion, dict):
                 continue
 
@@ -432,7 +481,6 @@ async def calculer_itineraire(
                 continue
 
             for step in steps:
-
                 if not isinstance(step, dict):
                     continue
 
@@ -456,9 +504,7 @@ async def calculer_itineraire(
                     or 0
                 )
 
-                step_duration = (
-                    step.get("duration")
-                )
+                step_duration = step.get("duration")
 
                 try:
                     step_distance = float(
@@ -481,31 +527,68 @@ async def calculer_itineraire(
                     "instruction"
                 )
 
-                etapes.append({
-                    "index": index,
-                    "instruction": instruction,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "distance_metres": step_distance,
-                    "duree_secondes": step_duration,
-                    "geometry": geometry_step,
-                    "name": (
-                        step.get("name")
-                        or (step.get("attributes") or {}).get("name")
+                # Récupération propre du nom de voie.
+                attributes = step.get("attributes")
+
+                if not isinstance(attributes, dict):
+                    attributes = {}
+
+                nom_etape = ""
+
+                candidats_nom_etape = [
+                    step.get("name"),
+                    attributes.get("name"),
+                    attributes.get(
+                        "cpx_toponyme_route_nommee"
                     ),
-                    "type": (
-                        raw_instruction.get("type")
-                        if isinstance(raw_instruction, dict)
-                        else None
-                    ),
-                    "modifier": (
-                        raw_instruction.get("modifier")
-                        if isinstance(raw_instruction, dict)
-                        else None
-                    ),
-                })
+                    attributes.get("cpx_toponyme"),
+                    attributes.get("cpx_numero"),
+                    attributes.get("nom_1_droite"),
+                    attributes.get("nom_1_gauche"),
+                ]
+
+                for candidat in candidats_nom_etape:
+                    if (
+                        isinstance(candidat, str)
+                        and candidat.strip()
+                    ):
+                        nom_etape = candidat.strip()
+                        break
+
+                etapes.append(
+                    {
+                        "index": index,
+                        "instruction": instruction,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "distance_metres": step_distance,
+                        "duree_secondes": step_duration,
+                        "geometry": geometry_step,
+                        "name": nom_etape,
+                        "type": (
+                            raw_instruction.get("type")
+                            if isinstance(
+                                raw_instruction,
+                                dict,
+                            )
+                            else None
+                        ),
+                        "modifier": (
+                            raw_instruction.get("modifier")
+                            if isinstance(
+                                raw_instruction,
+                                dict,
+                            )
+                            else None
+                        ),
+                    }
+                )
 
                 index += 1
+
+    # ---------------------------------------------------------
+    # RETOUR FINAL
+    # ---------------------------------------------------------
 
     return {
         "type": "route_reelle",
@@ -517,6 +600,8 @@ async def calculer_itineraire(
         "resource": RESOURCE_ITINERAIRE,
         "mode": mode,
     }
+
+
 async def calculer_isochrone(
     lat: float,
     lon: float,
@@ -552,11 +637,20 @@ async def calculer_isochrone(
 
             data = response.json()
 
-    except Exception as exc:
+    except httpx.TimeoutException as exc:
+            raise GeoplateformeError(
+                "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
+            ) from exc
 
-        raise GeoplateformeError(
-            f"Erreur API isochrone : {exc}"
-        ) from exc
+    except httpx.RequestError as exc:
+            raise GeoplateformeError(
+                f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
+            ) from exc
+
+    except ValueError as exc:
+            raise GeoplateformeError(
+                "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
+            ) from exc
 
     # GeoJSON direct
     if data.get("type") in (

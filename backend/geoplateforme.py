@@ -310,7 +310,7 @@ async def calculer_itineraire(
         "duree_secondes": duree,
         "etapes": etapes,
         "provider": "geoplateforme",
-        "resource": RESOURCE_ITINERAIRE,
+        "resource": "bdtopo-osrm",
         "mode": mode,
     }
 

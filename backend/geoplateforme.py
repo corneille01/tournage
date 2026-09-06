@@ -102,7 +102,10 @@ async def calculer_itineraire(
     """
     Calcule un itinéraire routable avec la Géoplateforme IGN.
 
-    Ressource utilisée :
+    Service :
+        https://data.geopf.fr/navigation/itineraire
+
+    Ressource :
         bdtopo-osrm
 
     Retour :
@@ -113,20 +116,15 @@ async def calculer_itineraire(
             "etapes": list
         }
 
-    En cas d'échec, une GeoplateformeError est levée.
-    Aucun fallback externe n'est effectué ici.
+    Aucun fallback vers un autre moteur de routage.
     """
 
-    # Correspondance des modes de ton application
     mode_mapping = {
         "driving-car": "car",
         "car": "car",
         "foot-walking": "pedestrian",
         "walking": "pedestrian",
         "pedestrian": "pedestrian",
-        "cycling-regular": "bike",
-        "cycling": "bike",
-        "bike": "bike",
     }
 
     mode_ign = mode_mapping.get(mode)
@@ -136,7 +134,6 @@ async def calculer_itineraire(
             f"Mode de déplacement non supporté : {mode}"
         )
 
-    # Endpoint officiel de navigation Géoplateforme
     url = f"{BASE_URL}/itineraire"
 
     params = {
@@ -144,13 +141,14 @@ async def calculer_itineraire(
         "start": f"{depart_lon},{depart_lat}",
         "end": f"{arrivee_lon},{arrivee_lat}",
         "profile": mode_ign,
+        "optimization": "fastest",
+        "geometryFormat": "geojson",
+        "distanceUnit": "meter",
+        "timeUnit": "second",
+        "crs": "EPSG:4326",
+        "getSteps": "true" if avec_etapes else "false",
+        "getBbox": "false",
     }
-
-    if avec_etapes:
-        params["geometry"] = "geojson"
-        params["instructions"] = "true"
-    else:
-        params["geometry"] = "geojson"
 
     try:
         async with httpx.AsyncClient(
@@ -180,66 +178,111 @@ async def calculer_itineraire(
             f"Impossible de contacter la Géoplateforme IGN : {exc}"
         ) from exc
 
-    # Erreurs HTTP
     if response.status_code >= 400:
         try:
             detail = response.json()
         except Exception:
-            detail = response.text[:500]
+            detail = response.text[:1000]
 
         raise GeoplateformeError(
-            f"Erreur HTTP {response.status_code} de la "
-            f"Géoplateforme IGN : {detail}"
+            f"Erreur HTTP {response.status_code} de la Géoplateforme IGN : {detail}"
         )
 
-    # Décodage JSON
     try:
         data = response.json()
-
     except ValueError as exc:
         raise GeoplateformeError(
-            "La Géoplateforme IGN a retourné une réponse "
-            "qui n'est pas un JSON valide."
+            "La Géoplateforme IGN a retourné une réponse JSON invalide."
         ) from exc
 
     # ---------------------------------------------------------
-    # Extraction du résultat
+    # STRUCTURE DE RÉPONSE
     # ---------------------------------------------------------
 
-    features = data.get("features")
-
-    if not features:
+    if not isinstance(data, dict):
         raise GeoplateformeError(
-            "La Géoplateforme IGN n'a retourné aucun itinéraire."
+            "Réponse inattendue de la Géoplateforme IGN."
         )
 
-    feature = features[0]
+    # L'API peut retourner directement l'itinéraire.
+    route = data
 
-    geometry = feature.get("geometry")
+    # Compatibilité si la réponse est enveloppée.
+    if isinstance(data.get("route"), dict):
+        route = data["route"]
+
+    elif isinstance(data.get("result"), dict):
+        route = data["result"]
+
+    # Compatibilité GeoJSON FeatureCollection.
+    if data.get("type") == "FeatureCollection":
+        features = data.get("features") or []
+
+        if not features:
+            raise GeoplateformeError(
+                "La Géoplateforme IGN n'a retourné aucun itinéraire."
+            )
+
+        feature = features[0]
+        properties = feature.get("properties") or {}
+
+        geometry = feature.get("geometry")
+
+        distance = (
+            properties.get("distance")
+            or properties.get("distance_m")
+            or properties.get("distance_metres")
+            or 0
+        )
+
+        duree = (
+            properties.get("duration")
+            or properties.get("duration_s")
+            or properties.get("duree_secondes")
+        )
+
+        raw_steps = (
+            properties.get("steps")
+            or properties.get("etapes")
+            or []
+        )
+
+    else:
+        geometry = route.get("geometry")
+
+        distance = (
+            route.get("distance")
+            or route.get("distance_m")
+            or route.get("distance_metres")
+            or 0
+        )
+
+        duree = (
+            route.get("duration")
+            or route.get("duration_s")
+            or route.get("duree_secondes")
+        )
+
+        # Selon les versions du service, les étapes peuvent être
+        # directement dans la réponse.
+        raw_steps = (
+            route.get("steps")
+            or route.get("etapes")
+            or route.get("instructions")
+            or []
+        )
 
     if not geometry:
         raise GeoplateformeError(
             "La Géoplateforme IGN n'a retourné aucune géométrie."
         )
 
-    properties = feature.get("properties") or {}
-
-    # Les noms peuvent varier selon la réponse du service.
-    distance = (
-        properties.get("distance")
-        or properties.get("distance_m")
-        or properties.get("distance_metres")
-        or 0
-    )
-
-    duree = (
-        properties.get("duration")
-        or properties.get("duration_s")
-        or properties.get("duree_secondes")
-    )
+    # ---------------------------------------------------------
+    # DISTANCE / DURÉE
+    # ---------------------------------------------------------
 
     try:
-        distance = float(distance)
+        distance = float(distance or 0)
     except (TypeError, ValueError):
         distance = 0.0
 
@@ -250,59 +293,67 @@ async def calculer_itineraire(
             duree = None
 
     # ---------------------------------------------------------
-    # Étapes de navigation
+    # ÉTAPES DE NAVIGATION
     # ---------------------------------------------------------
 
     etapes = []
 
-    if avec_etapes:
+    if isinstance(raw_steps, list):
 
-        # Selon la structure retournée par le service
-        raw_steps = (
-            properties.get("steps")
-            or properties.get("etapes")
-            or []
-        )
+        for index, step in enumerate(raw_steps):
 
-        if isinstance(raw_steps, list):
+            if not isinstance(step, dict):
+                continue
 
-            for step in raw_steps:
+            instruction = (
+                step.get("instruction")
+                or step.get("message")
+                or step.get("text")
+                or step.get("name")
+                or ""
+            )
 
-                if not isinstance(step, dict):
-                    continue
+            step_distance = (
+                step.get("distance")
+                or step.get("distance_m")
+                or step.get("distance_metres")
+                or 0
+            )
 
-                instruction = (
-                    step.get("instruction")
-                    or step.get("message")
-                    or step.get("text")
-                    or ""
-                )
+            step_duration = (
+                step.get("duration")
+                or step.get("duration_s")
+                or step.get("duree_secondes")
+            )
 
-                step_distance = (
-                    step.get("distance")
-                    or step.get("distance_m")
-                    or 0
-                )
+            step_geometry = step.get("geometry")
 
-                step_duration = (
-                    step.get("duration")
-                    or step.get("duration_s")
-                )
+            # Certains retours placent la géométrie dans geometry
+            # ou dans un objet GeoJSON.
+            if isinstance(step_geometry, dict):
+                step_geometry = step_geometry
 
-                etapes.append({
-                    "instruction": str(instruction),
-                    "distance_metres": (
-                        float(step_distance)
-                        if step_distance is not None
-                        else 0
-                    ),
-                    "duree_secondes": (
-                        float(step_duration)
-                        if step_duration is not None
-                        else None
-                    ),
-                    "geometry": step.get("geometry"),
-                })
+            try:
+                step_distance = float(step_distance or 0)
+            except (TypeError, ValueError):
+                step_distance = 0.0
+
+            if step_duration is not None:
+                try:
+                    step_duration = float(step_duration)
+                except (TypeError, ValueError):
+                    step_duration = None
+
+            etapes.append({
+                "index": index,
+                "instruction": str(instruction),
+                "distance_metres": step_distance,
+                "duree_secondes": step_duration,
+                "geometry": step_geometry,
+                "name": step.get("name"),
+                "type": step.get("type"),
+                "way_points": step.get("way_points"),
+            })
 
     return {
         "geometry": geometry,
@@ -310,11 +361,9 @@ async def calculer_itineraire(
         "duree_secondes": duree,
         "etapes": etapes,
         "provider": "geoplateforme",
-        "resource": "bdtopo-osrm",
+        "resource": RESOURCE_ITINERAIRE,
         "mode": mode,
     }
-
-
 async def calculer_isochrone(
     lat: float,
     lon: float,

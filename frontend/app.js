@@ -1326,10 +1326,10 @@ async function demarrerNavigation(destLat, destLon, mode) {
     const data = await res.json();
 
     if (!data.etapes_navigation || !data.etapes_navigation.length) {
-      panneau.querySelector(".nav-instruction").textContent =
-        "Navigation détaillée indisponible (itinéraire en ligne droite uniquement).";
-      return;
-    }
+    panneau.querySelector(".nav-instruction").textContent =
+        "⚠️ Les instructions de navigation IGN sont indisponibles pour cet itinéraire.";
+    return;
+}
 
     etapesNavigationCourantes = data.etapes_navigation;
     indexEtapeCourante = 0;

@@ -946,26 +946,67 @@ async def itineraire_point_a_point(
     ),
 ):
     """
-    Itinéraire réel entre deux points.
+    Calcule un itinéraire réel entre deux coordonnées.
 
-    Moteur unique :
+    Fournisseur unique :
         Géoplateforme IGN
-        resource = bdtopo-osrm
+        ressource : bdtopo-osrm
 
-    IMPORTANT :
-        Aucun fallback silencieux vers OSRM public, OpenRouteService
-        ou une ligne droite.
+    Aucun fallback vers :
+        - OSRM public
+        - OpenRouteService
+        - ligne droite
 
-    Si la Géoplateforme est indisponible, l'API renvoie une erreur
-    explicite afin que le frontend ne puisse pas présenter une
-    estimation comme un véritable itinéraire routable.
+    Lorsque etapes=true, les étapes de navigation IGN sont également
+    renvoyées au frontend sous la clé `etapes_navigation`.
     """
+
+    # ─────────────────────────────────────────────────────────
+    # Validation du mode
+    # ─────────────────────────────────────────────────────────
 
     if mode not in ("foot-walking", "driving-car"):
         raise HTTPException(
             status_code=400,
-            detail="mode doit être 'foot-walking' ou 'driving-car'",
+            detail={
+                "code": "INVALID_MODE",
+                "message": (
+                    "mode doit être 'foot-walking' ou 'driving-car'"
+                ),
+            },
         )
+
+    # ─────────────────────────────────────────────────────────
+    # Validation basique des coordonnées
+    # ─────────────────────────────────────────────────────────
+
+    if not (-90 <= depart_lat <= 90):
+        raise HTTPException(
+            status_code=400,
+            detail="depart_lat invalide",
+        )
+
+    if not (-180 <= depart_lon <= 180):
+        raise HTTPException(
+            status_code=400,
+            detail="depart_lon invalide",
+        )
+
+    if not (-90 <= arrivee_lat <= 90):
+        raise HTTPException(
+            status_code=400,
+            detail="arrivee_lat invalide",
+        )
+
+    if not (-180 <= arrivee_lon <= 180):
+        raise HTTPException(
+            status_code=400,
+            detail="arrivee_lon invalide",
+        )
+
+    # ─────────────────────────────────────────────────────────
+    # Appel UNIQUE à la Géoplateforme IGN
+    # ─────────────────────────────────────────────────────────
 
     try:
         resultat = await calculer_itineraire_geoplateforme(
@@ -977,15 +1018,8 @@ async def itineraire_point_a_point(
             avec_etapes=etapes,
         )
 
-        # Sécurité supplémentaire :
-        # tout itinéraire retourné par cette route doit être identifié
-        # explicitement comme provenant de la Géoplateforme.
-        resultat["provider"] = "geoplateforme"
-        resultat["resource"] = "bdtopo-osrm"
-
-        return resultat
-
     except GeoplateformeError as exc:
+
         print(
             f"❌ Géoplateforme indisponible pour l'itinéraire : {exc}",
             flush=True,
@@ -1005,7 +1039,82 @@ async def itineraire_point_a_point(
             },
         ) from exc
 
+    except Exception as exc:
 
+        # Sécurité : une erreur inattendue ne doit jamais être
+        # transformée en faux itinéraire.
+        print(
+            f"❌ Erreur inattendue calcul itinéraire : {exc}",
+            flush=True,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "ITINERARY_ERROR",
+                "message": (
+                    "Une erreur inattendue est survenue pendant "
+                    "le calcul de l'itinéraire."
+                ),
+                "provider": "geoplateforme",
+                "resource": RESOURCE_ITINERAIRE,
+            },
+        ) from exc
+
+    # ─────────────────────────────────────────────────────────
+    # Vérification de sécurité du résultat
+    # ─────────────────────────────────────────────────────────
+
+    if not resultat or not isinstance(resultat, dict):
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "INVALID_GEOPLATEFORME_RESPONSE",
+                "message": (
+                    "La Géoplateforme a répondu mais le résultat "
+                    "d'itinéraire est invalide."
+                ),
+                "provider": "geoplateforme",
+                "resource": RESOURCE_ITINERAIRE,
+            },
+        )
+
+    geometry = resultat.get("geometry")
+
+    if not geometry:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "NO_ROUTE_GEOMETRY",
+                "message": (
+                    "La Géoplateforme n'a retourné aucune géométrie "
+                    "d'itinéraire exploitable."
+                ),
+                "provider": "geoplateforme",
+                "resource": RESOURCE_ITINERAIRE,
+            },
+        )
+
+    # ─────────────────────────────────────────────────────────
+    # Format attendu par le frontend
+    # ─────────────────────────────────────────────────────────
+
+    resultat["provider"] = "geoplateforme"
+    resultat["resource"] = RESOURCE_ITINERAIRE
+    resultat["mode"] = mode
+
+    # Le frontend app.js attend précisément cette propriété.
+    # On ne la crée que lorsque les étapes ont été demandées.
+    if etapes:
+        resultat["etapes_navigation"] = (
+            resultat.get("etapes_navigation")
+            or resultat.get("etapes")
+            or []
+        )
+    else:
+        resultat["etapes_navigation"] = []
+
+    return resultat
     
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """

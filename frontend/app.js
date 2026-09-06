@@ -186,7 +186,6 @@ function effacerIsochrone() {
 }
 
 function afficherIsochroneSurCarte(geojson) {
-
   effacerIsochrone();
 
   if (!geojson) return;
@@ -200,9 +199,6 @@ function afficherIsochroneSurCarte(geojson) {
       dashArray: "6 4",
     }
   }).addTo(map);
-
-  // L'isochrone ne doit pas déplacer brutalement la carte.
-  // On laisse le lieu de tournage rester au centre de l'expérience.
 }
 
 function initialiserControlesIsochrone() {
@@ -700,7 +696,7 @@ function fermerPopup() {
     .getElementById("popup-overlay")
     .classList.add("hidden");
 
-  effacerIsochrone();
+  
 }
 
 async function _recupererAmenities(lieuId) {

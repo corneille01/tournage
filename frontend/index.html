@@ -184,6 +184,67 @@
           </div>
 
           <div id="popup-resultats"><!-- rempli au clic sur un bouton --></div>
+          <!-- Accessibilité Géoplateforme -->
+          <section id="bloc-accessibilite" class="bloc-accessibilite">
+            <div class="accessibilite-header">
+              <div>
+                <h3>🗺️ Accessibilité du lieu</h3>
+                <p>Jusqu'où peut-on accéder depuis ce lieu de tournage ?</p>
+              </div>
+            </div>
+
+            <div class="accessibilite-controles">
+              <div class="accessibilite-groupe">
+                <span class="accessibilite-label"> Mode </span>
+
+                <div class="accessibilite-buttons">
+                  <button
+                    type="button"
+                    class="iso-mode-btn actif"
+                    data-mode="driving-car"
+                  >
+                    🚗 Voiture
+                  </button>
+
+                  <button
+                    type="button"
+                    class="iso-mode-btn"
+                    data-mode="foot-walking"
+                  >
+                    🚶 À pied
+                  </button>
+                </div>
+              </div>
+
+              <div class="accessibilite-groupe">
+                <span class="accessibilite-label"> Temps </span>
+
+                <div class="accessibilite-buttons">
+                  <button
+                    type="button"
+                    class="iso-time-btn actif"
+                    data-minutes="10"
+                  >
+                    10 min
+                  </button>
+
+                  <button type="button" class="iso-time-btn" data-minutes="20">
+                    20 min
+                  </button>
+
+                  <button type="button" class="iso-time-btn" data-minutes="30">
+                    30 min
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div id="isochrone-legende" class="isochrone-legende">
+              <span> 🟢 Zone accessible </span>
+
+              <span id="isochrone-source"> Géoplateforme IGN </span>
+            </div>
+          </section>
 
           <div id="popup-actions-globales">
             <button id="btn-trace">

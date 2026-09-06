@@ -1143,3 +1143,151 @@ body.page-film-ssr {
 }
 .partenaire-visite { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
 .partenaire-visite:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+
+
+/* =========================================================
+   ISOCHRONES — ACCESSIBILITÉ
+   ========================================================= */
+
+.bloc-accessibilite {
+  margin: 18px 0;
+  padding: 16px;
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.accessibilite-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 15px;
+}
+
+.accessibilite-header h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.accessibilite-header p {
+  margin: 0;
+
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.accessibilite-controles {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.accessibilite-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.accessibilite-label {
+  font-size: 11px;
+  font-weight: 700;
+
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+
+  opacity: 0.6;
+}
+
+.accessibilite-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.iso-mode-btn,
+.iso-time-btn {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+
+  background: rgba(255, 255, 255, 0.06);
+
+  color: inherit;
+
+  border-radius: 9px;
+
+  padding: 8px 12px;
+
+  cursor: pointer;
+
+  font-size: 13px;
+
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.iso-mode-btn:hover,
+.iso-time-btn:hover {
+  transform: translateY(-1px);
+}
+
+.iso-mode-btn.actif,
+.iso-time-btn.actif {
+  border-color: #3388ff;
+
+  background: rgba(51, 136, 255, 0.15);
+
+  font-weight: 700;
+}
+
+.iso-time-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+
+  transform: none;
+}
+
+.isochrone-legende {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+
+  margin-top: 14px;
+  padding-top: 10px;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  font-size: 11px;
+
+  opacity: 0.7;
+}
+
+#isochrone-source {
+  font-style: italic;
+}
+
+.isochrone-legende.chargement {
+  opacity: 0.45;
+}
+
+@media (max-width: 600px) {
+
+  .bloc-accessibilite {
+    padding: 13px;
+  }
+
+  .iso-mode-btn,
+  .iso-time-btn {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .isochrone-legende {
+    flex-direction: column;
+  }
+
+}

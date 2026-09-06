@@ -5,7 +5,10 @@ Tous les endpoints lisent des données déjà en base (jamais d'appel
 Overpass en direct sur une requête visiteur) — voir refresh_cache.py
 pour le remplissage du cache.
 """
-
+from geoplateforme import (
+    calculer_itineraire as calculer_itineraire_geoplateforme,
+    GeoplateformeError,
+)
 import os
 import json
 import asyncio
@@ -61,6 +64,82 @@ app.add_middleware(
     allow_methods=["GET"],
 )
 
+# ─────────────────────────────────────────────────────────────
+# ISOCHRONES D'UN LIEU DE TOURNAGE
+# ─────────────────────────────────────────────────────────────
+
+@app.get("/api/lieux/{lieu_id}/isochrones")
+async def isochrones_lieu(lieu_id: int):
+    lieu = await fetch_one(
+        """
+        SELECT
+            id,
+            nom,
+            latitude,
+            longitude
+        FROM lieux_tournage
+        WHERE id = %s
+        """,
+        (lieu_id,),
+    )
+
+    if not lieu:
+        raise HTTPException(
+            status_code=404,
+            detail="Lieu introuvable",
+        )
+
+    rows = await fetch_all(
+        """
+        SELECT
+            mode,
+            minutes,
+            geometry_geojson,
+            provider,
+            calculated_at
+        FROM isochrones
+        WHERE lieu_tournage_id = %s
+        ORDER BY mode, minutes
+        """,
+        (lieu_id,),
+    )
+
+    voiture = {}
+    pied = {}
+
+    for row in rows:
+        geometry = row["geometry_geojson"]
+
+        if isinstance(geometry, str):
+            try:
+                geometry = json.loads(geometry)
+            except json.JSONDecodeError:
+                continue
+
+        element = {
+            "minutes": row["minutes"],
+            "geometry": geometry,
+            "provider": row["provider"],
+            "calculated_at": (
+                row["calculated_at"].isoformat()
+                if row["calculated_at"]
+                else None
+            ),
+        }
+
+        if row["mode"] == "driving-car":
+            voiture[str(row["minutes"])] = element
+
+        elif row["mode"] == "foot-walking":
+            pied[str(row["minutes"])] = element
+
+    return {
+        "lieu": lieu,
+        "isochrones": {
+            "voiture": voiture,
+            "pied": pied,
+        },
+    }
 
 @app.middleware("http")
 async def _gerer_cache_api(request: Request, call_next):
@@ -953,24 +1032,75 @@ async def itineraire_point_a_point(
     depart_lon: float = Query(...),
     arrivee_lat: float = Query(...),
     arrivee_lon: float = Query(...),
-    mode: str = Query("foot-walking", description="foot-walking ou driving-car"),
-    etapes: bool = Query(False, description="Renvoyer aussi les instructions de navigation pas à pas"),
+    mode: str = Query(
+        "foot-walking",
+        description="foot-walking ou driving-car"
+    ),
+    etapes: bool = Query(
+        False,
+        description="Renvoyer aussi les instructions de navigation pas à pas"
+    ),
 ):
     """
-    Itinéraire entre deux points (lieu de tournage ↔ commodité, ou
-    position GPS réelle ↔ destination pour la navigation guidée).
-    Même logique de repli que /trace : ligne droite clairement
-    annoncée comme estimation si OSRM/OpenRouteService indisponibles.
+    Itinéraire entre deux points.
+
+    Moteur principal :
+        Géoplateforme IGN
+
+    Fallbacks :
+        OSRM → OpenRouteService → ligne droite
+
+    Aucun calcul d'itinéraire n'est effectué pour les amenities :
+    leurs distances/durées sont déjà précalculées dans amenity_cache.
     """
+
     if mode not in ("foot-walking", "driving-car"):
-        raise HTTPException(400, "mode doit être 'foot-walking' ou 'driving-car'")
+        raise HTTPException(
+            status_code=400,
+            detail="mode doit être 'foot-walking' ou 'driving-car'",
+        )
 
-    coords = [[depart_lon, depart_lat], [arrivee_lon, arrivee_lat]]
+    # ─────────────────────────────────────────────
+    # 1. GÉOPLATEFORME IGN — moteur principal
+    # ─────────────────────────────────────────────
+    try:
+        resultat = await calculer_itineraire_geoplateforme(
+            depart_lat=depart_lat,
+            depart_lon=depart_lon,
+            arrivee_lat=arrivee_lat,
+            arrivee_lon=arrivee_lon,
+            mode=mode,
+            avec_etapes=etapes,
+        )
 
-    resultat_osrm = await _itineraire_osrm(coords, mode, avec_etapes=etapes)
+        return resultat
+
+    except GeoplateformeError as exc:
+        print(
+            f"⚠️ Géoplateforme indisponible : {exc} → fallback OSRM",
+            flush=True,
+        )
+
+    # ─────────────────────────────────────────────
+    # 2. OSRM — fallback
+    # ─────────────────────────────────────────────
+    coords = [
+        [depart_lon, depart_lat],
+        [arrivee_lon, arrivee_lat],
+    ]
+
+    resultat_osrm = await _itineraire_osrm(
+        coords,
+        mode,
+        avec_etapes=etapes,
+    )
+
     if resultat_osrm:
         return resultat_osrm
 
+    # ─────────────────────────────────────────────
+    # 3. ORS — fallback secondaire
+    # ─────────────────────────────────────────────
     if ORS_API_KEY:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
@@ -979,27 +1109,51 @@ async def itineraire_point_a_point(
                     headers={"Authorization": ORS_API_KEY},
                     json={"coordinates": coords},
                 )
+
                 resp.raise_for_status()
                 geojson = resp.json()
+
             feature = geojson["features"][0]
+
             return {
                 "type": "route_reelle",
                 "geometry": feature["geometry"],
-                "distance_metres": round(feature["properties"]["summary"]["distance"]),
-                "duree_secondes": round(feature["properties"]["summary"]["duration"]),
+                "distance_metres": round(
+                    feature["properties"]["summary"]["distance"]
+                ),
+                "duree_secondes": round(
+                    feature["properties"]["summary"]["duration"]
+                ),
             }
-        except Exception as e:
-            print(f"⚠️ OpenRouteService indisponible: {e} → repli ligne droite", flush=True)
 
-    distance = haversine_metres(depart_lat, depart_lon, arrivee_lat, arrivee_lon)
+        except Exception as e:
+            print(
+                f"⚠️ OpenRouteService indisponible : {e} "
+                "→ repli ligne droite",
+                flush=True,
+            )
+
+    # ─────────────────────────────────────────────
+    # 4. DERNIER REPLI : estimation
+    # ─────────────────────────────────────────────
+    distance = haversine_metres(
+        depart_lat,
+        depart_lon,
+        arrivee_lat,
+        arrivee_lon,
+    )
+
     return {
         "type": "estimation_vol_oiseau",
-        "geometry": {"type": "LineString", "coordinates": coords},
-        "distance_metres": distance,
+        "geometry": {
+            "type": "LineString",
+            "coordinates": coords,
+        },
+        "distance_metres": round(distance),
         "duree_secondes": None,
     }
 
-
+    
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """
     Pour un petit nombre de lieux (≤ 8), teste TOUTES les combinaisons
@@ -1072,7 +1226,22 @@ async def _itineraire_multi_etapes(lieux_ordonnes: list[dict], mode: str) -> dic
         coords = [[float(depart["longitude"]), float(depart["latitude"])],
                   [float(arrivee["longitude"]), float(arrivee["latitude"])]]
 
-        resultat = await _itineraire_osrm(coords, mode)
+        try:
+            resultat = await calculer_itineraire_geoplateforme(
+                depart_lat=float(depart["latitude"]),
+                depart_lon=float(depart["longitude"]),
+                arrivee_lat=float(arrivee["latitude"]),
+                arrivee_lon=float(arrivee["longitude"]),
+                mode=mode,
+                avec_etapes=False,
+            )
+        except GeoplateformeError as exc:
+            print(
+                    f"⚠️ Géoplateforme indisponible pour le tronçon "
+                    f"{i + 1} : {exc} → fallback OSRM",
+                    flush=True,
+                )
+            resultat = await _itineraire_osrm(coords, mode)
         if resultat:
             geometries.append(resultat["geometry"])
             trajets.append({"distance_metres": resultat["distance_metres"], "duree_secondes": resultat["duree_secondes"]})
@@ -1227,6 +1396,8 @@ async def sitemap():
         content=xml,
         media_type="application/xml",
     )
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
     return f"""User-agent: *

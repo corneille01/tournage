@@ -122,6 +122,10 @@ const state = {
 };
 
 let map, clusterGroup, clusterActivites;
+let coucheIsochrone = null;
+let isochronesParLieu = {};
+let modeIsochroneCourant = "driving-car";
+let minutesIsochroneCourantes = 10;
 
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
@@ -150,6 +154,196 @@ function initCarte() {
   // propose de revenir à la vue initiale du film sélectionné.
   clusterActivites.on("clusterclick", afficherBoutonRecentrer);
 }
+async function recupererIsochrones(lieuId) {
+
+  if (isochronesParLieu[lieuId]) {
+    return isochronesParLieu[lieuId];
+  }
+
+  const res = await fetch(
+    `${API_BASE}/api/lieux/${lieuId}/isochrones`
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Impossible de récupérer les isochrones (${res.status})`
+    );
+  }
+
+  const data = await res.json();
+
+  isochronesParLieu[lieuId] = data;
+
+  return data;
+}
+
+function effacerIsochrone() {
+
+  if (coucheIsochrone) {
+    map.removeLayer(coucheIsochrone);
+    coucheIsochrone = null;
+  }
+}
+
+function afficherIsochroneSurCarte(geojson) {
+
+  effacerIsochrone();
+
+  if (!geojson) return;
+
+  coucheIsochrone = L.geoJSON(geojson, {
+    style: {
+      color: "#3388ff",
+      weight: 2,
+      opacity: 0.9,
+      fillOpacity: 0.16,
+      dashArray: "6 4",
+    }
+  }).addTo(map);
+
+  // L'isochrone ne doit pas déplacer brutalement la carte.
+  // On laisse le lieu de tournage rester au centre de l'expérience.
+}
+
+function initialiserControlesIsochrone() {
+
+  document
+    .querySelectorAll(".iso-mode-btn")
+    .forEach((button) => {
+
+      button.addEventListener("click", () => {
+
+        modeIsochroneCourant =
+          button.dataset.mode;
+
+        document
+          .querySelectorAll(".iso-mode-btn")
+          .forEach((b) =>
+            b.classList.toggle(
+              "actif",
+              b === button
+            )
+          );
+
+        const lieuId =
+          document.getElementById(
+            "popup-overlay"
+          ).dataset.lieuId;
+
+        if (!lieuId) return;
+
+        afficherIsochronePourLieu(
+          lieuId,
+          modeIsochroneCourant,
+          minutesIsochroneCourantes
+        );
+      });
+    });
+
+
+  document
+    .querySelectorAll(".iso-time-btn")
+    .forEach((button) => {
+
+      button.addEventListener("click", () => {
+
+        minutesIsochroneCourantes =
+          Number(button.dataset.minutes);
+
+        document
+          .querySelectorAll(".iso-time-btn")
+          .forEach((b) =>
+            b.classList.toggle(
+              "actif",
+              b === button
+            )
+          );
+
+        const lieuId =
+          document.getElementById(
+            "popup-overlay"
+          ).dataset.lieuId;
+
+        if (!lieuId) return;
+
+        afficherIsochronePourLieu(
+          lieuId,
+          modeIsochroneCourant,
+          minutesIsochroneCourantes
+        );
+      });
+    });
+}
+
+async function afficherIsochronePourLieu(
+  lieuId,
+  mode = modeIsochroneCourant,
+  minutes = minutesIsochroneCourantes
+) {
+
+  const conteneur = document.getElementById(
+    "isochrone-legende"
+  );
+
+  try {
+
+    conteneur.classList.add("chargement");
+
+    const data = await recupererIsochrones(lieuId);
+
+    const groupe =
+      mode === "driving-car"
+        ? data.isochrones?.voiture
+        : data.isochrones?.pied;
+
+    const isochrone = groupe?.[String(minutes)];
+
+    if (!isochrone) {
+      effacerIsochrone();
+
+      conteneur.innerHTML = `
+        <span>⚠️ Isochrone non disponible</span>
+        <span>Géoplateforme IGN</span>
+      `;
+
+      return;
+    }
+
+    afficherIsochroneSurCarte(
+      isochrone.geometry
+    );
+
+    conteneur.innerHTML = `
+      <span>
+        🟢 Zone accessible en ${minutes} min
+      </span>
+      <span>
+        Géoplateforme IGN
+      </span>
+    `;
+
+  } catch (error) {
+
+    console.error(
+      "Erreur isochrone :",
+      error
+    );
+
+    effacerIsochrone();
+
+    conteneur.innerHTML = `
+      <span>⚠️ Accessibilité indisponible</span>
+    `;
+
+  } finally {
+
+    conteneur.classList.remove("chargement");
+  }
+}
+
+
+
+
 
 function afficherBoutonRecentrer() {
   if (state.dernierBounds) document.getElementById("btn-recentrer").classList.remove("hidden");
@@ -391,6 +585,10 @@ let dernierLieuOuvertId = null;
 let derniereCategorieAffichee = null;
 
 function ouvrirPopupLieu(film, lieu) {
+   const overlay =
+    document.getElementById("popup-overlay");
+
+  overlay.dataset.lieuId = lieu.id;
   effacerTrace();
   document.getElementById("section-reservation").innerHTML = "";
 
@@ -487,10 +685,22 @@ function ouvrirPopupLieu(film, lieu) {
   });
 
   document.getElementById("popup-overlay").classList.remove("hidden");
+  // Affichage automatique de l'isochrone par défaut :
+// voiture + 10 minutes.
+afficherIsochronePourLieu(
+  lieu.id,
+  modeIsochroneCourant,
+  minutesIsochroneCourantes
+);
 }
 
 function fermerPopup() {
-  document.getElementById("popup-overlay").classList.add("hidden");
+
+  document
+    .getElementById("popup-overlay")
+    .classList.add("hidden");
+
+  effacerIsochrone();
 }
 
 async function _recupererAmenities(lieuId) {
@@ -1410,6 +1620,7 @@ function initialiserPublicites() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
+  initialiserControlesIsochrone();
   chargerContourOccitanie();
   chargerOptionsFiltres();
   chargerFilms();
@@ -1480,3 +1691,4 @@ document.addEventListener("DOMContentLoaded", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 });
+

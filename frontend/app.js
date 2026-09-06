@@ -1325,14 +1325,16 @@ async function demarrerNavigation(destLat, destLon, mode) {
     const res = await fetch(`${API_BASE}/api/itineraire?${params}`);
     const data = await res.json();
 
-    if (!data.etapes_navigation || !data.etapes_navigation.length) {
+  if (!data.etapes_navigation || !data.etapes_navigation.length) {
     panneau.querySelector(".nav-instruction").textContent =
-        "⚠️ Les instructions de navigation IGN sont indisponibles pour cet itinéraire.";
+        "⚠️ Itinéraire calculé par la Géoplateforme IGN, mais les instructions détaillées ne sont pas disponibles.";
     return;
 }
 
-    etapesNavigationCourantes = data.etapes_navigation;
-    indexEtapeCourante = 0;
+etapesNavigationCourantes = data.etapes_navigation;
+indexEtapeCourante = 0;
+
+   
 
     if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
     coucheItineraireCommodite = L.geoJSON(data.geometry, {

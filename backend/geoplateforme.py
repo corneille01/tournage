@@ -292,70 +292,223 @@ async def calculer_itineraire(
         except (TypeError, ValueError):
             duree = None
 
-    # ---------------------------------------------------------
-    # ÉTAPES DE NAVIGATION
+     # ---------------------------------------------------------
+    # ÉTAPES DE NAVIGATION IGN
     # ---------------------------------------------------------
 
     etapes = []
 
-    if isinstance(raw_steps, list):
+    # La réponse Géoplateforme utilise :
+    #
+    # portions[]
+    #   └── steps[]
+    #
+    # Chaque step contient notamment :
+    # geometry, distance, duration, instruction, attributes.
 
-        for index, step in enumerate(raw_steps):
+    portions = route.get("portions") or []
 
-            if not isinstance(step, dict):
-                continue
+    if isinstance(portions, list):
 
-            instruction = (
-                step.get("instruction")
-                or step.get("message")
-                or step.get("text")
-                or step.get("name")
+        def _derniere_coordonnee(geometry):
+            if not isinstance(geometry, dict):
+                return None
+
+            coords = geometry.get("coordinates")
+
+            if not coords:
+                return None
+
+            # LineString
+            if (
+                isinstance(coords, list)
+                and coords
+                and isinstance(coords[0], (list, tuple))
+                and len(coords[0]) >= 2
+                and isinstance(coords[0][0], (int, float))
+            ):
+                return coords[-1]
+
+            # MultiLineString
+            if (
+                isinstance(coords, list)
+                and coords
+                and isinstance(coords[0], list)
+            ):
+                for ligne in reversed(coords):
+                    if ligne:
+                        return ligne[-1]
+
+            return None
+
+        def _instruction_fr(step):
+            instruction = step.get("instruction")
+
+            if not isinstance(instruction, dict):
+                return (
+                    step.get("message")
+                    or step.get("text")
+                    or step.get("name")
+                    or ""
+                )
+
+            type_instruction = (
+                instruction.get("type")
+                or ""
+            ).lower()
+
+            modifier = (
+                instruction.get("modifier")
+                or ""
+            ).lower()
+
+            nom = (
+                step.get("name")
+                or (step.get("attributes") or {}).get("name")
                 or ""
             )
 
-            step_distance = (
-                step.get("distance")
-                or step.get("distance_m")
-                or step.get("distance_metres")
-                or 0
-            )
+            modificateurs = {
+                "left": "à gauche",
+                "right": "à droite",
+                "slight left": "légèrement à gauche",
+                "slight right": "légèrement à droite",
+                "straight": "tout droit",
+            }
 
-            step_duration = (
-                step.get("duration")
-                or step.get("duration_s")
-                or step.get("duree_secondes")
-            )
+            if type_instruction == "depart":
+                texte = "Départ"
 
-            step_geometry = step.get("geometry")
+            elif type_instruction == "arrive":
+                texte = "Vous êtes arrivé à destination"
 
-            # Certains retours placent la géométrie dans geometry
-            # ou dans un objet GeoJSON.
-            if isinstance(step_geometry, dict):
-                step_geometry = step_geometry
+            elif type_instruction == "turn":
+                direction = modificateurs.get(
+                    modifier,
+                    modifier or ""
+                )
 
-            try:
-                step_distance = float(step_distance or 0)
-            except (TypeError, ValueError):
-                step_distance = 0.0
+                texte = (
+                    f"Tourner {direction}".strip()
+                )
 
-            if step_duration is not None:
+            elif type_instruction == "fork":
+                direction = modificateurs.get(
+                    modifier,
+                    modifier or ""
+                )
+
+                texte = (
+                    f"Prendre la bifurcation {direction}".strip()
+                )
+
+            elif type_instruction in (
+                "continue",
+                "new name",
+            ):
+                if modifier == "straight":
+                    texte = "Continuer tout droit"
+                else:
+                    texte = "Continuer"
+
+            else:
+                texte = "Continuer"
+
+            if nom and type_instruction not in ("arrive",):
+                texte += f" sur {nom}"
+
+            return texte
+
+        index = 0
+
+        for portion in portions:
+
+            if not isinstance(portion, dict):
+                continue
+
+            steps = portion.get("steps") or []
+
+            if not isinstance(steps, list):
+                continue
+
+            for step in steps:
+
+                if not isinstance(step, dict):
+                    continue
+
+                geometry_step = step.get("geometry")
+
+                coord = _derniere_coordonnee(
+                    geometry_step
+                )
+
+                if not coord or len(coord) < 2:
+                    continue
+
                 try:
-                    step_duration = float(step_duration)
+                    longitude = float(coord[0])
+                    latitude = float(coord[1])
                 except (TypeError, ValueError):
-                    step_duration = None
+                    continue
 
-            etapes.append({
-                "index": index,
-                "instruction": str(instruction),
-                "distance_metres": step_distance,
-                "duree_secondes": step_duration,
-                "geometry": step_geometry,
-                "name": step.get("name"),
-                "type": step.get("type"),
-                "way_points": step.get("way_points"),
-            })
+                step_distance = (
+                    step.get("distance")
+                    or 0
+                )
+
+                step_duration = (
+                    step.get("duration")
+                )
+
+                try:
+                    step_distance = float(
+                        step_distance or 0
+                    )
+                except (TypeError, ValueError):
+                    step_distance = 0.0
+
+                if step_duration is not None:
+                    try:
+                        step_duration = float(
+                            step_duration
+                        )
+                    except (TypeError, ValueError):
+                        step_duration = None
+
+                instruction = _instruction_fr(step)
+
+                raw_instruction = step.get(
+                    "instruction"
+                )
+
+                etapes.append({
+                    "index": index,
+                    "instruction": instruction,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "distance_metres": step_distance,
+                    "duree_secondes": step_duration,
+                    "geometry": geometry_step,
+                    "name": (
+                        step.get("name")
+                        or (step.get("attributes") or {}).get("name")
+                    ),
+                    "type": (
+                        raw_instruction.get("type")
+                        if isinstance(raw_instruction, dict)
+                        else None
+                    ),
+                    "modifier": (
+                        raw_instruction.get("modifier")
+                        if isinstance(raw_instruction, dict)
+                        else None
+                    ),
+                })
+
+                index += 1
 
     return {
+        "type": "route_reelle",
         "geometry": geometry,
         "distance_metres": distance,
         "duree_secondes": duree,

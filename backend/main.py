@@ -5,7 +5,7 @@ Tous les endpoints lisent des données déjà en base (jamais d'appel
 Overpass en direct sur une requête visiteur) — voir refresh_cache.py
 pour le remplissage du cache.
 """
-from google_crc32c import exc
+
 
 from geoplateforme import (
     calculer_itineraire as calculer_itineraire_geoplateforme,
@@ -1027,67 +1027,168 @@ def _adresse_complete(lieu: dict) -> str:
     return ", ".join(p for p in (lieu["nom"], lieu.get("commune"), lieu.get("departement")) if p)
 
 
-async def _itineraire_multi_etapes(lieux_ordonnes: list[dict], mode: str) -> dict:
+async def _itineraire_multi_etapes(lieux_ordonnes, mode):
     """
-    Calcule le trajet complet tronçon par tronçon (2 points à la fois),
-    plutôt qu'un seul appel OSRM avec tous les points d'un coup — un
-    appel à 15-20+ points échoue souvent sur le serveur public (limite
-    de points ou timeout), alors que des petits appels 2 points
-    réussissent presque toujours (c'est déjà ce que font les boutons
-    piéton/voiture individuels des commodités, avec succès).
+    Calcule un itinéraire réel entre plusieurs lieux avec
+    la Géoplateforme IGN.
 
-    Si UN tronçon précis échoue malgré tout, seul CE tronçon retombe en
-    ligne droite (annoncé comme tel) — le reste du trajet garde son
-    tracé réel, plutôt que de tout dégrader d'un coup.
+    IMPORTANT :
+    - Aucun fallback OSRM public
+    - Aucun fallback OpenRouteService
+    - Aucun tracé en ligne droite
+    - Si un tronçon IGN échoue, l'itinéraire complet échoue
+    - Toutes les géométries retournées proviennent de la Géoplateforme
     """
+
+    if not lieux_ordonnes or len(lieux_ordonnes) < 2:
+        raise GeoplateformeError(
+            "Au moins deux lieux sont nécessaires pour calculer un itinéraire."
+        )
+
     geometries = []
     trajets = []
-    distance_totale = 0
-    duree_totale = 0
-    tout_reel = True
+
+    distance_totale = 0.0
+    duree_totale = 0.0
 
     for i in range(len(lieux_ordonnes) - 1):
+
         depart = lieux_ordonnes[i]
         arrivee = lieux_ordonnes[i + 1]
-        coords = [[float(depart["longitude"]), float(depart["latitude"])],
-                  [float(arrivee["longitude"]), float(arrivee["latitude"])]]
+
+        depart_lat = float(depart["latitude"])
+        depart_lon = float(depart["longitude"])
+
+        arrivee_lat = float(arrivee["latitude"])
+        arrivee_lon = float(arrivee["longitude"])
 
         try:
             resultat = await calculer_itineraire_geoplateforme(
-                depart_lat=float(depart["latitude"]),
-                depart_lon=float(depart["longitude"]),
-                arrivee_lat=float(arrivee["latitude"]),
-                arrivee_lon=float(arrivee["longitude"]),
+                depart_lat=depart_lat,
+                depart_lon=depart_lon,
+                arrivee_lat=arrivee_lat,
+                arrivee_lon=arrivee_lon,
                 mode=mode,
                 avec_etapes=False,
             )
+
         except GeoplateformeError as exc:
             raise GeoplateformeError(
-                 f"Géoplateforme indisponible pour le tronçon {i + 1} : {exc}"
+                f"Impossible de calculer le tronçon "
+                f"{i + 1}/{len(lieux_ordonnes) - 1} "
+                f"avec la Géoplateforme IGN : {exc}"
             ) from exc
-        if resultat:
-            geometries.append(resultat["geometry"])
-            trajets.append({"distance_metres": resultat["distance_metres"], "duree_secondes": resultat["duree_secondes"]})
-            distance_totale += resultat["distance_metres"]
-            duree_totale += resultat["duree_secondes"]
-        else:
-            tout_reel = False
-            dist = haversine_metres(
-                float(depart["latitude"]), float(depart["longitude"]),
-                float(arrivee["latitude"]), float(arrivee["longitude"]),
+
+        except Exception as exc:
+            raise GeoplateformeError(
+                f"Erreur inattendue lors du calcul du tronçon "
+                f"{i + 1}/{len(lieux_ordonnes) - 1} : {exc}"
+            ) from exc
+
+        # IMPORTANT :
+        # Aucun fallback en ligne droite.
+        if not resultat:
+            raise GeoplateformeError(
+                f"La Géoplateforme IGN n'a retourné aucun itinéraire "
+                f"pour le tronçon {i + 1}/{len(lieux_ordonnes) - 1}."
             )
-            geometries.append({"type": "LineString", "coordinates": coords})
-            trajets.append({"distance_metres": round(dist), "duree_secondes": None})
-            distance_totale += dist
+
+        geometry = resultat.get("geometry")
+
+        if not geometry:
+            raise GeoplateformeError(
+                f"La Géoplateforme IGN n'a retourné aucune géométrie "
+                f"pour le tronçon {i + 1}/{len(lieux_ordonnes) - 1}."
+            )
+
+        distance = float(resultat.get("distance_metres") or 0)
+        duree = resultat.get("duree_secondes")
+
+        if duree is not None:
+            duree = float(duree)
+
+        geometries.append(geometry)
+
+        trajets.append({
+            "depart": {
+                "id": depart.get("id"),
+                "nom": depart.get("nom"),
+                "latitude": depart_lat,
+                "longitude": depart_lon,
+            },
+            "arrivee": {
+                "id": arrivee.get("id"),
+                "nom": arrivee.get("nom"),
+                "latitude": arrivee_lat,
+                "longitude": arrivee_lon,
+            },
+            "distance_metres": round(distance),
+            "duree_secondes": round(duree) if duree is not None else None,
+            "geometry": geometry,
+            "provider": "geoplateforme",
+            "resource": "bdtopo-osrm",
+        })
+
+        distance_totale += distance
+
+        if duree is not None:
+            duree_totale += duree
+
+    # Fusion des géométries GeoJSON des différents tronçons
+    coordinates = []
+
+    for geometry in geometries:
+        geometry_type = geometry.get("type")
+        geometry_coordinates = geometry.get("coordinates", [])
+
+        if geometry_type == "LineString":
+            if not coordinates:
+                coordinates.extend(geometry_coordinates)
+            else:
+                # Évite de dupliquer le point de jonction
+                if coordinates[-1] == geometry_coordinates[0]:
+                    coordinates.extend(geometry_coordinates[1:])
+                else:
+                    coordinates.extend(geometry_coordinates)
+
+        elif geometry_type == "MultiLineString":
+            for line in geometry_coordinates:
+                if not coordinates:
+                    coordinates.extend(line)
+                else:
+                    if coordinates[-1] == line[0]:
+                        coordinates.extend(line[1:])
+                    else:
+                        coordinates.extend(line)
+
+        else:
+            raise GeoplateformeError(
+                f"Type de géométrie IGN non supporté : {geometry_type}"
+            )
+
+    if len(coordinates) < 2:
+        raise GeoplateformeError(
+            "La Géoplateforme IGN a retourné une géométrie insuffisante."
+        )
 
     return {
-        "type": "route_reelle" if tout_reel else "route_partielle",
-        "geometry": {"type": "MultiLineString", "coordinates": [g["coordinates"] for g in geometries]},
+        "type": "route_reelle",
+        "provider": "geoplateforme",
+        "resource": "bdtopo-osrm",
+        "mode": mode,
         "distance_metres": round(distance_totale),
-        "duree_secondes": round(duree_totale) if tout_reel else None,
+        "duree_secondes": (
+            round(duree_totale)
+            if duree_totale > 0
+            else None
+        ),
+        "geometry": {
+            "type": "LineString",
+            "coordinates": coordinates,
+        },
         "trajets": trajets,
+        "nb_troncons": len(trajets),
     }
-
 
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):

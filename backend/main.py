@@ -5,6 +5,8 @@ Tous les endpoints lisent des données déjà en base (jamais d'appel
 Overpass en direct sur une requête visiteur) — voir refresh_cache.py
 pour le remplissage du cache.
 """
+from google_crc32c import exc
+
 from geoplateforme import (
     calculer_itineraire as calculer_itineraire_geoplateforme,
     GeoplateformeError,
@@ -12,7 +14,7 @@ from geoplateforme import (
 import os
 import json
 import asyncio
-import itertools
+
 from datetime import datetime, timezone
 
 import httpx
@@ -904,105 +906,6 @@ async def amenities_proches(lieu_id: int):
     }
 
 
-ORS_API_KEY = os.getenv("ORS_API_KEY", "")
-
-# Serveur de démonstration OSRM (open source, sponsorisé par FOSSGIS) —
-# aucune clé requise. Usage non-commercial raisonnable, max 1 req/s,
-# aucune garantie de disponibilité : parfait pour la phase prototype,
-# mais à remplacer par un vrai service (ORS avec clé, ou auto-hébergement)
-# si le trafic monte vraiment en échelle.
-OSRM_URL = "https://router.project-osrm.org"
-_OSRM_PROFILS = {"foot-walking": "foot", "driving-car": "driving"}
-
-
-_TRADUCTION_MANOEUVRES = {
-    ("turn", "left"): "Tournez à gauche",
-    ("turn", "right"): "Tournez à droite",
-    ("turn", "slight left"): "Serrez légèrement à gauche",
-    ("turn", "slight right"): "Serrez légèrement à droite",
-    ("turn", "sharp left"): "Tournez fortement à gauche",
-    ("turn", "sharp right"): "Tournez fortement à droite",
-    ("turn", "straight"): "Continuez tout droit",
-    ("turn", "uturn"): "Faites demi-tour",
-    ("depart", None): "Départ",
-    ("arrive", None): "Vous êtes arrivé à destination",
-    ("continue", None): "Continuez tout droit",
-    ("merge", None): "Rejoignez la voie",
-    ("roundabout", None): "Prenez le rond-point",
-    ("new name", None): "Continuez",
-}
-
-
-def _traduire_manoeuvre(maneuver: dict, nom_rue: str | None) -> str:
-    type_ = maneuver.get("type", "")
-    modifier = maneuver.get("modifier")
-    phrase = (
-        _TRADUCTION_MANOEUVRES.get((type_, modifier))
-        or _TRADUCTION_MANOEUVRES.get((type_, None))
-        or "Continuez"
-    )
-    if nom_rue and type_ not in ("arrive", "depart"):
-        phrase += f" sur {nom_rue}"
-    return phrase
-
-
-async def _itineraire_osrm(coords_lonlat: list[list[float]], mode: str, avec_etapes: bool = False, tentatives: int = 2) -> dict | None:
-    profil = _OSRM_PROFILS.get(mode, "driving")
-    chemin_coords = ";".join(f"{lon:.7f},{lat:.7f}" for lon, lat in coords_lonlat)
-
-    derniere_erreur = None
-    for tentative in range(1, tentatives + 1):
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(
-                    f"{OSRM_URL}/route/v1/{profil}/{chemin_coords}",
-                    params={
-                        "overview": "full", "geometries": "geojson",
-                        "steps": "true" if avec_etapes else "false",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            route = data["routes"][0]
-            duree = round(route["duration"])
-            if profil == "foot":
-                # Le serveur de démo OSRM ne différencie pas toujours
-                # correctement la vitesse piéton de la vitesse voiture sur
-                # certains tronçons — on recalcule nous-mêmes avec une
-                # vitesse de marche standard (5 km/h) plutôt que de faire
-                # confiance à une durée parfois identique à la voiture.
-                duree = round(route["distance"] / (5000 / 3600))  # 5 km/h en m/s
-            resultat = {
-                "type": "route_reelle",
-                "geometry": route["geometry"],
-                "distance_metres": round(route["distance"]),
-                "duree_secondes": duree,
-                "trajets": [
-                    {"distance_metres": round(leg["distance"]), "duree_secondes": round(leg["duration"])}
-                    for leg in route.get("legs", [])
-                ],
-            }
-            if avec_etapes:
-                etapes = []
-                for leg in route.get("legs", []):
-                    for step in leg.get("steps", []):
-                        loc = step["maneuver"]["location"]  # [lon, lat]
-                        etapes.append({
-                            "instruction": _traduire_manoeuvre(step["maneuver"], step.get("name") or None),
-                            "distance_metres": round(step["distance"]),
-                            "latitude": loc[1],
-                            "longitude": loc[0],
-                        })
-                resultat["etapes_navigation"] = etapes
-            return resultat
-        except Exception as e:
-            derniere_erreur = e
-            if tentative < tentatives:
-                await asyncio.sleep(1.5)  # le serveur public OSRM limite à 1 req/s
-
-    print(f"⚠️ OSRM indisponible après {tentatives} tentative(s): {derniere_erreur}", flush=True)
-    return None
-
 
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     """Ordonne les lieux par plus proche voisin (heuristique simple,
@@ -1034,24 +937,27 @@ async def itineraire_point_a_point(
     arrivee_lon: float = Query(...),
     mode: str = Query(
         "foot-walking",
-        description="foot-walking ou driving-car"
+        description="foot-walking ou driving-car",
     ),
     etapes: bool = Query(
         False,
-        description="Renvoyer aussi les instructions de navigation pas à pas"
+        description="Renvoyer aussi les instructions de navigation pas à pas",
     ),
 ):
     """
-    Itinéraire entre deux points.
+    Itinéraire réel entre deux points.
 
-    Moteur principal :
+    Moteur unique :
         Géoplateforme IGN
+        resource = bdtopo-osrm
 
-    Fallbacks :
-        OSRM → OpenRouteService → ligne droite
+    IMPORTANT :
+        Aucun fallback silencieux vers OSRM public, OpenRouteService
+        ou une ligne droite.
 
-    Aucun calcul d'itinéraire n'est effectué pour les amenities :
-    leurs distances/durées sont déjà précalculées dans amenity_cache.
+    Si la Géoplateforme est indisponible, l'API renvoie une erreur
+    explicite afin que le frontend ne puisse pas présenter une
+    estimation comme un véritable itinéraire routable.
     """
 
     if mode not in ("foot-walking", "driving-car"):
@@ -1060,9 +966,6 @@ async def itineraire_point_a_point(
             detail="mode doit être 'foot-walking' ou 'driving-car'",
         )
 
-    # ─────────────────────────────────────────────
-    # 1. GÉOPLATEFORME IGN — moteur principal
-    # ─────────────────────────────────────────────
     try:
         resultat = await calculer_itineraire_geoplateforme(
             depart_lat=depart_lat,
@@ -1073,128 +976,51 @@ async def itineraire_point_a_point(
             avec_etapes=etapes,
         )
 
+        # Sécurité supplémentaire :
+        # tout itinéraire retourné par cette route doit être identifié
+        # explicitement comme provenant de la Géoplateforme.
+        resultat["provider"] = "geoplateforme"
+        resultat["resource"] = "bdtopo-osrm"
+
         return resultat
 
     except GeoplateformeError as exc:
         print(
-            f"⚠️ Géoplateforme indisponible : {exc} → fallback OSRM",
+            f"❌ Géoplateforme indisponible pour l'itinéraire : {exc}",
             flush=True,
         )
 
-    # ─────────────────────────────────────────────
-    # 2. OSRM — fallback
-    # ─────────────────────────────────────────────
-    coords = [
-        [depart_lon, depart_lat],
-        [arrivee_lon, arrivee_lat],
-    ]
-
-    resultat_osrm = await _itineraire_osrm(
-        coords,
-        mode,
-        avec_etapes=etapes,
-    )
-
-    if resultat_osrm:
-        return resultat_osrm
-
-    # ─────────────────────────────────────────────
-    # 3. ORS — fallback secondaire
-    # ─────────────────────────────────────────────
-    if ORS_API_KEY:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    f"https://api.openrouteservice.org/v2/directions/{mode}/geojson",
-                    headers={"Authorization": ORS_API_KEY},
-                    json={"coordinates": coords},
-                )
-
-                resp.raise_for_status()
-                geojson = resp.json()
-
-            feature = geojson["features"][0]
-
-            return {
-                "type": "route_reelle",
-                "geometry": feature["geometry"],
-                "distance_metres": round(
-                    feature["properties"]["summary"]["distance"]
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "GEOPLATEFORME_UNAVAILABLE",
+                "message": (
+                    "Le service d'itinéraire IGN est temporairement "
+                    "indisponible. Aucun itinéraire de substitution "
+                    "n'a été utilisé."
                 ),
-                "duree_secondes": round(
-                    feature["properties"]["summary"]["duration"]
-                ),
-            }
+                "provider": "geoplateforme",
+                "resource": "bdtopo-osrm",
+            },
+        ) from exc
 
-        except Exception as e:
-            print(
-                f"⚠️ OpenRouteService indisponible : {e} "
-                "→ repli ligne droite",
-                flush=True,
-            )
-
-    # ─────────────────────────────────────────────
-    # 4. DERNIER REPLI : estimation
-    # ─────────────────────────────────────────────
-    distance = haversine_metres(
-        depart_lat,
-        depart_lon,
-        arrivee_lat,
-        arrivee_lon,
-    )
-
-    return {
-        "type": "estimation_vol_oiseau",
-        "geometry": {
-            "type": "LineString",
-            "coordinates": coords,
-        },
-        "distance_metres": round(distance),
-        "duree_secondes": None,
-    }
 
     
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """
-    Pour un petit nombre de lieux (≤ 8), teste TOUTES les combinaisons
-    d'ordre possibles et garde celle qui minimise le temps de trajet
-    total en voiture (via la matrice OSRM, un seul appel réseau quel
-    que soit le nombre de permutations testées ensuite). Au-delà de 8
-    lieux, le nombre de permutations explose (9! = 362880) — on
-    retombe sur l'heuristique du plus proche voisin, plus rapide bien
-    que légèrement moins optimale.
+    Optimise l'ordre d'un petit circuit sans utiliser OSRM.
+
+    Pour rester léger côté API, on utilise une heuristique de plus
+    proche voisin basée sur la distance géographique.
+
+    Les trajets réels entre les lieux sont ensuite calculés par
+    Géoplateforme IGN dans _itineraire_multi_etapes().
     """
-    if len(lieux) > 8:
-        return _ordre_plus_proche_voisin(lieux)
 
-    points = [(float(l["latitude"]), float(l["longitude"])) for l in lieux]
-    matrice = await _table_complete_osrm(points)
-    if matrice is None:
-        return _ordre_plus_proche_voisin(lieux)
-
-    meilleur_ordre = None
-    meilleure_duree = float("inf")
-    for permutation in itertools.permutations(range(len(lieux))):
-        duree = sum(matrice[permutation[i]][permutation[i + 1]] for i in range(len(permutation) - 1))
-        if duree < meilleure_duree:
-            meilleure_duree = duree
-            meilleur_ordre = permutation
-
-    return [lieux[i] for i in meilleur_ordre]
+    return _ordre_plus_proche_voisin(lieux)
 
 
-async def _table_complete_osrm(points: list[tuple[float, float]]) -> list[list[float]] | None:
-    """Matrice complète des durées (secondes) entre chaque paire de points, en voiture."""
-    coords = ";".join(f"{lon:.7f},{lat:.7f}" for lat, lon in points)
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.get(f"{OSRM_URL}/table/v1/driving/{coords}", params={"annotations": "duration"})
-            resp.raise_for_status()
-            data = resp.json()
-        return data["durations"]
-    except Exception as e:
-        print(f"⚠️ Table OSRM indisponible (trace complète): {e}", flush=True)
-        return None
+
 
 
 def _adresse_complete(lieu: dict) -> str:
@@ -1236,12 +1062,9 @@ async def _itineraire_multi_etapes(lieux_ordonnes: list[dict], mode: str) -> dic
                 avec_etapes=False,
             )
         except GeoplateformeError as exc:
-            print(
-                    f"⚠️ Géoplateforme indisponible pour le tronçon "
-                    f"{i + 1} : {exc} → fallback OSRM",
-                    flush=True,
-                )
-            resultat = await _itineraire_osrm(coords, mode)
+            raise GeoplateformeError(
+                 f"Géoplateforme indisponible pour le tronçon {i + 1} : {exc}"
+            ) from exc
         if resultat:
             geometries.append(resultat["geometry"])
             trajets.append({"distance_metres": resultat["distance_metres"], "duree_secondes": resultat["duree_secondes"]})

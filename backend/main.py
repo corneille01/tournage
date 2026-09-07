@@ -12,6 +12,7 @@ from geoplateforme import (
     GeoplateformeError,
     RESOURCE_ITINERAIRE,
 )
+from navigation_cache import navigation_cache
 import os
 import json
 import asyncio
@@ -144,32 +145,48 @@ async def isochrones_lieu(lieu_id: int):
         },
     }
 
+
 @app.middleware("http")
 async def _gerer_cache_api(request: Request, call_next):
-    """
-    Par défaut, empêche Cloudflare (ou tout autre cache intermédiaire)
-    de mettre en cache les réponses /api/* — sans ça, un cache agressif
-    peut continuer à servir une VIEILLE réponse (y compris une erreur
-    déjà corrigée côté code) indéfiniment, ce qui s'est déjà produit
-    une fois.
-
-    Exception explicite pour les routes qui changent rarement (mise à
-    jour seulement par les workflows programmés, pas par requête) et où
-    servir une version vieille de quelques heures ne pose aucun
-    problème — ça évite de solliciter Neon pour rien sur les lieux les
-    plus consultés.
-    """
     response = await call_next(request)
+
     if not request.url.path.startswith("/api/"):
         return response
 
-    ROUTES_CACHABLES_1H = ("/api/lieux/", "/api/films/")  # amenities, détail film, trace...
-    if any(request.url.path.startswith(p) for p in ROUTES_CACHABLES_1H) and "/amenities" in request.url.path:
-        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600"
+    # Navigation :
+    # Cloudflare peut conserver la réponse pendant 24 h.
+    if request.url.path == "/api/itineraire":
+        response.headers["Cache-Control"] = (
+            "public, max-age=86400, s-maxage=86400"
+        )
+        response.headers["CDN-Cache-Control"] = (
+            "public, max-age=86400"
+        )
+        return response
+
+    ROUTES_CACHABLES_1H = (
+        "/api/lieux/",
+        "/api/films/",
+    )
+
+    if (
+        any(
+            request.url.path.startswith(p)
+            for p in ROUTES_CACHABLES_1H
+        )
+        and "/amenities" in request.url.path
+    ):
+        response.headers["Cache-Control"] = (
+            "public, max-age=3600, s-maxage=3600"
+        )
     else:
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate"
+        )
         response.headers["CDN-Cache-Control"] = "no-store"
+
     return response
+
 
 
 # ── Liste des films (barre latérale) ─────────────────────────────
@@ -931,84 +948,174 @@ def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
 
 
 @app.get("/api/itineraire")
-async def itineraire_point_a_point(
-    depart_lat: float = Query(...),
-    depart_lon: float = Query(...),
-    arrivee_lat: float = Query(...),
-    arrivee_lon: float = Query(...),
-    mode: str = Query(
-        "foot-walking",
-        description="foot-walking ou driving-car",
-    ),
-    etapes: bool = Query(
-        False,
-        description="Renvoyer aussi les instructions de navigation pas à pas",
-    ),
+async def api_itineraire(
+    depart_lat: float,
+    depart_lon: float,
+    arrivee_lat: float,
+    arrivee_lon: float,
+    mode: str = "pedestrian",
+    etapes: bool = True,
 ):
     """
-    Calcule un itinéraire réel entre deux coordonnées.
+    Calcule un itinéraire réel via la Géoplateforme IGN.
 
-    Fournisseur unique :
-        Géoplateforme IGN
-        ressource : bdtopo-osrm
+    Architecture :
 
-    Aucun fallback vers :
-        - OSRM public
-        - OpenRouteService
-        - ligne droite
+        Client
+           ↓
+        FastAPI
+           ↓
+        Redis / Upstash
+           ↓
+        IGN Géoplateforme uniquement en cas de cache miss
 
-    Lorsque etapes=true, les étapes de navigation IGN sont également
-    renvoyées au frontend sous la clé `etapes_navigation`.
+    Le cache Redis est utilisé uniquement pour les itinéraires
+    dynamiques des utilisateurs.
+
+    Les données d'accessibilité aux équipements touristiques
+    restent gérées séparément par amenity_cache/PostgreSQL.
     """
 
     # ─────────────────────────────────────────────────────────
-    # Validation du mode
+    # 0. VALIDATION DES PARAMÈTRES
     # ─────────────────────────────────────────────────────────
 
-    if mode not in ("foot-walking", "driving-car"):
+    modes_acceptes = {
+        "pedestrian",
+        "car",
+    }
+
+    if mode not in modes_acceptes:
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "INVALID_MODE",
                 "message": (
-                    "mode doit être 'foot-walking' ou 'driving-car'"
+                    "Le mode doit être 'pedestrian' "
+                    "ou 'car'."
+                ),
+            },
+        )
+
+    # Vérification basique des coordonnées.
+    if not (
+        -90 <= depart_lat <= 90
+        and -180 <= depart_lon <= 180
+        and -90 <= arrivee_lat <= 90
+        and -180 <= arrivee_lon <= 180
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_COORDINATES",
+                "message": "Les coordonnées GPS sont invalides.",
+            },
+        )
+
+    # Évite de demander un itinéraire vers exactement le
+    # même point.
+    if (
+        abs(depart_lat - arrivee_lat) < 0.000001
+        and abs(depart_lon - arrivee_lon) < 0.000001
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "SAME_ORIGIN_DESTINATION",
+                "message": (
+                    "Le point de départ et le point d'arrivée "
+                    "sont identiques."
                 ),
             },
         )
 
     # ─────────────────────────────────────────────────────────
-    # Validation basique des coordonnées
+    # 1. CACHE NAVIGATION
     # ─────────────────────────────────────────────────────────
 
-    if not (-90 <= depart_lat <= 90):
-        raise HTTPException(
-            status_code=400,
-            detail="depart_lat invalide",
-        )
+    # Si Upstash Redis est configuré, on construit une clé
+    # normalisée.
+    #
+    # IMPORTANT :
+    # navigation_cache.enabled évite de faire attendre
+    # inutilement l'utilisateur lorsque Redis n'est pas
+    # configuré ou temporairement indisponible.
 
-    if not (-180 <= depart_lon <= 180):
-        raise HTTPException(
-            status_code=400,
-            detail="depart_lon invalide",
-        )
+    cache_key = navigation_cache.construire_cle(
+        depart_lat=depart_lat,
+        depart_lon=depart_lon,
+        arrivee_lat=arrivee_lat,
+        arrivee_lon=arrivee_lon,
+        mode=mode,
+        etapes=etapes,
+    )
 
-    if not (-90 <= arrivee_lat <= 90):
-        raise HTTPException(
-            status_code=400,
-            detail="arrivee_lat invalide",
-        )
-
-    if not (-180 <= arrivee_lon <= 180):
-        raise HTTPException(
-            status_code=400,
-            detail="arrivee_lon invalide",
-        )
+    lock_key = f"{cache_key}:lock"
 
     # ─────────────────────────────────────────────────────────
-    # Appel UNIQUE à la Géoplateforme IGN
+    # 2. CACHE HIT
+    # ─────────────────────────────────────────────────────────
+
+    if navigation_cache.enabled:
+        resultat = await navigation_cache.get(cache_key)
+
+        if resultat:
+            resultat["cache"] = "redis"
+            resultat["cache_hit"] = True
+
+            return resultat
+
+    # ─────────────────────────────────────────────────────────
+    # 3. CACHE MISS → VERROU ANTI-RAFALE
+    # ─────────────────────────────────────────────────────────
+
+    if navigation_cache.enabled:
+
+        verrou_obtenu = await navigation_cache.acquire_lock(
+            lock_key
+        )
+
+        if not verrou_obtenu:
+
+            # Une autre requête est déjà en train de calculer
+            # exactement le même itinéraire.
+            #
+            # On attend son résultat plutôt que de lancer
+            # plusieurs appels identiques vers IGN.
+
+            resultat = await navigation_cache.wait_for_result(
+                cache_key
+            )
+
+            if resultat:
+                resultat["cache"] = "redis"
+                resultat["cache_hit"] = True
+                resultat["cache_deduplicated"] = True
+
+                return resultat
+
+            # Si aucun résultat n'est apparu après l'attente,
+            # on tente de reprendre le verrou.
+            #
+            # Cela évite autant que possible que plusieurs
+            # requêtes frappent IGN simultanément.
+
+            verrou_obtenu = await navigation_cache.acquire_lock(
+                lock_key
+            )
+
+            # Si le verrou est toujours occupé, on continue
+            # exceptionnellement vers IGN.
+            #
+            # Le verrou possède un TTL automatique et ne peut
+            # donc pas rester bloqué définitivement.
+
+    # ─────────────────────────────────────────────────────────
+    # 4. APPEL IGN
     # ─────────────────────────────────────────────────────────
 
     try:
+
         resultat = await calculer_itineraire_geoplateforme(
             depart_lat=depart_lat,
             depart_lon=depart_lon,
@@ -1021,7 +1128,8 @@ async def itineraire_point_a_point(
     except GeoplateformeError as exc:
 
         print(
-            f"❌ Géoplateforme indisponible pour l'itinéraire : {exc}",
+            "❌ Géoplateforme indisponible pour "
+            f"l'itinéraire : {exc}",
             flush=True,
         )
 
@@ -1030,9 +1138,9 @@ async def itineraire_point_a_point(
             detail={
                 "code": "GEOPLATEFORME_UNAVAILABLE",
                 "message": (
-                    "Le service d'itinéraire IGN est temporairement "
-                    "indisponible. Aucun itinéraire de substitution "
-                    "n'a été utilisé."
+                    "Le service d'itinéraire IGN est "
+                    "temporairement indisponible. Aucun "
+                    "itinéraire de substitution n'a été utilisé."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1041,10 +1149,9 @@ async def itineraire_point_a_point(
 
     except Exception as exc:
 
-        # Sécurité : une erreur inattendue ne doit jamais être
-        # transformée en faux itinéraire.
         print(
-            f"❌ Erreur inattendue calcul itinéraire : {exc}",
+            "❌ Erreur inattendue calcul itinéraire : "
+            f"{exc}",
             flush=True,
         )
 
@@ -1053,8 +1160,8 @@ async def itineraire_point_a_point(
             detail={
                 "code": "ITINERARY_ERROR",
                 "message": (
-                    "Une erreur inattendue est survenue pendant "
-                    "le calcul de l'itinéraire."
+                    "Une erreur inattendue est survenue "
+                    "pendant le calcul de l'itinéraire."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1062,17 +1169,18 @@ async def itineraire_point_a_point(
         ) from exc
 
     # ─────────────────────────────────────────────────────────
-    # Vérification de sécurité du résultat
+    # 5. VÉRIFICATION DE LA RÉPONSE IGN
     # ─────────────────────────────────────────────────────────
 
     if not resultat or not isinstance(resultat, dict):
+
         raise HTTPException(
             status_code=502,
             detail={
                 "code": "INVALID_GEOPLATEFORME_RESPONSE",
                 "message": (
-                    "La Géoplateforme a répondu mais le résultat "
-                    "d'itinéraire est invalide."
+                    "La Géoplateforme a répondu mais le "
+                    "résultat d'itinéraire est invalide."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1082,13 +1190,14 @@ async def itineraire_point_a_point(
     geometry = resultat.get("geometry")
 
     if not geometry:
+
         raise HTTPException(
             status_code=502,
             detail={
                 "code": "NO_ROUTE_GEOMETRY",
                 "message": (
-                    "La Géoplateforme n'a retourné aucune géométrie "
-                    "d'itinéraire exploitable."
+                    "La Géoplateforme n'a retourné aucune "
+                    "géométrie d'itinéraire exploitable."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1096,25 +1205,60 @@ async def itineraire_point_a_point(
         )
 
     # ─────────────────────────────────────────────────────────
-    # Format attendu par le frontend
+    # 6. FORMAT STANDARD POUR LE FRONTEND
     # ─────────────────────────────────────────────────────────
 
+    resultat["type"] = "route_reelle"
+
     resultat["provider"] = "geoplateforme"
+
     resultat["resource"] = RESOURCE_ITINERAIRE
+
     resultat["mode"] = mode
 
-    # Le frontend app.js attend précisément cette propriété.
-    # On ne la crée que lorsque les étapes ont été demandées.
+    # Le frontend de navigation utilise cette propriété.
+
     if etapes:
+
         resultat["etapes_navigation"] = (
             resultat.get("etapes_navigation")
             or resultat.get("etapes")
             or []
         )
+
     else:
+
         resultat["etapes_navigation"] = []
 
-    return resultat
+    # ─────────────────────────────────────────────────────────
+    # 7. INFORMATIONS DE DIAGNOSTIC
+    # ─────────────────────────────────────────────────────────
+
+    resultat["cache"] = (
+        "redis"
+        if navigation_cache.enabled
+        else "disabled"
+    )
+
+    resultat["cache_hit"] = False
+
+    # ─────────────────────────────────────────────────────────
+    # 8. ÉCRITURE DANS REDIS
+    # ─────────────────────────────────────────────────────────
+
+    if navigation_cache.enabled:
+
+        await navigation_cache.set(
+            cache_key,
+            resultat,
+        )
+
+    # ─────────────────────────────────────────────────────────
+    # 9. RÉPONSE
+    # ─────────────────────────────────────────────────────────
+
+    return resultat   
+
     
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """

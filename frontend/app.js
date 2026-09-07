@@ -828,380 +828,517 @@ async function afficherItineraireVersCommodite(
   bouton,
   idConteneurOverride = null
 ) {
+  let conteneur = null;
+  let texteOriginal = null;
+
   try {
-    // ---------------------------------------------------------
-    // 1. Vérification du bouton
-    // ---------------------------------------------------------
     if (!bouton || !bouton.dataset) {
       console.error("❌ Bouton d'itinéraire invalide :", bouton);
       return;
     }
 
-    // ---------------------------------------------------------
-    // 2. Récupération du lieu de tournage
-    // ---------------------------------------------------------
-    const overlay = document.querySelector(".popup-overlay");
+    const overlay = document.getElementById("popup-overlay");
+    const lieuId = overlay?.dataset?.lieuId;
 
-    const lieuId =
-      overlay?.dataset?.lieuId ||
-      bouton.dataset.lieuId ||
-      bouton.closest("[data-lieu-id]")?.dataset?.lieuId;
+    const lieu = lieuId && Array.isArray(state.lieuxCourants)
+      ? state.lieuxCourants.find(
+          (l) => String(l.id) === String(lieuId)
+        )
+      : null;
 
-    let lieu = null;
-
-    if (lieuId && Array.isArray(state.lieuxCourants)) {
-      lieu = state.lieuxCourants.find(
-        (l) => String(l.id) === String(lieuId)
-      );
+    if (!lieu) {
+      throw new Error("Lieu de tournage introuvable.");
     }
 
-    // ---------------------------------------------------------
-    // 3. Coordonnées du départ = lieu de tournage
-    // ---------------------------------------------------------
-    let departLat =
-      lieu?.latitude ??
-      lieu?.lat ??
-      overlay?.dataset?.latitude ??
-      overlay?.dataset?.lat;
+    // Départ = lieu de tournage
+    const departLat = Number(
+      lieu.latitude ?? lieu.lat
+    );
 
-    let departLon =
-      lieu?.longitude ??
-      lieu?.lon ??
-      lieu?.lng ??
-      overlay?.dataset?.longitude ??
-      overlay?.dataset?.lon ??
-      overlay?.dataset?.lng;
+    const departLon = Number(
+      lieu.longitude ??
+      lieu.lon ??
+      lieu.lng
+    );
 
-    // ---------------------------------------------------------
-    // 4. Coordonnées de destination = commodité
-    //    Elles sont déjà présentes sur le bouton.
-    // ---------------------------------------------------------
-    const arriveeLat =
+    // Arrivée = commodité
+    const arriveeLat = Number(
       bouton.dataset.lat ??
-      bouton.dataset.latitude;
+      bouton.dataset.latitude
+    );
 
-    const arriveeLon =
+    const arriveeLon = Number(
       bouton.dataset.lon ??
       bouton.dataset.longitude ??
-      bouton.dataset.lng;
+      bouton.dataset.lng
+    );
 
-    // ---------------------------------------------------------
-    // 5. Conversion numérique
-    // ---------------------------------------------------------
-    departLat = Number(departLat);
-    departLon = Number(departLon);
-
-    const destinationLat = Number(arriveeLat);
-    const destinationLon = Number(arriveeLon);
-
-    // ---------------------------------------------------------
-    // 6. Vérification
-    // ---------------------------------------------------------
-    if (
-      !Number.isFinite(departLat) ||
-      !Number.isFinite(departLon) ||
-      !Number.isFinite(destinationLat) ||
-      !Number.isFinite(destinationLon)
-    ) {
-      console.error("❌ Coordonnées invalides :", {
-        lieuId,
-        departLat,
-        departLon,
-        destinationLat,
-        destinationLon,
-        bouton,
-        dataset: bouton.dataset,
-      });
-
-      return;
-    }
-
-    // ---------------------------------------------------------
-    // 7. Mode frontend → mode attendu par FastAPI
-    //
-    // Les boutons peuvent avoir :
-    // data-mode="foot-walking"
-    // data-mode="driving-car"
-    //
-    // Mais /api/itineraire attend :
-    // pedestrian
-    // car
-    // ---------------------------------------------------------
-    const modeFrontend = bouton.dataset.mode || "foot-walking";
+    // Conversion mode frontend → backend
+    const modeFrontend =
+      bouton.dataset.mode || "foot-walking";
 
     let mode;
 
     if (
       modeFrontend === "foot-walking" ||
-      modeFrontend === "pedestrian" ||
       modeFrontend === "walking" ||
-      modeFrontend === "pied"
+      modeFrontend === "pied" ||
+      modeFrontend === "pedestrian"
     ) {
       mode = "pedestrian";
     } else if (
       modeFrontend === "driving-car" ||
-      modeFrontend === "car" ||
-      modeFrontend === "voiture"
+      modeFrontend === "voiture" ||
+      modeFrontend === "car"
     ) {
       mode = "car";
     } else {
-      console.error("❌ Mode d'itinéraire inconnu :", modeFrontend);
-      return;
+      throw new Error(
+        `Mode d'itinéraire inconnu : ${modeFrontend}`
+      );
+    }
+
+    if (
+      !Number.isFinite(departLat) ||
+      !Number.isFinite(departLon) ||
+      !Number.isFinite(arriveeLat) ||
+      !Number.isFinite(arriveeLon)
+    ) {
+      throw new Error(
+        "Coordonnées du lieu ou de la commodité invalides."
+      );
     }
 
     // ---------------------------------------------------------
-    // 8. Conteneur d'affichage
+    // Conteneur du résultat
     // ---------------------------------------------------------
-    const idConteneur =
-      idConteneurOverride ||
-      bouton.dataset.container ||
-      bouton.dataset.target;
 
-    let conteneur = null;
-
-    if (idConteneur) {
-      conteneur = document.getElementById(idConteneur);
+    if (idConteneurOverride) {
+      conteneur =
+        document.getElementById(idConteneurOverride);
     }
 
-    // Fallback : chercher un conteneur dans le parent
+    if (!conteneur) {
+      const id =
+        bouton.dataset.container ||
+        bouton.dataset.target;
+
+      if (id) {
+        conteneur =
+          document.getElementById(id);
+      }
+    }
+
     if (!conteneur) {
       conteneur =
-        bouton.closest(".amenity-item, .commodite-item, .accessibilite-item")
-          ?.querySelector(".itineraire-resultat") ||
-        bouton.closest(".popup-content, .leaflet-popup-content")
+        bouton
+          .closest(".resultat-item")
+          ?.querySelector(".itineraire-resultat");
+    }
+
+    if (!conteneur) {
+      conteneur =
+        bouton
+          .closest(".leaflet-popup-content")
           ?.querySelector(".itineraire-resultat");
     }
 
     // ---------------------------------------------------------
-    // 9. État visuel pendant le calcul
+    // État "calcul en cours"
     // ---------------------------------------------------------
-    const texteOriginal = bouton.innerHTML;
+
+    texteOriginal = bouton.innerHTML;
 
     bouton.disabled = true;
     bouton.classList.add("calcul-en-cours");
 
     if (conteneur) {
-      conteneur.innerHTML =
-        '<div class="itineraire-loading">Calcul de l’itinéraire IGN…</div>';
+      conteneur.innerHTML = `
+        <div class="itineraire-loading">
+          ⏳ Calcul de l’itinéraire
+          ${mode === "pedestrian"
+            ? "à pied"
+            : "en voiture"}…
+        </div>
+      `;
     }
 
+    console.log(
+      "🧭 Calcul itinéraire Géoplateforme IGN :",
+      {
+        depart: [
+          departLat,
+          departLon
+        ],
+        arrivee: [
+          arriveeLat,
+          arriveeLon
+        ],
+        mode
+      }
+    );
+
     // ---------------------------------------------------------
-    // 10. Appel de TON endpoint FastAPI
+    // Appel API IGN
     // ---------------------------------------------------------
+
     const params = new URLSearchParams({
       depart_lat: String(departLat),
       depart_lon: String(departLon),
-      arrivee_lat: String(destinationLat),
-      arrivee_lon: String(destinationLon),
-      mode: mode,
-      etapes: "true",
-    });
-
-    const url = `${API_BASE}/api/itineraire?${params.toString()}`;
-
-    console.log("🧭 Calcul itinéraire Géoplateforme IGN :", {
-      url,
-      depart: [departLat, departLon],
-      arrivee: [destinationLat, destinationLon],
+      arrivee_lat: String(arriveeLat),
+      arrivee_lon: String(arriveeLon),
       mode,
+      etapes: "true"
     });
 
-    const response = await fetch(url);
+    const response = await fetch(
+      `${API_BASE}/api/itineraire?${params.toString()}`,
+      {
+        headers: {
+          Accept: "application/json"
+        }
+      }
+    );
 
-    // ---------------------------------------------------------
-    // 11. Gestion des erreurs HTTP
-    // ---------------------------------------------------------
+    let data;
+
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error(
+        `Réponse invalide du serveur (${response.status}).`
+      );
+    }
+
     if (!response.ok) {
-      let erreur = null;
+      throw new Error(
+        data?.detail?.message ||
+        data?.detail ||
+        `Erreur HTTP ${response.status}`
+      );
+    }
 
-      try {
-        erreur = await response.json();
-      } catch {
-        // Réponse non JSON
-      }
-
-      console.error("❌ Erreur API itinéraire :", {
-        status: response.status,
-        erreur,
-      });
-
-      const message =
-        erreur?.detail?.message ||
-        erreur?.detail ||
-        `Erreur HTTP ${response.status}`;
-
-      if (conteneur) {
-        conteneur.innerHTML = `
-          <div class="itineraire-erreur">
-            ❌ ${message}
-          </div>
-        `;
-      }
-
-      return;
+    if (!data?.geometry) {
+      throw new Error(
+        "La Géoplateforme IGN n'a retourné aucun tracé."
+      );
     }
 
     // ---------------------------------------------------------
-    // 12. Lecture du résultat
+    // Supprimer ancien itinéraire
     // ---------------------------------------------------------
-    const data = await response.json();
 
-    console.log("✅ Itinéraire reçu :", data);
+    if (coucheItineraireCommodite) {
+      map.removeLayer(
+        coucheItineraireCommodite
+      );
 
-    if (!data || !data.geometry) {
-      console.error("❌ Géométrie absente dans la réponse :", data);
-
-      if (conteneur) {
-        conteneur.innerHTML = `
-          <div class="itineraire-erreur">
-            ❌ Aucun tracé d’itinéraire disponible.
-          </div>
-        `;
-      }
-
-      return;
+      coucheItineraireCommodite = null;
     }
 
     // ---------------------------------------------------------
-    // 13. Suppression de l'ancien tracé
+    // Afficher le nouvel itinéraire
     // ---------------------------------------------------------
-    if (window.traceItineraireCommodite) {
-      map.removeLayer(window.traceItineraireCommodite);
-      window.traceItineraireCommodite = null;
-    }
 
-    // ---------------------------------------------------------
-    // 14. Affichage du tracé GeoJSON
-    // ---------------------------------------------------------
-    window.traceItineraireCommodite = L.geoJSON(
-      {
-        type: "Feature",
-        geometry: data.geometry,
-        properties: {
-          provider: data.provider,
-          mode: data.mode,
-        },
-      },
-      {
-        style: {
-          weight: 6,
-          opacity: 0.9,
-        },
-      }
-    ).addTo(map);
+    coucheItineraireCommodite =
+      L.geoJSON(
+        data.geometry,
+        {
+          style: {
+            weight: 6,
+            opacity: 0.9,
+            lineCap: "round",
+            lineJoin: "round"
+          }
+        }
+      ).addTo(map);
 
-    // ---------------------------------------------------------
-    // 15. Zoom automatique sur l'itinéraire
-    // ---------------------------------------------------------
-    const bounds = window.traceItineraireCommodite.getBounds();
+    const bounds =
+      coucheItineraireCommodite.getBounds();
 
     if (bounds.isValid()) {
-      map.fitBounds(bounds, {
-        padding: [40, 40],
-        maxZoom: 16,
-      });
+      map.fitBounds(
+        bounds,
+        {
+          padding: [40, 40],
+          maxZoom: 16
+        }
+      );
     }
 
     // ---------------------------------------------------------
-    // 16. Distance + durée
+    // Distance / durée
     // ---------------------------------------------------------
-    const distanceMetres = Number(data.distance_metres || 0);
+
+    const distanceMetres =
+      Number(data.distance_metres);
+
     const dureeSecondes =
-      data.duree_secondes !== null &&
-      data.duree_secondes !== undefined
-        ? Number(data.duree_secondes)
-        : null;
+      Number(data.duree_secondes);
 
-    let distanceTexte;
+    const distance =
+      Number.isFinite(distanceMetres)
+        ? formatDistance(distanceMetres)
+        : "—";
 
-    if (distanceMetres >= 1000) {
-      distanceTexte =
-        `${(distanceMetres / 1000).toFixed(1)} km`
-          .replace(".0 km", " km");
-    } else {
-      distanceTexte = `${Math.round(distanceMetres)} m`;
-    }
+    const duree =
+      Number.isFinite(dureeSecondes)
+        ? formatDuree(dureeSecondes)
+        : "—";
 
-    let dureeTexte = "";
-
-    if (dureeSecondes !== null && Number.isFinite(dureeSecondes)) {
-      const minutes = Math.round(dureeSecondes / 60);
-
-      if (minutes < 60) {
-        dureeTexte = `${minutes} min`;
-      } else {
-        const heures = Math.floor(minutes / 60);
-        const reste = minutes % 60;
-
-        dureeTexte = reste
-          ? `${heures}h${String(reste).padStart(2, "0")}`
-          : `${heures}h`;
-      }
-    }
+    const etapes =
+      Array.isArray(data.etapes_navigation)
+        ? data.etapes_navigation
+        : [];
 
     // ---------------------------------------------------------
-    // 17. Résultat textuel
+    // AFFICHAGE COMPLET DU RÉSULTAT
     // ---------------------------------------------------------
-    const modeTexte =
-      mode === "car"
-        ? "en voiture"
-        : "à pied";
 
     if (conteneur) {
+
       conteneur.innerHTML = `
         <div class="itineraire-resultat-ok">
+
           <div class="itineraire-infos">
-            <strong>Itinéraire ${modeTexte}</strong>
-            <span>${distanceTexte}</span>
-            ${
-              dureeTexte
-                ? `<span>· ${dureeTexte}</span>`
-                : ""
-            }
+
+            <strong>
+              ${
+                mode === "pedestrian"
+                  ? "🚶 Itinéraire à pied"
+                  : "🚗 Itinéraire en voiture"
+              }
+            </strong>
+
+            <span>
+              📏 ${distance}
+            </span>
+
+            <span>
+              ⏱️ ${duree}
+            </span>
+
           </div>
 
           <div class="itineraire-source">
-            Géoplateforme IGN
+            🗺️ Géoplateforme IGN
           </div>
+
+          ${
+            etapes.length
+              ? `
+                <div class="itineraire-etapes-info">
+                  🧭
+                  ${etapes.length}
+                  instruction${etapes.length > 1 ? "s" : ""}
+                  de navigation
+                </div>
+              `
+              : ""
+          }
+
+          <div class="itineraire-actions">
+
+            <button
+              type="button"
+              class="btn-demarrer-navigation"
+            >
+              🧭 Démarrer la navigation
+            </button>
+
+            <button
+              type="button"
+              class="btn-voir-sur-carte"
+            >
+              🗺️ Voir sur la carte
+            </button>
+
+            <button
+              type="button"
+              class="btn-fermer-itineraire"
+            >
+              ✕ Fermer
+            </button>
+
+          </div>
+
         </div>
       `;
+
+      // -------------------------------------------------------
+      // Démarrer navigation
+      // -------------------------------------------------------
+
+      const btnNavigation =
+        conteneur.querySelector(
+          ".btn-demarrer-navigation"
+        );
+
+      if (btnNavigation) {
+
+        btnNavigation.addEventListener(
+          "click",
+          () => {
+
+            demarrerNavigation(
+              arriveeLat,
+              arriveeLon,
+              mode
+            );
+
+          }
+        );
+
+      }
+
+      // -------------------------------------------------------
+      // Voir sur la carte
+      // -------------------------------------------------------
+
+      const btnVoirCarte =
+        conteneur.querySelector(
+          ".btn-voir-sur-carte"
+        );
+
+      if (btnVoirCarte) {
+
+        btnVoirCarte.addEventListener(
+          "click",
+          () => {
+
+            // Ferme uniquement le grand popup.
+            // Le tracé reste sur la carte.
+
+            if (
+              typeof fermerPopup ===
+              "function"
+            ) {
+              fermerPopup();
+            }
+
+            const bounds =
+              coucheItineraireCommodite
+                ?.getBounds();
+
+            if (
+              bounds &&
+              bounds.isValid()
+            ) {
+              map.fitBounds(
+                bounds,
+                {
+                  padding: [40, 40],
+                  maxZoom: 16
+                }
+              );
+            }
+
+          }
+        );
+
+      }
+
+      // -------------------------------------------------------
+      // Fermer le résultat
+      // -------------------------------------------------------
+
+      const btnFermer =
+        conteneur.querySelector(
+          ".btn-fermer-itineraire"
+        );
+
+      if (btnFermer) {
+
+        btnFermer.addEventListener(
+          "click",
+          () => {
+
+            if (
+              coucheItineraireCommodite
+            ) {
+              map.removeLayer(
+                coucheItineraireCommodite
+              );
+
+              coucheItineraireCommodite =
+                null;
+            }
+
+            conteneur.innerHTML = "";
+
+          }
+        );
+
+      }
+
     }
 
-    // ---------------------------------------------------------
-    // 18. Informations de diagnostic
-    // ---------------------------------------------------------
-    console.log("🗺️ Itinéraire affiché :", {
-      provider: data.provider,
-      resource: data.resource,
-      mode: data.mode,
-      distance_metres: data.distance_metres,
-      duree_secondes: data.duree_secondes,
-      cache: data.cache,
-      cache_hit: data.cache_hit,
-    });
+    console.log(
+      "✅ Itinéraire IGN affiché :",
+      {
+        provider: data.provider,
+        resource: data.resource,
+        mode: data.mode,
+        distance_metres:
+          data.distance_metres,
+        duree_secondes:
+          data.duree_secondes,
+        cache: data.cache,
+        cache_hit:
+          data.cache_hit
+      }
+    );
+
+    return data;
 
   } catch (error) {
-    console.error("❌ Erreur affichage itinéraire :", error);
+
+    console.error(
+      "❌ Erreur itinéraire :",
+      error
+    );
 
     if (conteneur) {
+
       conteneur.innerHTML = `
         <div class="itineraire-erreur">
-          ❌ Impossible de calculer l’itinéraire.
+
+          ❌
+          ${
+            error?.message ||
+            "Impossible de calculer l’itinéraire."
+          }
+
+          <small>
+            Service : Géoplateforme IGN
+          </small>
+
         </div>
       `;
-    }
-  } finally {
-    // ---------------------------------------------------------
-    // 19. Restaurer le bouton
-    // ---------------------------------------------------------
-    if (bouton) {
-      bouton.disabled = false;
-      bouton.classList.remove("calcul-en-cours");
 
-      if (typeof texteOriginal !== "undefined") {
-        bouton.innerHTML = texteOriginal;
-      }
     }
+
+    return null;
+
+  } finally {
+
+    if (bouton) {
+
+      bouton.disabled = false;
+
+      bouton.classList.remove(
+        "calcul-en-cours"
+      );
+
+      if (
+        texteOriginal !== null
+      ) {
+        bouton.innerHTML =
+          texteOriginal;
+      }
+
+    }
+
   }
 }
 

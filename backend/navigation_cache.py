@@ -33,7 +33,7 @@ CACHE_TTL_SECONDS = 24 * 60 * 60
 
 # Les coordonnées GPS sont regroupées par tranche d'environ 100 m.
 # Cela évite de créer une clé différente à chaque mouvement GPS.
-PRECISION_COORDONNEES = 3
+PRECISION_COORDONNEES = 4
 
 # Durée maximale pendant laquelle une requête attend qu'un autre
 # utilisateur termine le calcul IGN.
@@ -106,7 +106,7 @@ class NavigationCache:
 
         brut = "|".join(
             [
-                "navigation-v1",
+                "navigation-v2",
                 mode,
                 "steps" if etapes else "route",
                 depart[0],

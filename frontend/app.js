@@ -824,54 +824,622 @@ function _rendreCategorie() {
 
 let coucheItineraireCommodite = null;
 
-async function afficherItineraireVersCommodite(bouton, idConteneurOverride) {
-  const lieuId = document.getElementById("popup-overlay").dataset.lieuId;
-  const lieu = state.lieuxCourants.find((l) => l.id === Number(lieuId));
-  if (!lieu) return;
+async function afficherItineraireVersCommodite(
+    departLat,
+    departLon,
+    arriveeLat,
+    arriveeLon,
+    mode,
+    conteneurResultat
+) {
+    // ---------------------------------------------------------
+    // VALIDATION
+    // ---------------------------------------------------------
 
-  const mode = bouton.dataset.mode;
-  const arriveeLat = parseFloat(bouton.dataset.lat);
-  const arriveeLon = parseFloat(bouton.dataset.lon);
-  const conteneurResultat = idConteneurOverride
-    ? document.getElementById(idConteneurOverride)
-    : bouton.closest(".resultat-item").querySelector(".itineraire-resultat");
-  conteneurResultat.textContent = "Calcul de l'itinéraire…";
+    const latDepart = Number(departLat);
+    const lonDepart = Number(departLon);
+    const latArrivee = Number(arriveeLat);
+    const lonArrivee = Number(arriveeLon);
 
-  try {
+    if (
+        !Number.isFinite(latDepart) ||
+        !Number.isFinite(lonDepart) ||
+        !Number.isFinite(latArrivee) ||
+        !Number.isFinite(lonArrivee)
+    ) {
+        console.error("❌ Coordonnées invalides :", {
+            departLat,
+            departLon,
+            arriveeLat,
+            arriveeLon,
+        });
+
+        if (conteneurResultat) {
+            conteneurResultat.innerHTML = `
+                <div class="itineraire-erreur">
+                    ❌ Impossible de calculer l'itinéraire :
+                    coordonnées GPS invalides.
+                </div>
+            `;
+        }
+
+        return;
+    }
+
+    // ---------------------------------------------------------
+    // NORMALISATION DU MODE
+    // ---------------------------------------------------------
+
+    let modeApi = mode;
+
+    /*
+     * Le frontend peut utiliser plusieurs noms selon le contexte.
+     * L'API backend attend actuellement :
+     *
+     * pedestrian
+     * car
+     */
+
+    if (
+        mode === "foot-walking" ||
+        mode === "walking" ||
+        mode === "pedestrian"
+    ) {
+        modeApi = "pedestrian";
+    } else if (
+        mode === "driving-car" ||
+        mode === "car" ||
+        mode === "voiture"
+    ) {
+        modeApi = "car";
+    } else {
+        console.warn(
+            "⚠️ Mode inconnu, utilisation du mode voiture :",
+            mode
+        );
+
+        modeApi = "car";
+    }
+
+    const modeTexte =
+        modeApi === "pedestrian"
+            ? "à pied"
+            : "en voiture";
+
+    // ---------------------------------------------------------
+    // AFFICHAGE CHARGEMENT
+    // ---------------------------------------------------------
+
+    if (conteneurResultat) {
+        conteneurResultat.innerHTML = `
+            <div class="itineraire-chargement">
+                <span>⏳</span>
+                Calcul de l'itinéraire ${modeTexte}…
+            </div>
+        `;
+    }
+
+    // ---------------------------------------------------------
+    // NETTOYAGE DE L'ANCIEN TRACÉ
+    // ---------------------------------------------------------
+
+    if (typeof coucheItineraireCommodite !== "undefined") {
+        if (coucheItineraireCommodite) {
+            map.removeLayer(coucheItineraireCommodite);
+            coucheItineraireCommodite = null;
+        }
+    }
+
+    // ---------------------------------------------------------
+    // CONSTRUCTION DE LA REQUÊTE
+    // ---------------------------------------------------------
+
     const params = new URLSearchParams({
-      depart_lat: lieu.latitude, depart_lon: lieu.longitude,
-      arrivee_lat: arriveeLat, arrivee_lon: arriveeLon, mode,
-    });
-    const res = await fetch(`${API_BASE}/api/itineraire?${params}`);
-    const data = await res.json();
-
-    const distanceTxt = formatDistance(data.distance_metres);
-    const modeTexte = mode === "foot-walking" ? "à pied" : "en voiture";
-    const precision = data.type === "route_reelle" ? "" : " (estimation à vol d'oiseau)";
-    const dureeTxt = data.duree_secondes ? ` — ${formatDuree(data.duree_secondes)}` : "";
-
-    conteneurResultat.innerHTML = `
-      <div>Itinéraire ${modeTexte} (${distanceTxt}${dureeTxt})${precision}</div>
-      <button class="btn-demarrer-navigation" data-lat="${arriveeLat}" data-lon="${arriveeLon}" data-mode="${mode}">
-        🧭 Démarrer la navigation
-      </button>
-      ${idConteneurOverride ? "" : `<a href="#" class="lien-voir-carte">🗺️ Voir sur la carte</a>`}
-    `;
-    conteneurResultat.querySelector(".btn-demarrer-navigation").addEventListener("click", (e) => {
-      demarrerNavigation(parseFloat(e.target.dataset.lat), parseFloat(e.target.dataset.lon), e.target.dataset.mode);
-    });
-    conteneurResultat.querySelector(".lien-voir-carte")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      fermerPopup();
+        depart_lat: String(latDepart),
+        depart_lon: String(lonDepart),
+        arrivee_lat: String(latArrivee),
+        arrivee_lon: String(lonArrivee),
+        mode: modeApi,
+        etapes: "true",
     });
 
-    if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
-    coucheItineraireCommodite = L.geoJSON(data.geometry, {
-      style: { color: mode === "foot-walking" ? "#2a9d8f" : "#4361ee", weight: 4, opacity: 0.8 },
-    }).addTo(map);
-  } catch (e) {
-    conteneurResultat.textContent = "Itinéraire indisponible.";
-  }
+    const url = `${API_BASE}/api/itineraire?${params.toString()}`;
+
+    console.log("🧭 Demande itinéraire :", url);
+
+    // ---------------------------------------------------------
+    // APPEL API
+    // ---------------------------------------------------------
+
+    try {
+        const response = await fetch(url, {
+            method: "GET",
+            headers: {
+                Accept: "application/json",
+            },
+            cache: "no-store",
+        });
+
+        // -----------------------------------------------------
+        // LECTURE JSON
+        // -----------------------------------------------------
+
+        let data = null;
+
+        try {
+            data = await response.json();
+        } catch (jsonError) {
+            console.error(
+                "❌ Réponse JSON invalide :",
+                jsonError
+            );
+
+            throw new Error(
+                "Le serveur a retourné une réponse invalide."
+            );
+        }
+
+        console.log(
+            "🧭 Réponse itinéraire :",
+            data
+        );
+
+        // -----------------------------------------------------
+        // ERREUR HTTP
+        // -----------------------------------------------------
+
+        if (!response.ok) {
+            let message =
+                "Impossible de calculer l'itinéraire.";
+
+            if (
+                data &&
+                data.detail &&
+                typeof data.detail === "object" &&
+                data.detail.message
+            ) {
+                message = data.detail.message;
+            } else if (
+                data &&
+                typeof data.detail === "string"
+            ) {
+                message = data.detail;
+            }
+
+            throw new Error(message);
+        }
+
+        // -----------------------------------------------------
+        // VALIDATION DE LA STRUCTURE
+        // -----------------------------------------------------
+
+        if (!data || typeof data !== "object") {
+            throw new Error(
+                "La réponse du serveur est vide."
+            );
+        }
+
+        /*
+         * IMPORTANT :
+         *
+         * On refuse ici les anciennes réponses du type :
+         *
+         * "estimation à vol d'oiseau"
+         *
+         * L'API actuelle doit retourner une vraie route IGN.
+         */
+
+        if (data.type !== "route_reelle") {
+            console.error(
+                "❌ Type d'itinéraire inattendu :",
+                data.type,
+                data
+            );
+
+            throw new Error(
+                "La Géoplateforme n'a pas retourné un itinéraire routable."
+            );
+        }
+
+        // -----------------------------------------------------
+        // VALIDATION GEOMETRIE
+        // -----------------------------------------------------
+
+        if (!data.geometry) {
+            console.error(
+                "❌ Géométrie absente :",
+                data
+            );
+
+            throw new Error(
+                "La Géoplateforme n'a retourné aucune géométrie."
+            );
+        }
+
+        // -----------------------------------------------------
+        // VALIDATION DISTANCE
+        // -----------------------------------------------------
+
+        const distanceMetres =
+            Number(data.distance_metres);
+
+        if (
+            !Number.isFinite(distanceMetres) ||
+            distanceMetres < 0
+        ) {
+            console.error(
+                "❌ Distance invalide :",
+                data.distance_metres,
+                data
+            );
+
+            throw new Error(
+                "La distance de l'itinéraire est invalide."
+            );
+        }
+
+        // -----------------------------------------------------
+        // DURÉE
+        // -----------------------------------------------------
+
+        const dureeSecondes =
+            Number(data.duree_secondes);
+
+        const dureeValide =
+            Number.isFinite(dureeSecondes) &&
+            dureeSecondes >= 0;
+
+        // -----------------------------------------------------
+        // FORMATAGE DISTANCE
+        // -----------------------------------------------------
+
+        let distanceTexte;
+
+        if (distanceMetres < 1000) {
+            distanceTexte =
+                `${Math.round(distanceMetres)} m`;
+        } else {
+            distanceTexte =
+                `${(distanceMetres / 1000).toFixed(1)} km`;
+        }
+
+        // -----------------------------------------------------
+        // FORMATAGE DURÉE
+        // -----------------------------------------------------
+
+        let dureeTexte = "";
+
+        if (dureeValide) {
+            if (typeof formatDuree === "function") {
+                dureeTexte =
+                    formatDuree(dureeSecondes);
+            } else {
+                const minutes =
+                    Math.round(dureeSecondes / 60);
+
+                dureeTexte =
+                    `${minutes} min`;
+            }
+        }
+
+        // -----------------------------------------------------
+        // TRACE LEAFLET
+        // -----------------------------------------------------
+
+        coucheItineraireCommodite = L.geoJSON(
+            data.geometry,
+            {
+                style: {
+                    color:
+                        modeApi === "pedestrian"
+                            ? "#00a896"
+                            : "#4361ee",
+                    weight: 5,
+                    opacity: 0.9,
+                    lineCap: "round",
+                    lineJoin: "round",
+                },
+            }
+        ).addTo(map);
+
+        // -----------------------------------------------------
+        // ZOOM SUR LE TRAJET
+        // -----------------------------------------------------
+
+        try {
+            const bounds =
+                coucheItineraireCommodite.getBounds();
+
+            if (bounds.isValid()) {
+                map.fitBounds(
+                    bounds,
+                    {
+                        padding: [50, 50],
+                        maxZoom: 17,
+                    }
+                );
+            }
+        } catch (boundsError) {
+            console.warn(
+                "⚠️ Impossible d'ajuster la carte :",
+                boundsError
+            );
+        }
+
+        // -----------------------------------------------------
+        // MARQUEUR DÉPART
+        // -----------------------------------------------------
+
+        if (
+            typeof coucheMarqueurDepart !==
+            "undefined"
+        ) {
+            if (coucheMarqueurDepart) {
+                map.removeLayer(
+                    coucheMarqueurDepart
+                );
+            }
+
+            coucheMarqueurDepart =
+                L.marker(
+                    [
+                        latDepart,
+                        lonDepart,
+                    ],
+                    {
+                        icon: L.divIcon({
+                            html: `
+                                <div class="marqueur-depart">
+                                    📍
+                                </div>
+                            `,
+                            className: "",
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 28],
+                        }),
+                    }
+                )
+                    .bindPopup(
+                        "Votre point de départ"
+                    )
+                    .addTo(map);
+        }
+
+        // ---------------------------------------------------------
+        // ÉTAPES DE NAVIGATION
+        // ---------------------------------------------------------
+
+        const etapes =
+            Array.isArray(data.etapes_navigation)
+                ? data.etapes_navigation
+                : Array.isArray(data.etapes)
+                    ? data.etapes
+                    : [];
+
+        // ---------------------------------------------------------
+        // RÉSULTAT DANS LE POPUP
+        // ---------------------------------------------------------
+
+        if (conteneurResultat) {
+            conteneurResultat.innerHTML = `
+                <div class="itineraire-resultat">
+                    <div class="itineraire-titre">
+                        🚶 Itinéraire ${modeTexte}
+                    </div>
+
+                    <div class="itineraire-infos">
+                        <span>
+                            📏 ${distanceTexte}
+                        </span>
+
+                        ${
+                            dureeTexte
+                                ? `
+                                    <span>
+                                        ⏱️ ${dureeTexte}
+                                    </span>
+                                `
+                                : ""
+                        }
+                    </div>
+
+                    <div class="itineraire-source">
+                        🗺️ Itinéraire routable
+                        calculé par la
+                        Géoplateforme IGN
+                    </div>
+
+                    ${
+                        etapes.length
+                            ? `
+                                <div class="itineraire-etapes-info">
+                                    🧭 ${etapes.length}
+                                    étape${
+                                        etapes.length > 1
+                                            ? "s"
+                                            : ""
+                                    } de navigation disponible${
+                                        etapes.length > 1
+                                            ? "s"
+                                            : ""
+                                    }
+                                </div>
+                            `
+                            : `
+                                <div class="itineraire-etapes-info">
+                                    ℹ️ Les instructions détaillées
+                                    ne sont pas disponibles pour
+                                    ce trajet.
+                                </div>
+                            `
+                    }
+
+                    <div class="itineraire-actions">
+
+                        ${
+                            etapes.length
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="btn-demarrer-navigation"
+                                        data-lat="${latArrivee}"
+                                        data-lon="${lonArrivee}"
+                                        data-mode="${modeApi}"
+                                    >
+                                        🧭 Démarrer la navigation
+                                    </button>
+                                `
+                                : ""
+                        }
+
+                        <button
+                            type="button"
+                            class="btn-fermer-itineraire"
+                        >
+                            ✕ Fermer
+                        </button>
+
+                    </div>
+                </div>
+            `;
+
+            // -----------------------------------------------------
+            // BOUTON NAVIGATION
+            // -----------------------------------------------------
+
+            const boutonNavigation =
+                conteneurResultat.querySelector(
+                    ".btn-demarrer-navigation"
+                );
+
+            if (boutonNavigation) {
+                boutonNavigation.addEventListener(
+                    "click",
+                    () => {
+                        const lat =
+                            Number(
+                                boutonNavigation.dataset.lat
+                            );
+
+                        const lon =
+                            Number(
+                                boutonNavigation.dataset.lon
+                            );
+
+                        const modeNavigation =
+                            boutonNavigation.dataset.mode;
+
+                        if (
+                            !Number.isFinite(lat) ||
+                            !Number.isFinite(lon)
+                        ) {
+                            console.error(
+                                "❌ Destination navigation invalide."
+                            );
+                            return;
+                        }
+
+                        demarrerNavigation(
+                            lat,
+                            lon,
+                            modeNavigation
+                        );
+                    }
+                );
+            }
+
+            // -----------------------------------------------------
+            // BOUTON FERMER
+            // -----------------------------------------------------
+
+            const boutonFermer =
+                conteneurResultat.querySelector(
+                    ".btn-fermer-itineraire"
+                );
+
+            if (boutonFermer) {
+                boutonFermer.addEventListener(
+                    "click",
+                    () => {
+                        if (
+                            coucheItineraireCommodite
+                        ) {
+                            map.removeLayer(
+                                coucheItineraireCommodite
+                            );
+
+                            coucheItineraireCommodite =
+                                null;
+                        }
+
+                        conteneurResultat.innerHTML =
+                            "";
+                    }
+                );
+            }
+        }
+
+        // -----------------------------------------------------
+        // RETOUR DE LA FONCTION
+        // -----------------------------------------------------
+
+        return data;
+
+    } catch (error) {
+
+        console.error(
+            "❌ Erreur itinéraire :",
+            error
+        );
+
+        // -----------------------------------------------------
+        // NETTOYAGE DU TRACÉ EN CAS D'ERREUR
+        // -----------------------------------------------------
+
+        if (
+            typeof coucheItineraireCommodite !==
+            "undefined"
+        ) {
+            if (coucheItineraireCommodite) {
+                map.removeLayer(
+                    coucheItineraireCommodite
+                );
+
+                coucheItineraireCommodite =
+                    null;
+            }
+        }
+
+        // -----------------------------------------------------
+        // MESSAGE UTILISATEUR
+        // -----------------------------------------------------
+
+        if (conteneurResultat) {
+            conteneurResultat.innerHTML = `
+                <div class="itineraire-erreur">
+                    <strong>
+                        ❌ Itinéraire indisponible
+                    </strong>
+
+                    <p>
+                        ${
+                            error &&
+                            error.message
+                                ? error.message
+                                : "Une erreur est survenue lors du calcul."
+                        }
+                    </p>
+
+                    <small>
+                        Service :
+                        Géoplateforme IGN
+                    </small>
+                </div>
+            `;
+        }
+
+        return null;
+    }
 }
 
 // ── Affiche les points "activité" sur la carte (calque séparé des
@@ -1276,7 +1844,17 @@ function afficherSectionReservation() {
 
 
 function formatDistance(m) {
-  return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+    const valeur = Number(m);
+
+    if (!Number.isFinite(valeur)) {
+        return "distance indisponible";
+    }
+
+    if (valeur < 1000) {
+        return `${Math.round(valeur)} m`;
+    }
+
+    return `${(valeur / 1000).toFixed(1)} km`;
 }
 
 function formatDuree(secondes) {

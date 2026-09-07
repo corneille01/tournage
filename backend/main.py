@@ -153,16 +153,7 @@ async def _gerer_cache_api(request: Request, call_next):
     if not request.url.path.startswith("/api/"):
         return response
 
-    # Navigation :
-    # Cloudflare peut conserver la réponse pendant 24 h.
-    if request.url.path == "/api/itineraire":
-        response.headers["Cache-Control"] = (
-            "public, max-age=86400, s-maxage=86400"
-        )
-        response.headers["CDN-Cache-Control"] = (
-            "public, max-age=86400"
-        )
-        return response
+    
 
     ROUTES_CACHABLES_1H = (
         "/api/lieux/",
@@ -1259,7 +1250,7 @@ async def api_itineraire(
 
     return resultat   
 
-    
+
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """
     Optimise l'ordre d'un petit circuit sans utiliser OSRM.

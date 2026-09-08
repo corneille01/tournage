@@ -20,6 +20,8 @@ Principes :
 
 from __future__ import annotations
 
+import json
+import math
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -126,6 +128,70 @@ def _median(values: list[float]) -> float | None:
         return values[n // 2]
 
     return (values[n // 2 - 1] + values[n // 2]) / 2
+
+
+def _aire_km2_geojson(geometry: Any) -> float | None:
+    """
+    Surface approximative (km²) d'une géométrie GeoJSON d'isochrone
+    (Polygon ou MultiPolygon), par projection équirectangulaire locale
+    (centrée sur la latitude du premier point) puis formule du lacet.
+
+    Pas de dépendance SIG lourde (shapely n'est pas dans
+    requirements.txt) — l'imprécision de cette approximation est
+    négligeable à l'échelle d'une isochrone de quelques dizaines de km,
+    largement suffisante pour un ratio comparatif voiture/marche.
+    """
+
+    if isinstance(geometry, str):
+        try:
+            geometry = json.loads(geometry)
+        except Exception:
+            return None
+
+    if not isinstance(geometry, dict):
+        return None
+
+    geom_type = geometry.get("type")
+    coords = geometry.get("coordinates")
+
+    if not coords:
+        return None
+
+    polygones = coords if geom_type == "MultiPolygon" else [coords]
+
+    def _aire_anneau(anneau: list) -> float:
+        if len(anneau) < 3:
+            return 0.0
+
+        lat_ref = anneau[0][1]
+        m_par_deg_lat = 111_320.0
+        m_par_deg_lon = 111_320.0 * math.cos(math.radians(lat_ref))
+
+        pts = [
+            (lon * m_par_deg_lon, lat * m_par_deg_lat)
+            for lon, lat in anneau
+        ]
+
+        aire = 0.0
+        for i in range(len(pts) - 1):
+            x1, y1 = pts[i]
+            x2, y2 = pts[i + 1]
+            aire += x1 * y2 - x2 * y1
+
+        return abs(aire) / 2.0
+
+    total_m2 = 0.0
+    for polygone in polygones:
+        if not polygone:
+            continue
+
+        aire_polygone = _aire_anneau(polygone[0])
+        for trou in polygone[1:]:
+            aire_polygone -= _aire_anneau(trou)
+
+        total_m2 += max(aire_polygone, 0.0)
+
+    return round(total_m2 / 1_000_000, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +456,10 @@ async def _charger_isochrones(
             i.lieu_tournage_id,
             i.mode,
             i.minutes,
-            i.calculated_at
+            i.calculated_at,
+            i.geometry_geojson,
+            lt.nom AS lieu_nom,
+            lt.departement AS lieu_departement
         FROM isochrones i
         JOIN lieux_tournage lt
           ON lt.id = i.lieu_tournage_id
@@ -411,6 +480,16 @@ async def _charger_isochrones(
     )
 
     dates: list[Any] = []
+
+    # Surfaces (km²) des isochrones à 15 min, par mode — c'est ce qui
+    # permet le ratio d'emprise spatiale voiture/marche (section
+    # "Mobilité") : à durée égale, plus la surface accessible en
+    # voiture est grande devant celle accessible à pied, plus le
+    # territoire dépend de la voiture pour être exploré (signal
+    # d'enclavement, pas juste une curiosité géométrique).
+    aires_15min: dict[str, list[float]] = {"driving-car": [], "foot-walking": []}
+    aires_lieux_15min_voiture: list[dict[str, Any]] = []
+    aires_par_departement: dict[str, list[float]] = defaultdict(list)
 
     for row in rows:
         lieu_id = _safe_int(row.get("lieu_tournage_id"))
@@ -437,6 +516,23 @@ async def _charger_isochrones(
 
         if calculated_at is not None:
             dates.append(calculated_at)
+
+        if minutes == 15:
+            aire = _aire_km2_geojson(row.get("geometry_geojson"))
+
+            if aire is not None and aire > 0:
+                aires_15min[mode].append(aire)
+
+                if mode == "driving-car":
+                    aires_lieux_15min_voiture.append({
+                        "lieu_id": lieu_id,
+                        "nom": row.get("lieu_nom"),
+                        "departement": row.get("lieu_departement"),
+                        "aire_km2": aire,
+                    })
+                    dep = row.get("lieu_departement")
+                    if dep:
+                        aires_par_departement[str(dep).strip()].append(aire)
 
     # Minutes réellement présentes dans la DB.
     minutes_set: set[int] = set()
@@ -515,11 +611,53 @@ async def _charger_isochrones(
         except Exception:
             derniere_date = None
 
+    # ── Ratio d'emprise spatiale voiture / marche à 15 min ──
+    # Moyenne des surfaces sur tous les lieux disposant des DEUX modes
+    # à 15 min (comparaison à territoire égal, pas de biais si un
+    # lieu n'a que la voiture calculée et un autre que la marche).
+    surface_moyenne_voiture_15 = (
+        round(sum(aires_15min["driving-car"]) / len(aires_15min["driving-car"]), 2)
+        if aires_15min["driving-car"] else None
+    )
+    surface_moyenne_marche_15 = (
+        round(sum(aires_15min["foot-walking"]) / len(aires_15min["foot-walking"]), 2)
+        if aires_15min["foot-walking"] else None
+    )
+    ratio_surface_voiture_marche_15 = (
+        round(surface_moyenne_voiture_15 / surface_moyenne_marche_15, 1)
+        if surface_moyenne_voiture_15 and surface_moyenne_marche_15
+        else None
+    )
+
+    # Lieu le plus enclavé (grande surface à parcourir en voiture pour
+    # 15 min = réseau routier lâche) et le plus dense (petite surface
+    # = réseau routier serré, contexte urbain).
+    lieu_plus_enclave = None
+    lieu_plus_dense = None
+    if aires_lieux_15min_voiture:
+        lieu_plus_enclave = max(aires_lieux_15min_voiture, key=lambda l: l["aire_km2"])
+        lieu_plus_dense = min(aires_lieux_15min_voiture, key=lambda l: l["aire_km2"])
+
+    surface_voiture_15_par_departement = [
+        {
+            "departement": dep,
+            "surface_moyenne_15min_km2": round(sum(aires) / len(aires), 1),
+            "nb_lieux_calcules": len(aires),
+        }
+        for dep, aires in aires_par_departement.items()
+    ]
+    surface_voiture_15_par_departement.sort(key=lambda d: d["surface_moyenne_15min_km2"], reverse=True)
+
     return {
         "couverture_pct": couverture_pct,
         "minutes_disponibles": minutes_disponibles,
         "couverture_par_minutes": couverture_par_minutes,
-        "ratio_surface_voiture_marche_15": None,
+        "ratio_surface_voiture_marche_15": ratio_surface_voiture_marche_15,
+        "surface_moyenne_voiture_15_km2": surface_moyenne_voiture_15,
+        "surface_moyenne_marche_15_km2": surface_moyenne_marche_15,
+        "surface_voiture_15_par_departement": surface_voiture_15_par_departement,
+        "lieu_plus_enclave": lieu_plus_enclave,
+        "lieu_plus_dense": lieu_plus_dense,
         "derniere_date": _format_date(derniere_date),
     }
 
@@ -584,6 +722,12 @@ async def construire_indicateurs_cinetourisme(
         if row.get("id") is not None
     ]
 
+    lieu_departement_map: dict[int, str | None] = {
+        int(row["id"]): (str(row["departement"]).strip() if row.get("departement") else None)
+        for row in lieux
+        if row.get("id") is not None
+    }
+
     # ------------------------------------------------------------------
     # Si aucun lieu
     # ------------------------------------------------------------------
@@ -599,6 +743,8 @@ async def construire_indicateurs_cinetourisme(
             },
 
             "departements": [],
+
+            "priorisation_departementale": [],
 
             "accessibilite": {
                 "pret_15_pct": None,
@@ -756,12 +902,23 @@ async def construire_indicateurs_cinetourisme(
 
     amenity_lieux = 0
 
+    # Mêmes compteurs mais ventilés par département — permet à un élu
+    # de voir la situation de SON territoire, pas seulement la moyenne
+    # régionale qui peut masquer de fortes disparités locales.
+    dep_equip_acc: dict[str, dict[str, list]] = defaultdict(
+        lambda: {"heb": [], "rest": [], "heb_presence": 0, "rest_presence": 0, "total": 0}
+    )
+
     for lieu_id in lieu_ids:
 
         data = equipements.get(lieu_id, {})
 
         hebergement = data.get("hebergement")
         restaurant = data.get("restaurant")
+
+        dep = lieu_departement_map.get(lieu_id)
+        if dep:
+            dep_equip_acc[dep]["total"] += 1
 
         if hebergement is not None or restaurant is not None:
             amenity_lieux += 1
@@ -783,6 +940,11 @@ async def construire_indicateurs_cinetourisme(
 
                 if nombre > 0:
                     hebergement_presence += 1
+
+                if dep:
+                    dep_equip_acc[dep]["heb"].append(float(nombre))
+                    if nombre > 0:
+                        dep_equip_acc[dep]["heb_presence"] += 1
 
             nombre_500 = _safe_int(
                 hebergement.get("nombre_500m")
@@ -817,6 +979,11 @@ async def construire_indicateurs_cinetourisme(
 
                 if nombre > 0:
                     restaurant_presence += 1
+
+                if dep:
+                    dep_equip_acc[dep]["rest"].append(float(nombre))
+                    if nombre > 0:
+                        dep_equip_acc[dep]["rest_presence"] += 1
 
             nombre_500 = _safe_int(
                 restaurant.get("nombre_500m")
@@ -882,6 +1049,10 @@ async def construire_indicateurs_cinetourisme(
     lieux_15 = 0
     lieux_30 = 0
 
+    dep_access_acc: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"total": 0, "avec_route": 0, "lieux_15": 0, "lieux_30": 0}
+    )
+
     # IMPORTANT :
     #
     # On ne considère pas "absence de durée" comme "plus de 45 min".
@@ -891,6 +1062,10 @@ async def construire_indicateurs_cinetourisme(
     # Ici on compte uniquement les durées réelles disponibles.
 
     for lieu_id in lieu_ids:
+
+        dep = lieu_departement_map.get(lieu_id)
+        if dep:
+            dep_access_acc[dep]["total"] += 1
 
         route = durees_routieres.get(lieu_id)
 
@@ -909,6 +1084,8 @@ async def construire_indicateurs_cinetourisme(
             continue
 
         lieux_avec_route += 1
+        if dep:
+            dep_access_acc[dep]["avec_route"] += 1
 
         # Pour les indicateurs d'accès à un lieu,
         # on utilise une durée réelle voiture OU marche.
@@ -930,9 +1107,13 @@ async def construire_indicateurs_cinetourisme(
 
         if duree_min <= 15 * 60:
             lieux_15 += 1
+            if dep:
+                dep_access_acc[dep]["lieux_15"] += 1
 
         if duree_min <= 30 * 60:
             lieux_30 += 1
+            if dep:
+                dep_access_acc[dep]["lieux_30"] += 1
 
     route_coverage_pct = _pct(
         lieux_avec_route,
@@ -971,6 +1152,123 @@ async def construire_indicateurs_cinetourisme(
         "isoles_45_pct": isoles_45_pct,
         "route_coverage_pct": route_coverage_pct,
     }
+
+    # ------------------------------------------------------------------
+    # 8bis. Enrichissement départemental — équipement, accessibilité,
+    # enclavement et score de priorité d'investissement.
+    #
+    # C'est le cœur de l'outil d'aide à la décision : un élu doit
+    # pouvoir situer SON département, pas seulement lire une moyenne
+    # régionale qui peut masquer de fortes disparités locales.
+    # ------------------------------------------------------------------
+
+    dep_popularite: dict[str, list[float]] = defaultdict(list)
+    for row in lieux:
+        dep = row.get("departement")
+        pop = _safe_float(row.get("popularite"))
+        if dep and pop is not None:
+            dep_popularite[str(dep).strip()].append(pop)
+
+    surface_par_dep = {
+        item["departement"]: item["surface_moyenne_15min_km2"]
+        for item in isochrones.get("surface_voiture_15_par_departement", [])
+    }
+
+    # Références régionales, utilisées comme repère de benchmark pour
+    # chaque département (au-dessus / en-dessous de la moyenne).
+    ref_moy_hebergement = equipements_result.get("moy_hebergement")
+    ref_surface_15 = isochrones.get("surface_moyenne_voiture_15_km2")
+
+    toutes_popularites_dep = [p for valeurs in dep_popularite.values() for p in valeurs]
+    max_popularite_globale = max(toutes_popularites_dep) if toutes_popularites_dep else None
+    max_surface_15_globale = max(surface_par_dep.values()) if surface_par_dep else None
+
+    for dep_item in departements_result:
+        dep = dep_item["departement"]
+        eq = dep_equip_acc.get(dep, {})
+        acc = dep_access_acc.get(
+            dep, {"total": 0, "avec_route": 0, "lieux_15": 0, "lieux_30": 0}
+        )
+
+        moy_heb = round(sum(eq.get("heb", [])) / len(eq["heb"]), 2) if eq.get("heb") else None
+        moy_rest = round(sum(eq.get("rest", [])) / len(eq["rest"]), 2) if eq.get("rest") else None
+
+        heb_presence_pct = _pct(eq.get("heb_presence", 0), eq.get("total") or 0) if eq.get("total") else None
+        rest_presence_pct = _pct(eq.get("rest_presence", 0), eq.get("total") or 0) if eq.get("total") else None
+
+        # Même règle de rigueur que le calcul régional : pret_15/30 par
+        # département n'est publié que si TOUS ses lieux ont une durée
+        # réelle disponible — sinon NULL plutôt qu'un chiffre partiel
+        # présenté comme une vérité territoriale complète.
+        if acc["total"] > 0 and acc["avec_route"] == acc["total"]:
+            dep_pret_15_pct = _pct(acc["lieux_15"], acc["total"])
+            dep_pret_30_pct = _pct(acc["lieux_30"], acc["total"])
+        else:
+            dep_pret_15_pct = None
+            dep_pret_30_pct = None
+
+        surface_15 = surface_par_dep.get(dep)
+
+        pop_list = dep_popularite.get(dep, [])
+        popularite_moyenne = round(sum(pop_list) / len(pop_list), 1) if pop_list else None
+
+        # ── Score de priorité d'investissement (0-100) ──
+        # Moyenne de 3 composantes normalisées, calculée uniquement sur
+        # celles réellement disponibles pour ce département (on ne
+        # pénalise pas un département simplement parce qu'une donnée
+        # n'a pas encore été précalculée pour lui) :
+        #   - attractivité cinématographique (popularité moyenne / max régional)
+        #   - retard d'équipement touristique (100 - taux de présence hébergement+restaurant)
+        #   - enclavement routier (surface 15 min du département / surface max régionale)
+        composantes = []
+
+        if popularite_moyenne is not None and max_popularite_globale:
+            composantes.append(min(100.0, popularite_moyenne / max_popularite_globale * 100))
+
+        if heb_presence_pct is not None and rest_presence_pct is not None:
+            equipement_moyen_pct = (heb_presence_pct + rest_presence_pct) / 2
+            composantes.append(100 - equipement_moyen_pct)  # retard d'équipement = priorité
+
+        if surface_15 is not None and max_surface_15_globale:
+            composantes.append(min(100.0, surface_15 / max_surface_15_globale * 100))
+
+        score_investissement = round(sum(composantes) / len(composantes), 1) if composantes else None
+
+        dep_item.update({
+            "moy_hebergement": moy_heb,
+            "moy_restaurant": moy_rest,
+            "hebergement_presence_pct": heb_presence_pct,
+            "restaurant_presence_pct": rest_presence_pct,
+            "pret_15_pct": dep_pret_15_pct,
+            "pret_30_pct": dep_pret_30_pct,
+            "surface_moyenne_15min_km2": surface_15,
+            "popularite_moyenne": popularite_moyenne,
+            "score_investissement": score_investissement,
+            "benchmark_hebergement": (
+                "au-dessus de la moyenne régionale"
+                if (moy_heb is not None and ref_moy_hebergement is not None and moy_heb > ref_moy_hebergement)
+                else "en-dessous de la moyenne régionale"
+                if (moy_heb is not None and ref_moy_hebergement is not None and moy_heb < ref_moy_hebergement)
+                else "dans la moyenne régionale"
+                if (moy_heb is not None and ref_moy_hebergement is not None)
+                else "non comparable"
+            ),
+            "benchmark_enclavement": (
+                "plus enclavé que la moyenne régionale"
+                if (surface_15 is not None and ref_surface_15 is not None and surface_15 > ref_surface_15)
+                else "moins enclavé que la moyenne régionale"
+                if (surface_15 is not None and ref_surface_15 is not None and surface_15 < ref_surface_15)
+                else "dans la moyenne régionale"
+                if (surface_15 is not None and ref_surface_15 is not None)
+                else "non comparable"
+            ),
+        })
+
+    priorisation_departementale = sorted(
+        [d for d in departements_result if d.get("score_investissement") is not None],
+        key=lambda d: d["score_investissement"],
+        reverse=True,
+    )
 
     # ------------------------------------------------------------------
     # 9. Filmographie notable
@@ -1447,6 +1745,8 @@ async def construire_indicateurs_cinetourisme(
         "totaux": totaux,
 
         "departements": departements_result,
+
+        "priorisation_departementale": priorisation_departementale,
 
         "accessibilite": accessibilite,
 

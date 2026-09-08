@@ -2,141 +2,249 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Analyse territoriale — Pelify Lieux de tournage</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Observatoire du ciné-tourisme — Pelify</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <meta
-      name="description"
-      content="Analyse territoriale du potentiel ciné-touristique en Occitanie : équipement réel, comparaison chiffrée entre départements, aide à la décision pour les acteurs publics."
-    />
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/analyse.css" />
   </head>
   <body class="page-analyse">
     <header class="analyse-header">
-      <a href="/" class="ssr-logo">← Lieux de tournage</a>
-      <a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
-      <h1>Analyse territoriale</h1>
-      <p class="sous-titre">
-        Outil d'aide à la décision pour les acteurs publics de l'aménagement
-        touristique : équipement réel autour des lieux de tournage, comparé
-        département par département, avec une lecture objective des chiffres.
-      </p>
+      <div class="header-top">
+        <a href="/" class="ssr-logo">← Lieux de tournage</a
+        ><a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
+      </div>
+      <div class="hero-head">
+        <div>
+          <span class="eyebrow">OBSERVATOIRE TERRITORIAL · OCCITANIE</span>
+          <h1>État du ciné-tourisme</h1>
+          <p class="sous-titre">
+            Empreinte des tournages, accessibilité touristique et territoires où
+            l’investissement peut créer le plus de valeur.
+          </p>
+        </div>
+        <div class="hero-score">
+          <span>INDICE D’OPPORTUNITÉ</span><strong id="score-regional">—</strong
+          ><small>/100</small>
+        </div>
+      </div>
+      <div class="analyse-toolbar">
+        <span id="etat-donnees">Chargement…</span><span id="date-maj"></span
+        ><button id="btn-refresh">↻ Actualiser</button>
+      </div>
     </header>
-
     <main id="analyse-contenu">
-      <section id="totaux-globaux" class="analyse-section">
-        <div id="totaux-cartes"><!-- rempli par analyse.js --></div>
-      </section>
-
       <section class="analyse-section">
-        <div id="synthese-comparative" class="carte-synthese">
-          <!-- rempli par analyse.js -->
+        <div class="diagnostic-card">
+          <span class="eyebrow">DIAGNOSTIC AUTOMATIQUE</span>
+          <h2 id="diagnostic-titre">Analyse en cours…</h2>
+          <p id="diagnostic-texte"></p>
+          <div id="diagnostic-tags" class="diagnostic-tags"></div>
         </div>
       </section>
-
-      <!-- ═══ VUE D'ENSEMBLE EN PREMIER : l'internaute comprend le sujet
-       avant d'aller consulter le détail département par département ═══ -->
       <section class="analyse-section">
-        <h2>Vue d'ensemble — nombre de lieux de tournage par département</h2>
-        <canvas id="graphe-lieux" height="100"></canvas>
-        <p class="interpretation-graphe" id="interpretation-lieux">
-          <!-- rempli par analyse.js -->
-        </p>
+        <div id="totaux-cartes" class="kpi-grid"></div>
       </section>
 
       <section class="analyse-section">
-        <h2>
-          Vue d'ensemble — équipement moyen par département (hébergements vs
-          restaurants)
-        </h2>
-        <canvas id="graphe-equipement" height="100"></canvas>
-        <p class="interpretation-graphe" id="interpretation-equipement">
-          <!-- rempli par analyse.js -->
-        </p>
-        <p class="analyse-note">
-          <b>Comment cette moyenne est calculée :</b> pour chaque lieu de
-          tournage du département, on compte le nombre réel d'hébergements dans
-          un rayon de 15 km et de restaurants dans un rayon de 8 km (données
-          OpenStreetMap), puis on fait la moyenne de ce chiffre sur tous les
-          lieux du département. Un lieu pas encore traité par le calcul est
-          simplement exclu de la moyenne (pas compté comme 0).
-        </p>
-      </section>
-
-      <section class="analyse-section">
-        <h2>Films et séries les plus reconnus</h2>
-        <p class="analyse-note">
-          Classés par popularité TMDB — un indicateur de notoriété auprès du
-          grand public, utile pour prioriser quels tournages mettre en avant
-          dans une communication touristique.
-        </p>
-        <div id="films-notables-cartes" class="cartes-films-notables">
-          <!-- rempli par analyse.js -->
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">01 · STRUCTURE</span>
+            <h2>Où se concentre l’activité cinématographique ?</h2>
+          </div>
+          <span class="section-number">01</span>
+        </div>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Répartition des lieux par département</h3>
+            <div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div>
+            <p id="interpretation-lieux" class="interpretation-graphe"></p>
+          </article>
+          <article class="panel">
+            <h3>Concentration territoriale</h3>
+            <div class="concentration-head">
+              <div class="meter-ring">
+                <strong id="hhi-value">—</strong><span>HHI</span>
+              </div>
+              <div>
+                <strong id="top3-value">—</strong>
+                <p>des lieux dans les 3 premiers départements</p>
+                <small id="hhi-label"></small>
+              </div>
+            </div>
+            <div class="chart-wrap small">
+              <canvas id="graphe-concentration"></canvas>
+            </div>
+          </article>
         </div>
       </section>
 
       <section class="analyse-section">
-        <h2>Accessibilité réelle des lieux les plus connus</h2>
-        <p class="analyse-note">
-          Pour chaque film/série populaire, temps réel en voiture jusqu'à
-          l'hébergement et au restaurant les plus proches (mêmes données que
-          ci-dessus, au niveau du lieu précis cette fois) — l'objectif :
-          identifier les lieux "prêts à valoriser" et ceux qui nécessitent un
-          aménagement avant toute promotion touristique.
-          <br /><b>NB :</b> cette analyse ne porte que sur les lieux déjà
-          traités par le précalcul des distances — elle s'enrichira au fur et à
-          mesure, comme le reste du site dépend de la complétude des données
-          Wikidata/Overpass.
-        </p>
-        <h3 class="sous-section-titre">🇫🇷 Films et séries français</h3>
-        <div id="accessibilite-francais" class="cartes-accessibilite">
-          <!-- rempli par analyse.js -->
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">02 · CAPACITÉ TOURISTIQUE</span>
+            <h2>Les lieux sont-ils prêts à être valorisés ?</h2>
+          </div>
+          <span class="section-number">02</span>
         </div>
-        <h3 class="sous-section-titre">🌍 Autres nationalités</h3>
-        <div id="accessibilite-autres" class="cartes-accessibilite">
-          <!-- rempli par analyse.js -->
+        <div class="dashboard-grid three">
+          <article class="panel radial-panel">
+            <canvas id="graphe-pret15"></canvas>
+            <h3>Prêts à 15 min</h3>
+            <p>Hébergement + restaurant accessibles en voiture.</p>
+          </article>
+          <article class="panel radial-panel">
+            <canvas id="graphe-pret30"></canvas>
+            <h3>Prêts à 30 min</h3>
+            <p>Zone touristique élargie.</p>
+          </article>
+          <article class="panel radial-panel">
+            <canvas id="graphe-isoles"></canvas>
+            <h3>Lieux isolés</h3>
+            <p>Aucun hébergement accessible en moins de 45 min.</p>
+          </article>
+        </div>
+        <article class="panel">
+          <h3>Équipement moyen autour des lieux</h3>
+          <div class="chart-wrap"><canvas id="graphe-equipement"></canvas></div>
+          <p id="interpretation-equipement" class="interpretation-graphe"></p>
+        </article>
+      </section>
+
+      <section class="analyse-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">03 · MOBILITÉ</span>
+            <h2>Quel rôle joue la mobilité ?</h2>
+          </div>
+          <span class="section-number">03</span>
+        </div>
+        <div class="dashboard-grid two">
+          <article class="panel mobility-panel">
+            <span class="eyebrow">EMPRISE SPATIALE</span>
+            <div class="mobility-kpi">
+              <strong id="ratio-mobilite">—</strong><span>×</span>
+            </div>
+            <h3>Surface voiture / marche à 15 min</h3>
+            <p>
+              Comparaison des surfaces d’isochrones IGN, pas une mesure de
+              population accessible.
+            </p>
+          </article>
+          <article class="panel">
+            <h3>Couverture des isochrones pré-calculés</h3>
+            <div class="chart-wrap small">
+              <canvas id="graphe-isochrones"></canvas>
+            </div>
+            <p id="fraicheur-isochrones" class="interpretation-graphe"></p>
+          </article>
         </div>
       </section>
 
       <section class="analyse-section">
-        <h2>Détail par département</h2>
-        <div class="analyse-note">
-          "Lieux isolés" = aucun hébergement recensé dans le rayon de 15 km — un
-          signal direct de besoin d'aménagement avant toute valorisation
-          touristique.
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">04 · OPPORTUNITÉS</span>
+            <h2>Où concentrer les efforts ?</h2>
+          </div>
+          <span class="section-number">04</span>
         </div>
-        <div id="cartes-departements" class="cartes-departements">
-          <!-- rempli par analyse.js -->
-        </div>
+        <article class="panel">
+          <div class="chart-wrap tall">
+            <canvas id="graphe-opportunites"></canvas>
+          </div>
+          <p class="analyse-note">
+            Score de priorisation transparent : présence cinématographique +
+            préparation touristique + popularité.
+          </p>
+        </article>
+        <div id="liste-opportunites" class="insight-grid"></div>
       </section>
 
       <section class="analyse-section">
-        <h2>Complétude des données</h2>
-        <div id="completude-contenu"><!-- rempli par analyse.js --></div>
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">05 · FRAGILITÉS</span>
+            <h2>Quels territoires doivent être renforcés ?</h2>
+          </div>
+          <span class="section-number">05</span>
+        </div>
+        <article class="panel">
+          <div class="chart-wrap tall">
+            <canvas id="graphe-vigilances"></canvas>
+          </div>
+          <p class="analyse-note">
+            Un score élevé signale un décalage entre présence des tournages et
+            accessibilité touristique observée.
+          </p>
+        </article>
+        <div id="liste-vigilances" class="insight-grid"></div>
       </section>
 
       <section class="analyse-section">
-        <h2>Carte interactive</h2>
-        <p>
-          La choroplèthe par département (couleur selon le nombre de lieux) et
-          la carte de chaleur (densité réelle des points) sont disponibles
-          directement sur la <a href="/">carte principale</a>, boutons en bas à
-          droite.
-        </p>
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">06 · POTENTIEL</span>
+            <h2>Popularité cinématographique × préparation touristique</h2>
+          </div>
+          <span class="section-number">06</span>
+        </div>
+        <article class="panel">
+          <div class="chart-wrap scatter">
+            <canvas id="graphe-potentiel"></canvas>
+          </div>
+          <p class="analyse-note">
+            Chaque point représente un lieu. Popularité élevée + faible
+            préparation = opportunité de structuration potentielle.
+          </p>
+        </article>
+        <div id="top-lieux" class="insight-grid"></div>
+      </section>
+
+      <section class="analyse-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">07 · TERRITOIRES</span>
+            <h2>Tableau de bord départemental</h2>
+          </div>
+          <span class="section-number">07</span>
+        </div>
+        <div id="cartes-departements" class="cartes-departements"></div>
+      </section>
+
+      <section class="analyse-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">08 · QUALITÉ</span>
+            <h2>Qualité et couverture de l’observation</h2>
+          </div>
+          <span class="section-number">08</span>
+        </div>
+        <div id="completude-contenu" class="kpi-grid"></div>
+        <div id="methodologie" class="methodologie"></div>
+      </section>
+
+      <section class="analyse-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">FILMOGRAPHIE</span>
+            <h2>Œuvres les plus reconnues</h2>
+          </div>
+        </div>
+        <article class="panel">
+          <div id="films-notables-cartes" class="cartes-films-notables"></div>
+        </article>
       </section>
     </main>
-
     <footer class="liens-legaux" style="padding: 20px">
       <a href="/mentions-legales.html">Mentions légales</a> ·
       <a href="/cgu.html">CGU</a>
     </footer>
-
     <script src="/vendor/chartjs/chart.umd.js"></script>
     <script src="/i18n.js" defer></script>
     <script src="/analyse.js" defer></script>

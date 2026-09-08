@@ -1,223 +1,24 @@
-// ═══════════════════════════════════════════════════════════════
-// Pelify Lieux de tournage — analyse.js — Page d'analyse territoriale
-// ═══════════════════════════════════════════════════════════════
-
-async function charger() {
-  const [statsRes, analyseRes, accessibiliteRes] = await Promise.all([
-    fetch("/api/stats"),
-    fetch("/api/analyse"),
-    fetch("/api/analyse/accessibilite"),
-  ]);
-  const stats = await statsRes.json();
-  const analyse = await analyseRes.json();
-  const accessibilite = await accessibiliteRes.json();
-
-  // Chaque section est indépendante : si une échoue, les suivantes
-  // s'affichent quand même (avant, une seule erreur bloquait toute
-  // la page silencieusement).
-  const etapes = [
-    () => afficherTotaux(stats.totaux),
-    () => afficherSyntheseComparative(analyse.synthese_comparative),
-    () => afficherFilmsNotables(analyse.films_notables),
-    () => afficherAccessibilite("accessibilite-francais", accessibilite?.francais),
-    () => afficherAccessibilite("accessibilite-autres", accessibilite?.autres),
-    () => afficherCartesDepartements(analyse.par_departement),
-    () => afficherGrapheLieux(analyse.par_departement),
-    () => afficherGrapheEquipement(analyse.par_departement),
-    () => afficherCompletude(analyse.completude),
-  ];
-  etapes.forEach((etape, i) => {
-    try { etape(); } catch (e) { console.error(`Section ${i} en échec:`, e); }
-  });
-}
-
-const LABELS_CATEGORIE_ANALYSE = {
-  hebergement: "🏨 Hébergement", restaurant: "🍽️ Restaurant", activite: "🎡 Activité",
-  parking: "🅿️ Parking", office_tourisme: "ℹ️ Office de tourisme",
-  gare: "🚉 Gare", aeroport: "✈️ Aéroport", aerodrome: "🛩️ Aérodrome",
-};
-const COULEUR_ETIQUETTE = { "bien desservi": "#00ffcc", "accessibilité modérée": "#ffd700", "isolé": "#ff6b6b", "donnée manquante": "#6b7280" };
-
-function afficherAccessibilite(idConteneur, entrees) {
-  const conteneur = document.getElementById(idConteneur);
-  if (!entrees || !entrees.length) {
-    conteneur.innerHTML = `<p class="analyse-note">Pas encore de données d'accessibilité pour cette catégorie.</p>`;
-    return;
-  }
-
-  conteneur.innerHTML = entrees.map((e) => {
-    const blocsCategories = Object.entries(e.categories).map(([cle, cat]) => {
-      const couleur = COULEUR_ETIQUETTE[cat.etiquette] || "#6b7280";
-      const rayonKm = cat.rayon_metres ? (cat.rayon_metres / 1000).toFixed(0) : "?";
-      const listeTop3 = cat.top_plus_proches.map((t, i) => `
-        <li>${i + 1}. ${t.nom} — ${t.duree_minutes} min (${(t.distance_metres / 1000).toFixed(1)} km)${t.capacite ? ` · capacité : ${t.capacite}` : ""}</li>
-      `).join("");
-
-      return `
-        <div class="indicateur-accessibilite" style="border-color:${couleur}">
-          <b>${LABELS_CATEGORIE_ANALYSE[cle] || cle} :</b>
-          <span class="rayon-etude">(recherché dans un rayon de ${rayonKm} km autour de chaque lieu de tournage)</span>
-          <div class="total-rayon">${cat.nombre_total_rayon} trouvé${cat.nombre_total_rayon > 1 ? "s" : ""} au total dans ce rayon</div>
-          ${listeTop3 ? `<ol class="top3-accessibilite">${listeTop3}</ol>` : "<p>Aucune donnée de trajet disponible pour l'instant.</p>"}
-          <span class="etiquette-accessibilite" style="color:${couleur}">${cat.etiquette}</span>
-          <p class="action-accessibilite">→ ${cat.action}</p>
-        </div>
-      `;
-    }).join("");
-
-    return `
-      <div class="carte-accessibilite">
-        <div class="entete-accessibilite">
-          <img src="${e.poster_url || '/icons/placeholder-poster.png'}" alt="${e.titre}">
-          <div>
-            <div class="titre-accessibilite">${e.titre}</div>
-            <div class="meta-accessibilite">${e.annee || "?"} · ${e.nombre_lieux} lieu${e.nombre_lieux > 1 ? "x" : ""} de tournage
-              ${e.nombre_lieux > 1 ? `<span class="note-multi-lieux">(analyse : meilleure option parmi les ${e.nombre_lieux} lieux)</span>` : ""}
-            </div>
-            <div class="score-equipement">Équipement global : <b>${e.score_equipement}</b> catégories bien desservies</div>
-            <div class="risque-surfrequentation risque-${e.risque_surfrequentation === 'élevé' ? 'eleve' : e.risque_surfrequentation === 'modéré' ? 'modere' : 'faible'}">
-              ⚠️ Risque de sur-fréquentation : <b>${e.risque_surfrequentation}</b>
-              <p class="action-accessibilite">→ ${e.action_surfrequentation}</p>
-            </div>
-          </div>
-        </div>
-        <details class="detail-categories">
-          <summary>Voir le détail par catégorie de commodité</summary>
-          ${blocsCategories}
-        </details>
-      </div>
-    `;
-  }).join("");
-}
-
-function afficherTotaux(totaux) {
-  document.getElementById("totaux-cartes").innerHTML = `
-    <div class="totaux-carte"><div class="valeur">${totaux.nb_films}</div><div class="label">Films/séries publiés</div></div>
-    <div class="totaux-carte"><div class="valeur">${totaux.nb_lieux}</div><div class="label">Lieux de tournage</div></div>
-    <div class="totaux-carte"><div class="valeur">${totaux.nb_en_attente}</div><div class="label">En attente de validation</div></div>
-  `;
-}
-
-function afficherSyntheseComparative(texte) {
-  const conteneur = document.getElementById("synthese-comparative");
-  if (!texte) { conteneur.innerHTML = ""; return; }
-  conteneur.innerHTML = `
-    <p class="synthese-titre">📊 Ce que montrent les chiffres</p>
-    <p class="synthese-texte">${texte}</p>
-  `;
-}
-
-function afficherFilmsNotables(films) {
-  const conteneur = document.getElementById("films-notables-cartes");
-  if (!films || !films.length) { conteneur.innerHTML = "<p class=\"analyse-note\">Pas encore assez de données de popularité.</p>"; return; }
-
-  conteneur.innerHTML = films.map((f, i) => `
-    <div class="carte-film-notable">
-      <div class="rang-notable">#${i + 1}</div>
-      <img src="${f.poster_url || '/icons/placeholder-poster.png'}" alt="${f.titre}" loading="lazy">
-      <div class="infos-notable">
-        <div class="titre-notable">${f.titre}</div>
-        <div class="meta-notable">${f.annee || "?"} · ${f.media_type === "movie" ? "Film" : f.media_type === "tv" ? "Série" : "Animé"}</div>
-      </div>
-    </div>
-  `).join("");
-}
-
-function afficherCartesDepartements(parDepartement) {
-  const conteneur = document.getElementById("cartes-departements");
-  conteneur.innerHTML = parDepartement.map((d) => `
-    <div class="carte-departement">
-      <div class="entete-departement">
-        <h3>${d.departement}</h3>
-        <span class="part-departement">${d.part_pourcentage}% du total régional</span>
-      </div>
-      <div class="chiffres-departement">
-        <div><span class="chiffre">${d.nb_films}</span><span class="libelle-chiffre">films/séries</span></div>
-        <div><span class="chiffre">${d.nb_lieux}</span><span class="libelle-chiffre">lieux</span></div>
-        <div><span class="chiffre">${d.moy_hebergement ?? "—"}</span><span class="libelle-chiffre">hébergements (moy.)</span></div>
-        <div><span class="chiffre">${d.moy_restaurant ?? "—"}</span><span class="libelle-chiffre">restaurants (moy.)</span></div>
-        <div><span class="chiffre">${d.lieux_sans_hebergement_5km ?? 0}</span><span class="libelle-chiffre">lieux isolés</span></div>
-      </div>
-      <p class="interpretation-departement">${d.recommandation}</p>
-    </div>
-  `).join("");
-}
-
-function afficherGrapheLieux(parDepartement) {
-  const ctx = document.getElementById("graphe-lieux");
-  new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: parDepartement.map((d) => d.departement),
-      datasets: [{
-        label: "Lieux de tournage",
-        data: parDepartement.map((d) => d.nb_lieux),
-        backgroundColor: "#ff007f",
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
-        y: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
-      },
-    },
-  });
-
-  const premier = parDepartement[0];
-  const dernier = parDepartement[parDepartement.length - 1];
-  document.getElementById("interpretation-lieux").textContent = premier && dernier
-    ? `Lecture objective : ${premier.departement} arrive en tête avec ${premier.nb_lieux} lieux recensés (${premier.part_pourcentage}% du total), ${dernier.departement} ferme la marche avec ${dernier.nb_lieux} (${dernier.part_pourcentage}%). Cet écart reflète la donnée actuellement en base, pas nécessairement le potentiel réel de chaque territoire — certains départements sont probablement sous-représentés faute de données Wikidata complètes.`
-    : "";
-}
-
-function afficherGrapheEquipement(parDepartement) {
-  const ctx = document.getElementById("graphe-equipement");
-  new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: parDepartement.map((d) => d.departement),
-      datasets: [
-        {
-          label: "Hébergements (moy.)",
-          data: parDepartement.map((d) => d.moy_hebergement || 0),
-          backgroundColor: "#00ffcc",
-        },
-        {
-          label: "Restaurants (moy.)",
-          data: parDepartement.map((d) => d.moy_restaurant || 0),
-          backgroundColor: "#ffd700",
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { labels: { color: "#dde4f0" } } },
-      scales: {
-        x: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
-        y: { ticks: { color: "#9a9ea8" }, grid: { color: "#2a2d35" } },
-      },
-    },
-  });
-
-  const mieuxEquipe = [...parDepartement].filter((d) => d.moy_hebergement != null)
-    .sort((a, b) => b.moy_hebergement - a.moy_hebergement)[0];
-  const moinsEquipe = [...parDepartement].filter((d) => d.moy_hebergement != null)
-    .sort((a, b) => a.moy_hebergement - b.moy_hebergement)[0];
-  document.getElementById("interpretation-equipement").textContent = mieuxEquipe && moinsEquipe
-    ? `Lecture objective : ${mieuxEquipe.departement} offre le plus d'hébergements à proximité de ses lieux de tournage (${mieuxEquipe.moy_hebergement} en moyenne), contre ${moinsEquipe.moy_hebergement} pour ${moinsEquipe.departement} — un département avec peu de lieux mais bien équipés (comme des zones urbaines) peut être plus facile à valoriser rapidement qu'un département avec beaucoup de lieux mal desservis.`
-    : "";
-}
-
-function afficherCompletude(c) {
-  document.getElementById("completude-contenu").innerHTML = `
-    <div class="totaux-carte"><div class="valeur">${c.brouillons}</div><div class="label">Films en brouillon</div></div>
-    <div class="totaux-carte"><div class="valeur">${c.sans_poster}</div><div class="label">Publiés sans affiche</div></div>
-    <div class="totaux-carte"><div class="valeur">${c.lieux_sans_photo}</div><div class="label">Lieux sans photo</div></div>
-  `;
-}
-
-document.addEventListener("DOMContentLoaded", charger);
+(() => {
+"use strict";
+const REFRESH_MS=5*60*1000, charts={};
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const num=(v,d=0)=>v==null||Number.isNaN(Number(v))?"—":Number(v).toLocaleString("fr-FR",{maximumFractionDigits:d});
+const pct=(v,d=0)=>`${num(v,d)} %`;
+function draw(id,c){if(charts[id])charts[id].destroy();const el=$(id);if(el&&window.Chart)charts[id]=new Chart(el,c);}
+const scales={x:{ticks:{color:"#9a9ea8"},grid:{color:"#2a2d35"}},y:{ticks:{color:"#9a9ea8"},grid:{color:"#2a2d35"},beginAtZero:true}};
+function radial(id,v,label){let x=Math.max(0,Math.min(100,Number(v)||0));draw(id,{type:"doughnut",data:{labels:[label,"Reste"],datasets:[{data:[x,100-x],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,cutout:"76%",plugins:{legend:{display:false}}}});}
+function kpis(d){let t=d.totaux||{},a=d.accessibilite||{};$("totaux-cartes").innerHTML=[["Films / séries",t.nb_films,"Œuvres publiées"],["Lieux",t.nb_lieux,"Lieux géolocalisés"],["Départements",t.nb_departements,"Territoires représentés"],["Prêts à 15 min",pct(a.pret_15_pct),"Hébergement + restaurant"],["Isolés >45 min",pct(a.isoles_45_pct),"Signal de fragilité"],["Couverture IGN",pct(d.isochrones?.couverture_pct),"Isochrones disponibles"]].map(x=>`<div class="kpi-card"><span>${x[0]}</span><strong>${x[1]}</strong><small>${x[2]}</small></div>`).join("");}
+function diagnostic(d){let deps=d.departements||[],f=(d.vigilances||[])[0];$("score-regional").textContent=num(d.scores?.opportunite_regionale);$("diagnostic-titre").textContent=deps[0]?`${esc(deps[0].departement)} concentre actuellement le plus de lieux recensés.`:"Diagnostic territorial disponible."; $("diagnostic-texte").textContent=`${num(d.totaux?.nb_lieux)} lieux sont observés dans ${num(d.totaux?.nb_departements)} départements. ${pct(d.accessibilite?.pret_15_pct)} présentent un environnement hébergement + restaurant accessible en 15 minutes en voiture.`+(f?` ${esc(f.departement)} présente le principal signal de vigilance.`:"");$("diagnostic-tags").innerHTML=[`Concentration : ${esc(d.scores?.concentration_label||"—")}`,`Préparation 30 min : ${pct(d.accessibilite?.pret_30_pct)}`,`Vigilance : ${esc(f?.departement||"—")}`].map(x=>`<span>${x}</span>`).join("");}
+function structure(d){let a=d.departements||[],labs=a.map(x=>x.departement);draw("graphe-lieux",{type:"bar",data:{labels:labs,datasets:[{label:"Lieux",data:a.map(x=>x.nb_lieux)}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false}},scales}});$("interpretation-lieux").textContent=a[0]?`${a[0].departement} arrive en tête avec ${num(a[0].nb_lieux)} lieux (${pct(a[0].part_pourcentage)}). Il s’agit de la base observée, pas d’une mesure exhaustive du potentiel.`:"";$("hhi-value").textContent=num(d.concentration?.hhi,1);$("top3-value").textContent=pct(d.concentration?.top3_pct);$("hhi-label").textContent=d.scores?.concentration_label||"";draw("graphe-concentration",{type:"line",data:{labels:labs,datasets:[{label:"Part cumulée",data:a.map(x=>x.part_cumulee_pct),fill:true,tension:.35}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{...scales,y:{...scales.y,max:100,ticks:{color:"#9a9ea8",callback:v=>v+"%"}}}}});}
+function access(d){let a=d.accessibilite||{},deps=d.departements||[];radial("graphe-pret15",a.pret_15_pct,"Prêts");radial("graphe-pret30",a.pret_30_pct,"Prêts");radial("graphe-isoles",a.isoles_45_pct,"Isolés");draw("graphe-equipement",{type:"bar",data:{labels:deps.map(x=>x.departement),datasets:[{label:"Hébergements moyens",data:deps.map(x=>x.moy_hebergement)},{label:"Restaurants moyens",data:deps.map(x=>x.moy_restaurant)}]},options:{responsive:true,maintainAspectRatio:false,scales}});let b=[...deps].sort((x,y)=>(y.pret_15_pct||0)-(x.pret_15_pct||0))[0];$("interpretation-equipement").textContent=b?`${b.departement} présente le meilleur taux de préparation à 15 minutes (${pct(b.pret_15_pct)}).`:"";}
+function iso(d){let i=d.isochrones||{},rows=i.couverture_par_minutes||[];$("ratio-mobilite").textContent=i.ratio_surface_voiture_marche_15!=null?num(i.ratio_surface_voiture_marche_15,1):"—";draw("graphe-isochrones",{type:"bar",data:{labels:rows.map(x=>x.minutes+" min"),datasets:[{label:"Voiture",data:rows.map(x=>x.voiture_pct)},{label:"Marche",data:rows.map(x=>x.pied_pct)}]},options:{responsive:true,maintainAspectRatio:false,scales:{...scales,y:{...scales.y,max:100,ticks:{color:"#9a9ea8",callback:v=>v+"%"}}}}});$("fraicheur-isochrones").textContent=i.derniere_date?`Dernier calcul connu : ${new Date(i.derniere_date).toLocaleString("fr-FR")}.`:"Date de calcul non disponible.";}
+function rankings(d){let o=d.opportunites||[],v=d.vigilances||[];draw("graphe-opportunites",{type:"bar",data:{labels:o.map(x=>x.departement),datasets:[{label:"Score",data:o.map(x=>x.score)}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false}},scales:{...scales,x:{...scales.x,max:100}}}});draw("graphe-vigilances",{type:"bar",data:{labels:v.map(x=>x.departement),datasets:[{label:"Score",data:v.map(x=>x.score)}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:"y",plugins:{legend:{display:false}},scales:{...scales,x:{...scales.x,max:100}}}});$("liste-opportunites").innerHTML=o.slice(0,5).map((x,i)=>`<article class="insight-card"><span class="rank">#${i+1}</span><h3>${esc(x.departement)}</h3><strong>${num(x.score)}/100</strong><p>${esc(x.interpretation)}</p></article>`).join("");$("liste-vigilances").innerHTML=v.slice(0,5).map((x,i)=>`<article class="insight-card warning"><span class="rank">#${i+1}</span><h3>${esc(x.departement)}</h3><strong>${num(x.score)}/100</strong><p>${esc(x.interpretation)}</p></article>`).join("");}
+function potential(d){let p=d.lieux_potentiel||[];draw("graphe-potentiel",{type:"scatter",data:{datasets:[{label:"Lieux",data:p.map(x=>({x:Number(x.preparation||0),y:Number(x.popularite||0)})),pointRadius:5}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{...scales.x,min:0,max:100,title:{display:true,text:"Préparation touristique (%)",color:"#dde4f0"}},y:{...scales.y,title:{display:true,text:"Popularité TMDB",color:"#dde4f0"}}}}});$("top-lieux").innerHTML=p.slice(0,6).map((x,i)=>`<article class="insight-card"><span class="rank">#${i+1}</span><h3>${esc(x.titre)}</h3><p>${esc(x.departement)}</p><div class="mini-metrics"><span>Popularité <b>${num(x.popularite,1)}</b></span><span>Préparation <b>${pct(x.preparation)}</b></span></div></article>`).join("");}
+function departments(d){$("cartes-departements").innerHTML=(d.departements||[]).map(x=>`<article class="carte-departement"><div class="dep-head"><h3>${esc(x.departement)}</h3><span>${pct(x.part_pourcentage)}</span></div><div class="dep-grid"><div><b>${num(x.nb_lieux)}</b><small>lieux</small></div><div><b>${num(x.nb_films)}</b><small>œuvres</small></div><div><b>${pct(x.pret_15_pct)}</b><small>prêts 15 min</small></div><div><b>${pct(x.pret_30_pct)}</b><small>prêts 30 min</small></div><div><b>${pct(x.isoles_45_pct)}</b><small>isolés</small></div><div><b>${num(x.popularite_moyenne,1)}</b><small>popularité</small></div></div><p>${esc(x.recommandation)}</p></article>`).join("");}
+function quality(d){let c=d.completude||{};$("completude-contenu").innerHTML=[["Coordonnées",pct(c.coordinates_pct)],["Équipements",pct(c.amenities_pct)],["Isochrones",pct(d.isochrones?.couverture_pct)],["Popularité",pct(c.popularite_pct)]].map(x=>`<div class="kpi-card"><span>${x[0]}</span><strong>${x[1]}</strong><small>Couverture observée</small></div>`).join("");$("methodologie").innerHTML=`<h3>Méthodologie</h3><p>${esc(d.methodologie?.texte||"Indicateurs calculés dynamiquement à partir des données publiées.")}</p><p><b>Important :</b> les isochrones mesurent une emprise spatiale de déplacement ; ils ne mesurent pas directement la population accessible.</p>`;}
+function films(d){$("films-notables-cartes").innerHTML=(d.films_notables||[]).map((f,i)=>`<article class="carte-film-notable"><div class="rang-notable">#${i+1}</div><img src="${esc(f.poster_url||"/icons/placeholder-poster.png")}" alt="${esc(f.titre)}" loading="lazy"><h3>${esc(f.titre)}</h3><small>${num(f.annee)} · ${f.media_type==="tv"?"Série":"Film"}</small></article>`).join("");}
+function render(d){kpis(d);diagnostic(d);structure(d);access(d);iso(d);rankings(d);potential(d);departments(d);quality(d);films(d);}
+async function load(){let s=$("etat-donnees");s.textContent="Actualisation…";try{let r=await fetch("/api/analyse/indicateurs?region=Occitanie",{cache:"no-store"});if(!r.ok)throw Error("endpoint indisponible");let d=await r.json();render(d);s.textContent="● Données synchronisées";$("date-maj").textContent="Mise à jour : "+new Date().toLocaleTimeString("fr-FR");}catch(e){console.error(e);s.textContent="⚠ Endpoint indicateurs indisponible";$("diagnostic-titre").textContent="Endpoint d’analyse à installer";$("diagnostic-texte").textContent="Installez analyse_indicateurs.py et ajoutez /api/analyse/indicateurs dans main.py.";}}
+document.addEventListener("DOMContentLoaded",()=>{load();$("btn-refresh")?.addEventListener("click",load);setInterval(load,REFRESH_MS);});
+})();

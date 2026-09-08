@@ -1,4 +1,3 @@
-
 (() => {
   "use strict";
 
@@ -7,923 +6,1261 @@
 
   const $ = (id) => document.getElementById(id);
 
-  const esc = (v) =>
-    String(v ?? "").replace(
+  // ------------------------------------------------------------
+  // UTILITAIRES
+  // ------------------------------------------------------------
+
+  const esc = (value) =>
+    String(value ?? "").replace(
       /[&<>"']/g,
-      (c) =>
+      (char) =>
         ({
           "&": "&amp;",
           "<": "&lt;",
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#039;",
-        })[c]
+        })[char]
     );
 
-  const num = (v, d = 0) => {
-    if (v == null || Number.isNaN(Number(v))) return "—";
+  const isNumber = (value) =>
+    value !== null &&
+    value !== undefined &&
+    Number.isFinite(Number(value));
 
-    return Number(v).toLocaleString("fr-FR", {
-      maximumFractionDigits: d,
+  const number = (value, decimals = 0) => {
+    if (!isNumber(value)) {
+      return "N/D";
+    }
+
+    return Number(value).toLocaleString("fr-FR", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     });
   };
 
-  const pct = (v, d = 0) => `${num(v, d)} %`;
-
-  function draw(id, config) {
-    const canvas = $(id);
-
-    if (!canvas || !window.Chart) return;
-
-    if (charts[id]) {
-      charts[id].destroy();
+  const pct = (value) => {
+    if (!isNumber(value)) {
+      return "—";
     }
 
-    charts[id] = new Chart(canvas, config);
-  }
-
-  const scales = {
-    x: {
-      ticks: {
-        color: "#9a9ea8",
-      },
-      grid: {
-        color: "#2a2d35",
-      },
-    },
-
-    y: {
-      ticks: {
-        color: "#9a9ea8",
-      },
-      grid: {
-        color: "#2a2d35",
-      },
-      beginAtZero: true,
-    },
+    return `${number(value, 1)} %`;
   };
 
-  function radial(id, value, label) {
-    const x = Math.max(
-      0,
-      Math.min(100, Number(value) || 0)
+  const km = (value) => {
+    if (!isNumber(value)) {
+      return "—";
+    }
+
+    return `${number(Number(value) / 1000, 2)} km`;
+  };
+
+  const metres = (value) => {
+    if (!isNumber(value)) {
+      return "—";
+    }
+
+    return `${number(value, 0)} m`;
+  };
+
+  const destroy = (id) => {
+    if (charts[id]) {
+      charts[id].destroy();
+      delete charts[id];
+    }
+  };
+
+  const canvas = (id) => {
+    const element = $(id);
+
+    if (!element) {
+      return null;
+    }
+
+    return element.getContext("2d");
+  };
+
+  const chart = (id, config) => {
+    const ctx = canvas(id);
+
+    if (!ctx || typeof Chart === "undefined") {
+      return;
+    }
+
+    destroy(id);
+
+    charts[id] = new Chart(ctx, config);
+  };
+
+  const updateText = (id, value) => {
+    const element = $(id);
+
+    if (element) {
+      element.textContent = value;
+    }
+  };
+
+  // ------------------------------------------------------------
+  // KPI PRINCIPAUX
+  // ------------------------------------------------------------
+
+  function updateKpis(data) {
+    const totals = data.totaux || {};
+    const access = data.accessibilite || {};
+    const iso = data.isochrones || {};
+
+    /*
+     * Les IDs ci-dessous correspondent aux KPI du tableau
+     * de bord. Plusieurs variantes sont supportées afin de
+     * rester compatible avec l'HTML existant.
+     */
+
+    updateText(
+      "kpi-films",
+      number(totals.films)
     );
 
-    draw(id, {
-      type: "doughnut",
+    updateText(
+      "films",
+      number(totals.films)
+    );
 
+    updateText(
+      "kpi-lieux",
+      number(totals.lieux)
+    );
+
+    updateText(
+      "lieux",
+      number(totals.lieux)
+    );
+
+    updateText(
+      "kpi-departements",
+      number(totals.departements)
+    );
+
+    updateText(
+      "departements",
+      number(totals.departements)
+    );
+
+    updateText(
+      "kpi-pret15",
+      pct(access.pret_15_pct)
+    );
+
+    updateText(
+      "pret15",
+      pct(access.pret_15_pct)
+    );
+
+    updateText(
+      "kpi-isoles45",
+      pct(access.isoles_45_pct)
+    );
+
+    updateText(
+      "isoles45",
+      pct(access.isoles_45_pct)
+    );
+
+    /*
+     * Ici 100 % signifie :
+     * tous les lieux disposent des isochrones calculées,
+     * et non pas que tous les lieux sont accessibles en
+     * 5 minutes.
+     */
+    updateText(
+      "kpi-couverture-ign",
+      pct(iso.couverture_pct)
+    );
+
+    updateText(
+      "couverture-ign",
+      pct(iso.couverture_pct)
+    );
+
+    updateText(
+      "couverture-isochrones",
+      pct(iso.couverture_pct)
+    );
+  }
+
+  // ------------------------------------------------------------
+  // STRUCTURE / CONCENTRATION TERRITORIALE
+  // ------------------------------------------------------------
+
+  function calculateTop3Share(departements) {
+    if (!Array.isArray(departements) || !departements.length) {
+      return null;
+    }
+
+    return departements
+      .slice(0, 3)
+      .reduce(
+        (total, dep) =>
+          total + Number(dep.part_pct || 0),
+        0
+      );
+  }
+
+  function structure(data) {
+    const deps = Array.isArray(data.departements)
+      ? data.departements
+      : [];
+
+    const top3 = calculateTop3Share(deps);
+
+    updateText(
+      "concentration-territoriale",
+      pct(top3)
+    );
+
+    updateText(
+      "concentration-top3",
+      pct(top3)
+    );
+
+    chart("graphe-lieux", {
+      type: "bar",
       data: {
-        labels: [label, "Reste"],
-
+        labels: deps.map(
+          (item) => item.departement
+        ),
         datasets: [
           {
-            data: [x, 100 - x],
-            borderWidth: 0,
+            label: "Lieux de tournage",
+            data: deps.map(
+              (item) => item.nb_lieux || 0
+            ),
           },
         ],
       },
-
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: "76%",
-
         plugins: {
           legend: {
             display: false,
           },
         },
+        scales: {
+          y: {
+            beginAtZero: true,
+          },
+        },
+      },
+    });
+
+    if (top3 !== null) {
+      chart("graphe-concentration", {
+        type: "doughnut",
+        data: {
+          labels: [
+            "Top 3 départements",
+            "Autres",
+          ],
+          datasets: [
+            {
+              data: [
+                top3,
+                Math.max(0, 100 - top3),
+              ],
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+        },
+      });
+    }
+  }
+
+  // ------------------------------------------------------------
+  // ÉQUIPEMENT TOURISTIQUE
+  // ------------------------------------------------------------
+
+  function access(data) {
+    const e = data.equipements || {};
+    const a = data.accessibilite || {};
+
+    updateText(
+      "hebergement-moyen",
+      km(e.moy_hebergement)
+    );
+
+    updateText(
+      "restaurant-moyen",
+      km(e.moy_restaurant)
+    );
+
+    updateText(
+      "hebergement-presence",
+      pct(e.hebergement_presence_pct)
+    );
+
+    updateText(
+      "restaurant-presence",
+      pct(e.restaurant_presence_pct)
+    );
+
+    updateText(
+      "hebergement-500m",
+      pct(e.hebergement_500m_pct)
+    );
+
+    updateText(
+      "restaurant-500m",
+      pct(e.restaurant_500m_pct)
+    );
+
+    const interpretation = $("interpretation-equipement");
+
+    if (interpretation) {
+      interpretation.textContent =
+        `Hébergement : ${pct(
+          e.hebergement_presence_pct
+        )} des lieux disposent d'au moins un hébergement observé. ` +
+        `Restaurant : ${pct(
+          e.restaurant_presence_pct
+        )}. ` +
+        `La distance moyenne du plus proche hébergement est de ${km(
+          e.moy_hebergement
+        )}, contre ${km(
+          e.moy_restaurant
+        )} pour le restaurant.`;
+    }
+
+    chart("graphe-equipement", {
+      type: "bar",
+      data: {
+        labels: [
+          "Hébergement présent",
+          "Restaurant présent",
+          "Hébergement ≤ 500 m",
+          "Restaurant ≤ 500 m",
+        ],
+        datasets: [
+          {
+            label: "Part des lieux",
+            data: [
+              e.hebergement_presence_pct ?? null,
+              e.restaurant_presence_pct ?? null,
+              e.hebergement_500m_pct ?? null,
+              e.restaurant_500m_pct ?? null,
+            ],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+          },
+        },
+      },
+    });
+
+    /*
+     * Les indicateurs 15 / 30 / 45 min restent N/D
+     * tant que les durées réelles de routage ne sont
+     * pas disponibles pour calculer ces seuils.
+     */
+
+    radial(
+      "graphe-pret15",
+      a.pret_15_pct,
+      "Prêts à 15 min"
+    );
+
+    radial(
+      "graphe-pret30",
+      a.pret_30_pct,
+      "Prêts à 30 min"
+    );
+
+    radial(
+      "graphe-isoles",
+      a.isoles_45_pct,
+      "Isolés > 45 min"
+    );
+
+    const routeMessage = isNumber(
+      a.route_coverage_pct
+    )
+      ? `Couverture des durées de routage : ${pct(
+          a.route_coverage_pct
+        )}.`
+      : "Les durées réelles d’itinéraire ne sont pas suffisamment renseignées pour calculer les seuils 15, 30 et 45 minutes.";
+
+    if (interpretation) {
+      interpretation.textContent += ` ${routeMessage}`;
+    }
+
+    updateText(
+      "route-coverage",
+      pct(a.route_coverage_pct)
+    );
+  }
+
+  // ------------------------------------------------------------
+  // RADIAL
+  // ------------------------------------------------------------
+
+  function radial(id, value, label) {
+    const ctx = canvas(id);
+
+    if (!ctx) {
+      return;
+    }
+
+    destroy(id);
+
+    /*
+     * IMPORTANT :
+     * null = donnée indisponible.
+     * On n'affiche donc pas un faux 0 %.
+     */
+
+    if (!isNumber(value)) {
+      charts[id] = new Chart(ctx, {
+        type: "doughnut",
+        data: {
+          labels: ["Donnée indisponible"],
+          datasets: [
+            {
+              data: [1],
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "70%",
+          plugins: {
+            legend: {
+              display: false,
+            },
+          },
+        },
+      });
+
+      return;
+    }
+
+    const numeric = Number(value);
+
+    charts[id] = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: [
+          label,
+          "Non couvert",
+        ],
+        datasets: [
+          {
+            data: [
+              numeric,
+              Math.max(0, 100 - numeric),
+            ],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "70%",
       },
     });
   }
 
-  function kpis(d) {
-    const t = d.totaux || {};
-    const a = d.accessibilite || {};
+  // ------------------------------------------------------------
+  // MOBILITÉ / ISOCHRONES IGN
+  // ------------------------------------------------------------
 
-    const element = $("totaux-cartes");
+  function mobility(data) {
+    const i = data.isochrones || {};
 
-    if (!element) return;
+    const coverage = Array.isArray(
+      i.couverture_par_minutes
+    )
+      ? i.couverture_par_minutes
+      : [];
 
-    element.innerHTML = [
-      [
-        "Films / séries",
-        t.nb_films,
-        "Œuvres publiées",
-      ],
+    const minutes = Array.isArray(
+      i.minutes_disponibles
+    )
+      ? i.minutes_disponibles
+      : [];
 
-      [
-        "Lieux",
-        t.nb_lieux,
-        "Lieux géolocalisés",
-      ],
+    const labels = coverage.map(
+      (item) => `${item.minutes} min`
+    );
 
-      [
-        "Départements",
-        t.nb_departements,
-        "Territoires représentés",
-      ],
+    chart("graphe-isochrones", {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Voiture — couverture des calculs",
+            data: coverage.map(
+              (item) =>
+                item.voiture_pct ?? null
+            ),
+            tension: 0.25,
+          },
+          {
+            label: "À pied — couverture des calculs",
+            data: coverage.map(
+              (item) =>
+                item.pied_pct ?? null
+            ),
+            tension: 0.25,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            min: 0,
+            max: 100,
+            title: {
+              display: true,
+              text: "Part des lieux couverts par une isochrone",
+            },
+          },
+        },
+      },
+    });
 
-      [
-        "Prêts à 15 min",
-        pct(a.pret_15_pct),
-        "Hébergement + restaurant",
-      ],
+    const ratio =
+      i.ratio_surface_voiture_marche_15;
 
-      [
-        "Isolés >45 min",
-        pct(a.isoles_45_pct),
-        "Signal de fragilité",
-      ],
+    updateText(
+      "ratio-mobilite",
+      isNumber(ratio)
+        ? number(ratio, 2)
+        : "—"
+    );
 
-      [
-        "Couverture IGN",
-        pct(d.isochrones?.couverture_pct),
-        "Isochrones disponibles",
-      ],
-    ]
+    const freshness =
+      $("fraicheur-isochrones");
+
+    if (freshness) {
+      if (minutes.length) {
+        freshness.textContent =
+          `Isochrones réellement disponibles : ${minutes.join(
+            ", "
+          )} minutes.`;
+      } else {
+        freshness.textContent =
+          "Aucune isochrone disponible.";
+      }
+    }
+
+    updateText(
+      "couverture-ign",
+      pct(i.couverture_pct)
+    );
+  }
+
+  // ------------------------------------------------------------
+  // POTENTIEL / OPPORTUNITÉS
+  // ------------------------------------------------------------
+
+  function potential(data) {
+    const rows = Array.isArray(
+      data.lieux_potentiel
+    )
+      ? data.lieux_potentiel
+      : [];
+
+    const validRows = rows.filter(
+      (row) =>
+        isNumber(
+          row.maturite_touristique_pct
+        ) &&
+        isNumber(row.popularite_score)
+    );
+
+    chart("graphe-potentiel", {
+      type: "scatter",
+      data: {
+        datasets: [
+          {
+            label: "Lieux",
+            data: validRows.map(
+              (row) => ({
+                x:
+                  row.maturite_touristique_pct,
+                y:
+                  row.popularite_score,
+              })
+            ),
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            min: 0,
+            max: 100,
+            title: {
+              display: true,
+              text:
+                "Maturité touristique observée (%)",
+            },
+          },
+          y: {
+            min: 0,
+            max: 100,
+            title: {
+              display: true,
+              text:
+                "Attractivité film",
+            },
+          },
+        },
+      },
+    });
+
+    const list = $("liste-opportunites");
+
+    if (!list) {
+      return;
+    }
+
+    const opportunities = rows
+      .filter(
+        (row) =>
+          isNumber(
+            row.score_opportunite
+          )
+      )
+      .sort(
+        (a, b) =>
+          Number(
+            b.score_opportunite
+          ) -
+          Number(
+            a.score_opportunite
+          )
+      )
+      .slice(0, 12);
+
+    if (!opportunities.length) {
+      list.innerHTML = `
+        <div class="analyse-empty">
+          Aucune opportunité calculable avec les données disponibles.
+        </div>
+      `;
+      return;
+    }
+
+    list.innerHTML = opportunities
       .map(
-        (x) => `
-          <div class="kpi-card">
-            <span>${esc(x[0])}</span>
-            <strong>${esc(x[1])}</strong>
-            <small>${esc(x[2])}</small>
+        (row) => `
+          <div class="analyse-item">
+            <strong>
+              ${esc(row.titre || "Œuvre")}
+            </strong>
+
+            <span>
+              ${esc(row.commune || "")}
+              ${
+                row.departement
+                  ? ` · ${esc(row.departement)}`
+                  : ""
+              }
+            </span>
+
+            <small>
+              Score :
+              ${number(
+                row.score_opportunite,
+                1
+              )}/100
+              —
+              Maturité :
+              ${pct(
+                row.maturite_touristique_pct
+              )}
+              —
+              Popularité :
+              ${
+                isNumber(row.popularite)
+                  ? number(
+                      row.popularite,
+                      2
+                    )
+                  : "N/D"
+              }
+            </small>
           </div>
         `
       )
       .join("");
   }
 
-  function diagnostic(d) {
-    const deps = d.departements || [];
-    const f = (d.vigilances || [])[0];
-
-    if ($("score-regional")) {
-      $("score-regional").textContent =
-        num(d.scores?.opportunite_regionale);
-    }
-
-    if ($("diagnostic-titre")) {
-      $("diagnostic-titre").textContent = deps[0]
-        ? `${esc(
-            deps[0].departement
-          )} concentre actuellement le plus de lieux recensés.`
-        : "Diagnostic territorial disponible.";
-    }
-
-    if ($("diagnostic-texte")) {
-      $("diagnostic-texte").textContent =
-        `${num(
-          d.totaux?.nb_lieux
-        )} lieux sont observés dans ${num(
-          d.totaux?.nb_departements
-        )} départements. ${pct(
-          d.accessibilite?.pret_15_pct
-        )} présentent un environnement hébergement + restaurant accessible en 15 minutes en voiture.` +
-        (f
-          ? ` ${esc(
-              f.departement
-            )} présente le principal signal de vigilance.`
-          : "");
-    }
-
-    if ($("diagnostic-tags")) {
-      $("diagnostic-tags").innerHTML = [
-        `Concentration : ${esc(
-          d.scores?.concentration_label || "—"
-        )}`,
-
-        `Préparation 30 min : ${pct(
-          d.accessibilite?.pret_30_pct
-        )}`,
-
-        `Vigilance : ${esc(
-          f?.departement || "—"
-        )}`,
-      ]
-        .map((x) => `<span>${x}</span>`)
-        .join("");
-    }
-  }
-
-  function structure(d) {
-    const departments = d.departements || [];
-    const labels = departments.map(
-      (x) => x.departement
-    );
-
-    draw("graphe-lieux", {
-      type: "bar",
-
-      data: {
-        labels,
-
-        datasets: [
-          {
-            label: "Lieux",
-            data: departments.map(
-              (x) => x.nb_lieux
-            ),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: "y",
-
-        plugins: {
-          legend: {
-            display: false,
-          },
-        },
-
-        scales,
-      },
-    });
-
-    if ($("interpretation-lieux")) {
-      $("interpretation-lieux").textContent =
-        departments[0]
-          ? `${departments[0].departement} arrive en tête avec ${num(
-              departments[0].nb_lieux
-            )} lieux (${pct(
-              departments[0].part_pourcentage
-            )}). Il s’agit de la base observée, pas d’une mesure exhaustive du potentiel.`
-          : "";
-    }
-
-    if ($("hhi-value")) {
-      $("hhi-value").textContent = num(
-        d.concentration?.hhi,
-        1
-      );
-    }
-
-    if ($("top3-value")) {
-      $("top3-value").textContent = pct(
-        d.concentration?.top3_pct
-      );
-    }
-
-    if ($("hhi-label")) {
-      $("hhi-label").textContent =
-        d.scores?.concentration_label || "";
-    }
-
-    draw("graphe-concentration", {
-      type: "line",
-
-      data: {
-        labels,
-
-        datasets: [
-          {
-            label: "Part cumulée",
-            data: departments.map(
-              (x) => x.part_cumulee_pct
-            ),
-            fill: true,
-            tension: 0.35,
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-
-        plugins: {
-          legend: {
-            display: false,
-          },
-        },
-
-        scales: {
-          ...scales,
-
-          y: {
-            ...scales.y,
-            max: 100,
-
-            ticks: {
-              color: "#9a9ea8",
-              callback: (v) => `${v}%`,
-            },
-          },
-        },
-      },
-    });
-  }
-
-  function access(d) {
-    const a = d.accessibilite || {};
-    const deps = d.departements || [];
-
-    radial(
-      "graphe-pret15",
-      a.pret_15_pct,
-      "Prêts"
-    );
-
-    radial(
-      "graphe-pret30",
-      a.pret_30_pct,
-      "Prêts"
-    );
-
-    radial(
-      "graphe-isoles",
-      a.isoles_45_pct,
-      "Isolés"
-    );
-
-    draw("graphe-equipement", {
-      type: "bar",
-
-      data: {
-        labels: deps.map(
-          (x) => x.departement
-        ),
-
-        datasets: [
-          {
-            label: "Hébergements moyens",
-            data: deps.map(
-              (x) => x.moy_hebergement ?? 0
-            ),
-          },
-
-          {
-            label: "Restaurants moyens",
-            data: deps.map(
-              (x) => x.moy_restaurant ?? 0
-            ),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales,
-      },
-    });
-
-    const best = [...deps].sort(
-      (x, y) =>
-        (y.pret_15_pct || 0) -
-        (x.pret_15_pct || 0)
-    )[0];
-
-    if ($("interpretation-equipement")) {
-      $("interpretation-equipement").textContent =
-        best
-          ? `${best.departement} présente le meilleur taux de préparation à 15 minutes (${pct(
-              best.pret_15_pct
-            )}).`
-          : "";
-    }
-  }
-
-  function iso(d) {
-    const i = d.isochrones || {};
-    const rows =
-      i.couverture_par_minutes || [];
-
-    if ($("ratio-mobilite")) {
-      $("ratio-mobilite").textContent =
-        i.ratio_surface_voiture_marche_15 != null
-          ? num(
-              i.ratio_surface_voiture_marche_15,
-              1
-            )
-          : "—";
-    }
-
-    draw("graphe-isochrones", {
-      type: "bar",
-
-      data: {
-        labels: rows.map(
-          (x) => `${x.minutes} min`
-        ),
-
-        datasets: [
-          {
-            label: "Voiture",
-            data: rows.map(
-              (x) => x.voiture_pct
-            ),
-          },
-
-          {
-            label: "Marche",
-            data: rows.map(
-              (x) => x.pied_pct
-            ),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-
-        scales: {
-          ...scales,
-
-          y: {
-            ...scales.y,
-            max: 100,
-
-            ticks: {
-              color: "#9a9ea8",
-              callback: (v) => `${v}%`,
-            },
-          },
-        },
-      },
-    });
-
-    if ($("fraicheur-isochrones")) {
-      if (i.derniere_date) {
-        $("fraicheur-isochrones").textContent =
-          `Dernier calcul connu : ${new Date(
-            i.derniere_date
-          ).toLocaleString("fr-FR")}. ` +
-          `${
-            i.minutes_disponibles?.length
-              ? `Minutes disponibles : ${i.minutes_disponibles.join(
-                  ", "
-                )}.`
-              : ""
-          }`;
-      } else {
-        $("fraicheur-isochrones").textContent =
-          "Aucun isochrone disponible dans les données observées.";
-      }
-    }
-  }
-
-  function rankings(d) {
-    const opportunities =
-      d.opportunites || [];
-
-    const warnings =
-      d.vigilances || [];
-
-    draw("graphe-opportunites", {
-      type: "bar",
-
-      data: {
-        labels: opportunities.map(
-          (x) => x.departement
-        ),
-
-        datasets: [
-          {
-            label: "Score",
-            data: opportunities.map(
-              (x) => x.score
-            ),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: "y",
-
-        plugins: {
-          legend: {
-            display: false,
-          },
-        },
-
-        scales: {
-          ...scales,
-
-          x: {
-            ...scales.x,
-            max: 100,
-          },
-        },
-      },
-    });
-
-    draw("graphe-vigilances", {
-      type: "bar",
-
-      data: {
-        labels: warnings.map(
-          (x) => x.departement
-        ),
-
-        datasets: [
-          {
-            label: "Score",
-            data: warnings.map(
-              (x) => x.score
-            ),
-          },
-        ],
-      },
-
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        indexAxis: "y",
-
-        plugins: {
-          legend: {
-            display: false,
-          },
-        },
-
-        scales: {
-          ...scales,
-
-          x: {
-            ...scales.x,
-            max: 100,
-          },
-        },
-      },
-    });
-
-    if ($("liste-opportunites")) {
-      $("liste-opportunites").innerHTML =
-        opportunities
-          .slice(0, 5)
-          .map(
-            (x, i) => `
-              <article class="insight-card">
-                <span class="rank">#${i + 1}</span>
-                <h3>${esc(
-                  x.departement
-                )}</h3>
-                <strong>${num(
-                  x.score
-                )}/100</strong>
-                <p>${esc(
-                  x.interpretation
-                )}</p>
-              </article>
-            `
+  // ------------------------------------------------------------
+  // FRAGILITÉS / VIGILANCES
+  // ------------------------------------------------------------
+
+  function vigilance(data) {
+    const rows = Array.isArray(
+      data.lieux_potentiel
+    )
+      ? data.lieux_potentiel
+      : [];
+
+    /*
+     * On cherche les lieux ayant la maturité
+     * touristique observée la plus faible.
+     */
+
+    const fragile = [...rows]
+      .filter(
+        (row) =>
+          isNumber(
+            row.maturite_touristique_pct
           )
-          .join("");
-    }
-
-    if ($("liste-vigilances")) {
-      $("liste-vigilances").innerHTML =
-        warnings
-          .slice(0, 5)
-          .map(
-            (x, i) => `
-              <article class="insight-card warning">
-                <span class="rank">#${i + 1}</span>
-                <h3>${esc(
-                  x.departement
-                )}</h3>
-                <strong>${num(
-                  x.score
-                )}/100</strong>
-                <p>${esc(
-                  x.interpretation
-                )}</p>
-              </article>
-            `
+      )
+      .sort(
+        (a, b) =>
+          Number(
+            a.maturite_touristique_pct
+          ) -
+          Number(
+            b.maturite_touristique_pct
           )
-          .join("");
-    }
-  }
+      )
+      .slice(0, 12);
 
-  function potential(d) {
-    const places =
-      d.lieux_potentiel || [];
-
-    draw("graphe-potentiel", {
-      type: "scatter",
-
+    chart("graphe-vigilances", {
+      type: "bar",
       data: {
+        labels: fragile.map(
+          (row) =>
+            row.commune ||
+            row.titre ||
+            "Lieu"
+        ),
         datasets: [
           {
-            label: "Lieux",
-
-            data: places.map(
-              (x) => ({
-                x: Number(
-                  x.preparation || 0
-                ),
-
-                y: Number(
-                  x.popularite || 0
-                ),
-              })
+            label:
+              "Maturité touristique observée",
+            data: fragile.map(
+              (row) =>
+                row.maturite_touristique_pct
             ),
-
-            pointRadius: 5,
           },
         ],
       },
-
       options: {
+        indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-
         scales: {
           x: {
-            ...scales.x,
             min: 0,
             max: 100,
-
-            title: {
-              display: true,
-              text: "Préparation touristique (%)",
-              color: "#dde4f0",
-            },
-          },
-
-          y: {
-            ...scales.y,
-
-            title: {
-              display: true,
-              text: "Popularité TMDB",
-              color: "#dde4f0",
-            },
           },
         },
       },
     });
 
-    if ($("top-lieux")) {
-      $("top-lieux").innerHTML =
-        places
-          .slice(0, 6)
-          .map(
-            (x, i) => `
-              <article class="insight-card">
-                <span class="rank">#${i + 1}</span>
-                <h3>${esc(
-                  x.titre
-                )}</h3>
-                <p>${esc(
-                  x.departement
-                )}</p>
+    const list = $("liste-vigilances");
 
-                <div class="mini-metrics">
-                  <span>
-                    Popularité
-                    <b>${num(
-                      x.popularite,
-                      1
-                    )}</b>
-                  </span>
-
-                  <span>
-                    Préparation
-                    <b>${pct(
-                      x.preparation
-                    )}</b>
-                  </span>
-                </div>
-              </article>
-            `
-          )
-          .join("");
-    }
-  }
-
-  function departments(d) {
-    if (!$("cartes-departements"))
+    if (!list) {
       return;
-
-    $("cartes-departements").innerHTML =
-      (d.departements || [])
-        .map(
-          (x) => `
-            <article class="carte-departement">
-
-              <div class="dep-head">
-                <h3>${esc(
-                  x.departement
-                )}</h3>
-
-                <span>${pct(
-                  x.part_pourcentage
-                )}</span>
-              </div>
-
-              <div class="dep-grid">
-
-                <div>
-                  <b>${num(
-                    x.nb_lieux
-                  )}</b>
-                  <small>lieux</small>
-                </div>
-
-                <div>
-                  <b>${num(
-                    x.nb_films
-                  )}</b>
-                  <small>œuvres</small>
-                </div>
-
-                <div>
-                  <b>${pct(
-                    x.pret_15_pct
-                  )}</b>
-                  <small>prêts 15 min</small>
-                </div>
-
-                <div>
-                  <b>${pct(
-                    x.pret_30_pct
-                  )}</b>
-                  <small>prêts 30 min</small>
-                </div>
-
-                <div>
-                  <b>${pct(
-                    x.isoles_45_pct
-                  )}</b>
-                  <small>isolés</small>
-                </div>
-
-                <div>
-                  <b>${num(
-                    x.popularite_moyenne,
-                    1
-                  )}</b>
-                  <small>popularité</small>
-                </div>
-
-              </div>
-
-              <p>${esc(
-                x.recommandation
-              )}</p>
-
-            </article>
-          `
-        )
-        .join("");
-  }
-
-  function quality(d) {
-    const c = d.completude || {};
-
-    if ($("completude-contenu")) {
-      $("completude-contenu").innerHTML = [
-        [
-          "Coordonnées",
-          pct(c.coordinates_pct),
-        ],
-
-        [
-          "Équipements",
-          pct(c.amenities_pct),
-        ],
-
-        [
-          "Isochrones",
-          pct(
-            d.isochrones?.couverture_pct
-          ),
-        ],
-
-        [
-          "Popularité",
-          pct(c.popularite_pct),
-        ],
-      ]
-        .map(
-          (x) => `
-            <div class="kpi-card">
-              <span>${esc(x[0])}</span>
-              <strong>${esc(x[1])}</strong>
-              <small>Couverture observée</small>
-            </div>
-          `
-        )
-        .join("");
     }
 
-    if ($("methodologie")) {
-      $("methodologie").innerHTML = `
-        <h3>Méthodologie</h3>
-
-        <p>
-          ${esc(
-            d.methodologie?.texte ||
-              "Indicateurs calculés dynamiquement à partir des données publiées."
-          )}
-        </p>
-
-        <p>
-          <b>Important :</b>
-          les isochrones mesurent une emprise spatiale
-          de déplacement ; ils ne mesurent pas directement
-          la population accessible.
-        </p>
+    if (!fragile.length) {
+      list.innerHTML = `
+        <div class="analyse-empty">
+          Aucune fragilité calculable avec les données disponibles.
+        </div>
       `;
+      return;
     }
+
+    list.innerHTML = fragile
+      .map(
+        (row) => `
+          <div class="analyse-item">
+            <strong>
+              ${esc(row.titre || "Lieu")}
+            </strong>
+
+            <span>
+              ${esc(row.commune || "")}
+              ${
+                row.departement
+                  ? ` · ${esc(row.departement)}`
+                  : ""
+              }
+            </span>
+
+            <small>
+              Maturité observée :
+              ${pct(
+                row.maturite_touristique_pct
+              )}
+              —
+              Hébergement :
+              ${
+                row.hebergement
+                  ? "présent"
+                  : "non observé"
+              }
+              —
+              Restaurant :
+              ${
+                row.restaurant
+                  ? "présent"
+                  : "non observé"
+              }
+            </small>
+          </div>
+        `
+      )
+      .join("");
   }
 
-  function films(d) {
-    if (!$("films-notables-cartes"))
+  // ------------------------------------------------------------
+  // FILMOGRAPHIE
+  // ------------------------------------------------------------
+
+  function films(data) {
+    const rows = Array.isArray(
+      data.films_notables
+    )
+      ? data.films_notables
+      : [];
+
+    const container =
+      $("films-notables-cartes");
+
+    if (!container) {
       return;
+    }
 
-    $("films-notables-cartes").innerHTML =
-      (d.films_notables || [])
-        .map(
-          (f, i) => `
-            <article class="carte-film-notable">
+    if (!rows.length) {
+      container.innerHTML = `
+        <div class="analyse-empty">
+          Aucune œuvre notable calculable.
+        </div>
+      `;
+      return;
+    }
 
-              <div class="rang-notable">
-                #${i + 1}
-              </div>
+    container.innerHTML = rows
+      .map(
+        (film) => `
+          <article class="film-card">
+            <div class="film-card-content">
 
-              <img
-                src="${esc(
-                  f.poster_url ||
-                    "/icons/placeholder-poster.png"
-                )}"
-                alt="${esc(
-                  f.titre
-                )}"
-                loading="lazy"
-              >
+              <h3>
+                ${esc(
+                  film.titre || "Sans titre"
+                )}
+              </h3>
 
-              <h3>${esc(
-                f.titre
-              )}</h3>
+              <p>
+                ${
+                  film.annee
+                    ? esc(film.annee)
+                    : ""
+                }
+
+                ${
+                  film.media_type
+                    ? ` · ${esc(
+                        film.media_type
+                      )}`
+                    : ""
+                }
+              </p>
+
+              <strong>
+                ${number(
+                  film.popularite,
+                  2
+                )}
+              </strong>
 
               <small>
-                ${num(
-                  f.annee
-                )} · ${
-            f.media_type === "tv"
-              ? "Série"
-              : "Film"
-          }
+                ${number(
+                  film.nb_lieux
+                )}
+                lieux ·
+                ${number(
+                  film.nb_departements
+                )}
+                départements
               </small>
 
-            </article>
-          `
-        )
-        .join("");
+            </div>
+          </article>
+        `
+      )
+      .join("");
   }
 
-  function render(data) {
-    kpis(data);
-    diagnostic(data);
-    structure(data);
-    access(data);
-    iso(data);
-    rankings(data);
-    potential(data);
-    departments(data);
-    quality(data);
-    films(data);
-  }
+  // ------------------------------------------------------------
+  // TABLEAU DE BORD DÉPARTEMENTAL
+  // ------------------------------------------------------------
 
-  async function load() {
-    const state = $("etat-donnees");
+  function territories(data) {
+    const rows = Array.isArray(
+      data.departements
+    )
+      ? data.departements
+      : [];
 
-    if (state) {
-      state.textContent =
-        "Actualisation…";
+    const container =
+      $("cartes-departements");
+
+    if (!container) {
+      return;
     }
 
-    try {
-      const response = await fetch(
-        "/api/analyse/indicateurs?region=Occitanie",
-        {
-          cache: "no-store",
-          headers: {
-            Accept: "application/json",
-          },
-        }
+    if (!rows.length) {
+      container.innerHTML = `
+        <div class="analyse-empty">
+          Aucun territoire représenté.
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = rows
+      .map(
+        (row) => `
+          <article class="territoire-card">
+
+            <h3>
+              ${esc(
+                row.departement
+              )}
+            </h3>
+
+            <strong>
+              ${number(
+                row.nb_lieux
+              )}
+              lieux
+            </strong>
+
+            <p>
+              ${number(
+                row.nb_films
+              )}
+              œuvres ·
+              ${pct(
+                row.part_pct
+              )}
+              des lieux régionaux
+            </p>
+
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  // ------------------------------------------------------------
+  // QUALITÉ / COUVERTURE
+  // ------------------------------------------------------------
+
+  function completeness(data) {
+    const c =
+      data.completude || {};
+
+    const container =
+      $("completude-contenu");
+
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="completude-grid">
+
+        <div>
+          <strong>
+            ${pct(c.coordonnees_pct)}
+          </strong>
+          <span>
+            Coordonnées
+          </span>
+        </div>
+
+        <div>
+          <strong>
+            ${pct(c.amenities_pct)}
+          </strong>
+          <span>
+            Équipements touristiques
+          </span>
+        </div>
+
+        <div>
+          <strong>
+            ${pct(c.popularite_pct)}
+          </strong>
+          <span>
+            Popularité des œuvres
+          </span>
+        </div>
+
+        <div>
+          <strong>
+            ${pct(c.isochrones_pct)}
+          </strong>
+          <span>
+            Isochrones
+          </span>
+        </div>
+
+        <div>
+          <strong>
+            ${pct(c.routage_pct)}
+          </strong>
+          <span>
+            Durées de routage
+          </span>
+        </div>
+
+      </div>
+    `;
+  }
+
+  // ------------------------------------------------------------
+  // INDICATEURS DE DÉCISION
+  // ------------------------------------------------------------
+
+  function addDecisionIndicators(data) {
+    /*
+     * On cherche une zone stable de la page.
+     * Priorité à la section "Potentiel" / opportunités.
+     */
+
+    const target =
+      $("liste-opportunites")?.closest(
+        ".analyse-section"
       );
 
-      if (!response.ok) {
-        const detail =
-          await response.text();
+    if (!target) {
+      return;
+    }
 
-        console.error(
-          "API /api/analyse/indicateurs :",
-          response.status,
-          detail
+    const old =
+      $("observatoire-indicateurs-v2");
+
+    if (old) {
+      old.remove();
+    }
+
+    const e =
+      data.equipements || {};
+
+    const m =
+      data.metriques || {};
+
+    const wrapper =
+      document.createElement("div");
+
+    wrapper.id =
+      "observatoire-indicateurs-v2";
+
+    wrapper.className =
+      "insight-grid";
+
+    wrapper.innerHTML = `
+      <div class="insight-card">
+
+        <span>
+          Maturité touristique observée
+        </span>
+
+        <strong>
+          ${pct(
+            m.maturite_touristique_pct
+          )}
+        </strong>
+
+        <small>
+          Présence observée d'hébergement
+          et de restauration autour des
+          lieux de tournage.
+        </small>
+
+      </div>
+
+      <div class="insight-card">
+
+        <span>
+          Hébergements observés
+        </span>
+
+        <strong>
+          ${pct(
+            e.hebergement_presence_pct
+          )}
+        </strong>
+
+        <small>
+          Lieux disposant d'au moins
+          un hébergement DATAtourisme.
+        </small>
+
+      </div>
+
+      <div class="insight-card">
+
+        <span>
+          Restaurants observés
+        </span>
+
+        <strong>
+          ${pct(
+            e.restaurant_presence_pct
+          )}
+        </strong>
+
+        <small>
+          Lieux disposant d'au moins
+          un restaurant DATAtourisme.
+        </small>
+
+      </div>
+
+      <div class="insight-card">
+
+        <span>
+          Distance moyenne hébergement
+        </span>
+
+        <strong>
+          ${km(
+            e.moy_hebergement
+          )}
+        </strong>
+
+        <small>
+          Distance du plus proche
+          hébergement observé.
+        </small>
+
+      </div>
+
+      <div class="insight-card">
+
+        <span>
+          Distance moyenne restaurant
+        </span>
+
+        <strong>
+          ${km(
+            e.moy_restaurant
+          )}
+        </strong>
+
+        <small>
+          Distance du plus proche
+          restaurant observé.
+        </small>
+
+      </div>
+    `;
+
+    target.appendChild(wrapper);
+  }
+
+  // ------------------------------------------------------------
+  // DIAGNOSTIC
+  // ------------------------------------------------------------
+
+  function diagnostic(data) {
+    const element =
+      $("diagnostic");
+
+    if (!element) {
+      return;
+    }
+
+    const totals =
+      data.totaux || {};
+
+    element.textContent =
+      `Observation régionale : ${number(
+        totals.films
+      )} œuvres publiées, ${number(
+        totals.lieux
+      )} lieux géolocalisés et ${number(
+        totals.departements
+      )} départements représentés.`;
+  }
+
+  // ------------------------------------------------------------
+  // RENDU GLOBAL
+  // ------------------------------------------------------------
+
+  function render(data) {
+    if (!data) {
+      return;
+    }
+
+    console.log(
+      "Rendu observatoire :",
+      data
+    );
+
+    diagnostic(data);
+    updateKpis(data);
+
+    structure(data);
+    access(data);
+    mobility(data);
+
+    potential(data);
+    vigilance(data);
+
+    films(data);
+    territories(data);
+
+    completeness(data);
+    addDecisionIndicators(data);
+  }
+
+  // ------------------------------------------------------------
+  // CHARGEMENT API
+  // ------------------------------------------------------------
+
+  async function load() {
+    try {
+      const response =
+        await fetch(
+          "/api/analyse/indicateurs?region=Occitanie",
+          {
+            cache: "no-store",
+          }
         );
 
+      if (!response.ok) {
         throw new Error(
-          `HTTP ${response.status} — ${detail}`
+          `HTTP ${response.status}`
         );
       }
 
@@ -932,60 +1269,39 @@
 
       render(data);
 
-      if (state) {
-        state.textContent =
-          "● Données synchronisées";
-      }
-
-      if ($("date-maj")) {
-        $("date-maj").textContent =
-          "Mise à jour : " +
-          new Date().toLocaleTimeString(
-            "fr-FR"
-          );
-      }
     } catch (error) {
+
       console.error(
-        "Erreur page Analyse :",
+        "Erreur observatoire :",
         error
       );
 
-      if (state) {
-        state.textContent =
-          "⚠ Erreur de chargement";
-      }
+      const diagnostic =
+        $("diagnostic");
 
-      if ($("diagnostic-titre")) {
-        $("diagnostic-titre").textContent =
-          "Impossible de charger les indicateurs";
-      }
-
-      if ($("diagnostic-texte")) {
-        $("diagnostic-texte").textContent =
-          "L'API d'analyse a rencontré une erreur. Consultez la console du navigateur et les logs du serveur pour identifier le problème.";
-      }
-
-      if ($("diagnostic-tags")) {
-        $("diagnostic-tags").innerHTML =
-          `<span>API /api/analyse/indicateurs</span>`;
+      if (diagnostic) {
+        diagnostic.textContent =
+          "Impossible de charger les indicateurs.";
       }
     }
   }
 
+  // ------------------------------------------------------------
+  // INITIALISATION
+  // ------------------------------------------------------------
+
   document.addEventListener(
     "DOMContentLoaded",
     () => {
-      load();
 
-      $("btn-refresh")?.addEventListener(
-        "click",
-        load
-      );
+      load();
 
       setInterval(
         load,
         REFRESH_MS
       );
+
     }
   );
+
 })();

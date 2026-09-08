@@ -12,6 +12,7 @@ from geoplateforme import (
     GeoplateformeError,
     RESOURCE_ITINERAIRE,
 )
+from analyse_indicateurs import construire_indicateurs_cinetourisme
 from navigation_cache import navigation_cache
 import os
 import json
@@ -20,7 +21,7 @@ import asyncio
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, logger
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, JSONResponse
@@ -68,6 +69,33 @@ app.add_middleware(
     allow_methods=["GET"],
 )
 
+@app.get("/api/analyse/indicateurs")
+async def api_analyse_indicateurs(
+    region: str = Query("Occitanie")
+):
+    """
+    Retourne les indicateurs dynamiques de l'observatoire
+    du ciné-tourisme pour la région demandée.
+
+    Les indicateurs sont recalculés à partir des données
+    actuellement présentes en base :
+    - lieux de tournage
+    - films
+    - équipements touristiques
+    - temps d'accès
+    - isochrones IGN pré-calculés
+    """
+    try:
+        return await construire_indicateurs_cinetourisme(region)
+    except Exception as exc:
+        logger.exception(
+            "Erreur lors du calcul des indicateurs ciné-tourisme"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors du calcul des indicateurs : {exc}"
+        )
 # ─────────────────────────────────────────────────────────────
 # ISOCHRONES D'UN LIEU DE TOURNAGE
 # ─────────────────────────────────────────────────────────────

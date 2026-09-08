@@ -109,10 +109,34 @@
     const access = data.accessibilite || {};
     const iso = data.isochrones || {};
 
+    const container = $("totaux-cartes");
+
+    if (container) {
+      const cartes = [
+        { valeur: number(totals.films), label: "Œuvres publiées" },
+        { valeur: number(totals.lieux), label: "Lieux de tournage" },
+        { valeur: number(totals.departements), label: "Départements représentés" },
+        { valeur: pct(access.pret_15_pct), label: "Lieux prêts à 15 min" },
+        { valeur: pct(access.isoles_45_pct), label: "Lieux isolés (+45 min)" },
+        { valeur: pct(iso.couverture_pct), label: "Couverture isochrones IGN" },
+      ];
+
+      container.innerHTML = cartes
+        .map(
+          (c) => `
+            <div class="kpi-card">
+              <strong>${c.valeur}</strong>
+              <span>${c.label}</span>
+            </div>
+          `
+        )
+        .join("");
+    }
+
     /*
-     * Les IDs ci-dessous correspondent aux KPI du tableau
-     * de bord. Plusieurs variantes sont supportées afin de
-     * rester compatible avec l'HTML existant.
+     * Les IDs ci-dessous sont conservés pour compatibilité avec
+     * d'éventuelles variantes de gabarit HTML qui exposeraient ces
+     * éléments individuellement (mise en page alternative).
      */
 
     updateText(
@@ -210,17 +234,51 @@
       ? data.departements
       : [];
 
-    const top3 = calculateTop3Share(deps);
+    const m = data.metriques || {};
 
-    updateText(
-      "concentration-territoriale",
-      pct(top3)
-    );
+    // On préfère la valeur calculée côté backend (cohérente avec les
+    // autres indicateurs de metriques) ; le calcul local ne sert que
+    // de filet de sécurité si jamais elle manquait.
+    const top3 = isNumber(m.concentration_top3_pct)
+      ? m.concentration_top3_pct
+      : calculateTop3Share(deps);
 
-    updateText(
-      "concentration-top3",
-      pct(top3)
-    );
+    const hhi = isNumber(m.concentration_hhi) ? m.concentration_hhi : null;
+
+    updateText("top3-value", pct(top3));
+
+    updateText("hhi-value", hhi !== null ? number(hhi, 2) : "—");
+
+    // Seuils usuels de lecture d'un indice Herfindahl-Hirschman
+    // (échelle 0-1 ici, cf. _hhi() côté backend) :
+    //   < 0,15 : répartition diversifiée entre départements
+    //   0,15 - 0,25 : concentration modérée
+    //   > 0,25 : concentration forte sur peu de départements
+    const hhiLabel = $("hhi-label");
+    if (hhiLabel) {
+      if (hhi === null) {
+        hhiLabel.textContent = "";
+      } else if (hhi < 0.15) {
+        hhiLabel.textContent = "Répartition diversifiée entre départements.";
+      } else if (hhi < 0.25) {
+        hhiLabel.textContent = "Concentration modérée sur quelques départements.";
+      } else {
+        hhiLabel.textContent = "Forte concentration sur un petit nombre de départements.";
+      }
+    }
+
+    const interpretationLieux = $("interpretation-lieux");
+    if (interpretationLieux) {
+      if (deps.length) {
+        const premier = deps[0];
+        interpretationLieux.textContent =
+          `${esc(premier.departement)} concentre ${number(premier.nb_lieux)} lieux ` +
+          `(${pct(premier.part_pct)} du total régional)` +
+          (deps.length > 1 ? `, devant ${esc(deps[1].departement)}.` : ".");
+      } else {
+        interpretationLieux.textContent = "";
+      }
+    }
 
     chart("graphe-lieux", {
       type: "bar",
@@ -285,15 +343,16 @@
   function access(data) {
     const e = data.equipements || {};
     const a = data.accessibilite || {};
+    const m = data.metriques || {};
 
     updateText(
       "hebergement-moyen",
-      km(e.moy_hebergement)
+      isNumber(e.moy_hebergement) ? number(e.moy_hebergement, 1) : "N/D"
     );
 
     updateText(
       "restaurant-moyen",
-      km(e.moy_restaurant)
+      isNumber(e.moy_restaurant) ? number(e.moy_restaurant, 1) : "N/D"
     );
 
     updateText(
@@ -327,9 +386,9 @@
           e.restaurant_presence_pct
         )}. ` +
         `La distance moyenne du plus proche hébergement est de ${km(
-          e.moy_hebergement
+          m.distance_moy_hebergement_m
         )}, contre ${km(
-          e.moy_restaurant
+          m.distance_moy_restaurant_m
         )} pour le restaurant.`;
     }
 
@@ -634,10 +693,28 @@
       },
     });
 
-    const list = $("liste-opportunites");
+    const topLieux = $("top-lieux");
+    if (topLieux) {
+      const top5 = rows
+        .filter((row) => isNumber(row.score_opportunite))
+        .sort((a, b) => Number(b.score_opportunite) - Number(a.score_opportunite))
+        .slice(0, 5);
 
-    if (!list) {
-      return;
+      if (!top5.length) {
+        topLieux.innerHTML = `<div class="analyse-empty">Aucun lieu classable pour l'instant.</div>`;
+      } else {
+        topLieux.innerHTML = top5
+          .map(
+            (row, index) => `
+              <div class="analyse-item">
+                <strong>#${index + 1} — ${esc(row.titre || "Œuvre")}</strong>
+                <span>${esc(row.commune || "")}${row.departement ? ` · ${esc(row.departement)}` : ""}</span>
+                <small>Score : ${number(row.score_opportunite, 1)}/100</small>
+              </div>
+            `
+          )
+          .join("");
+      }
     }
 
     const opportunities = rows
@@ -657,6 +734,38 @@
           )
       )
       .slice(0, 12);
+
+    if (opportunities.length) {
+      chart("graphe-opportunites", {
+        type: "bar",
+        data: {
+          labels: opportunities.map((row) => row.titre || "Œuvre"),
+          datasets: [
+            {
+              label: "Score d'opportunité (/100)",
+              data: opportunities.map((row) => row.score_opportunite),
+            },
+          ],
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { min: 0, max: 100 },
+          },
+          plugins: {
+            legend: { display: false },
+          },
+        },
+      });
+    }
+
+    const list = $("liste-opportunites");
+
+    if (!list) {
+      return;
+    }
 
     if (!opportunities.length) {
       list.innerHTML = `
@@ -945,38 +1054,120 @@
     }
 
     container.innerHTML = rows
-      .map(
-        (row) => `
-          <article class="territoire-card">
+      .map((row) => {
+        const score = isNumber(row.score_investissement)
+          ? row.score_investissement
+          : null;
+        const scoreClass =
+          score === null ? "" : score >= 60 ? "score-haut" : score >= 35 ? "score-moyen" : "score-bas";
 
-            <h3>
-              ${esc(
-                row.departement
-              )}
-            </h3>
+        const benchmarks = [row.benchmark_hebergement, row.benchmark_enclavement]
+          .filter((b) => b && b !== "non comparable")
+          .map((b) => esc(b))
+          .join(" · ");
 
-            <strong>
-              ${number(
-                row.nb_lieux
-              )}
-              lieux
-            </strong>
+        return `
+          <article class="carte-departement">
+
+            <div class="dep-head">
+              <h3>${esc(row.departement)}</h3>
+              <span class="${scoreClass}">${
+                score !== null ? `Priorité ${number(score, 0)}/100` : `${number(row.nb_lieux)} lieux`
+              }</span>
+            </div>
+
+            <div class="dep-grid">
+              <div>
+                <b>${isNumber(row.moy_hebergement) ? number(row.moy_hebergement, 1) : "N/D"}</b>
+                <small>Hébergement moyen</small>
+              </div>
+              <div>
+                <b>${pct(row.pret_15_pct)}</b>
+                <small>Prêt à 15 min</small>
+              </div>
+              <div>
+                <b>${isNumber(row.surface_moyenne_15min_km2) ? `${number(row.surface_moyenne_15min_km2, 1)} km²` : "N/D"}</b>
+                <small>Surface 15 min voiture</small>
+              </div>
+            </div>
 
             <p>
-              ${number(
-                row.nb_films
-              )}
-              œuvres ·
-              ${pct(
-                row.part_pct
-              )}
-              des lieux régionaux
+              ${number(row.nb_films)} œuvres · ${pct(row.part_pct)} des lieux régionaux
+              ${benchmarks ? ` · ${benchmarks}` : ""}
             </p>
 
           </article>
-        `
-      )
+        `;
+      })
       .join("");
+  }
+
+  // ------------------------------------------------------------
+  // PRIORISATION DÉPARTEMENTALE — outil d'aide à la décision
+  // ------------------------------------------------------------
+
+  function investmentPriority(data) {
+    const rows = Array.isArray(data.priorisation_departementale)
+      ? data.priorisation_departementale
+      : [];
+
+    const listEl = $("liste-priorisation");
+    if (listEl) {
+      if (!rows.length) {
+        listEl.innerHTML = `<div class="analyse-empty">Pas assez de données pour établir un classement de priorité.</div>`;
+      } else {
+        listEl.innerHTML = rows
+          .map((row, index) => {
+            const raisons = [];
+            if (isNumber(row.popularite_moyenne)) {
+              raisons.push(`popularité cinématographique moyenne de ${number(row.popularite_moyenne, 1)}`);
+            }
+            if (isNumber(row.hebergement_presence_pct) && isNumber(row.restaurant_presence_pct)) {
+              raisons.push(
+                `hébergement présent pour ${pct(row.hebergement_presence_pct)} des lieux, restauration pour ${pct(row.restaurant_presence_pct)}`
+              );
+            }
+            if (isNumber(row.surface_moyenne_15min_km2)) {
+              raisons.push(`${number(row.surface_moyenne_15min_km2, 1)} km² accessibles en 15 min en voiture en moyenne`);
+            }
+
+            return `
+              <article class="priorite-card">
+                <div class="priorite-rang">#${index + 1}</div>
+                <div class="priorite-corps">
+                  <div class="priorite-head">
+                    <h3>${esc(row.departement)}</h3>
+                    <strong class="priorite-score">${number(row.score_investissement, 0)}<small>/100</small></strong>
+                  </div>
+                  <p>${raisons.length ? "Basé sur : " + esc(raisons.join(" — ")) + "." : ""}</p>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+      }
+    }
+
+    chart("graphe-priorisation", {
+      type: "bar",
+      data: {
+        labels: rows.map((row) => row.departement),
+        datasets: [
+          {
+            label: "Score de priorité d'investissement (/100)",
+            data: rows.map((row) => row.score_investissement),
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { min: 0, max: 100 },
+        },
+      },
+    });
   }
 
   // ------------------------------------------------------------
@@ -986,6 +1177,8 @@
   function completeness(data) {
     const c =
       data.completude || {};
+    const accessRoute =
+      (data.accessibilite || {}).route_coverage_pct;
 
     const container =
       $("completude-contenu");
@@ -1008,7 +1201,7 @@
 
         <div>
           <strong>
-            ${pct(c.amenities_pct)}
+            ${pct(c.amenagement_pct)}
           </strong>
           <span>
             Équipements touristiques
@@ -1035,7 +1228,7 @@
 
         <div>
           <strong>
-            ${pct(c.routage_pct)}
+            ${pct(accessRoute)}
           </strong>
           <span>
             Durées de routage
@@ -1044,6 +1237,21 @@
 
       </div>
     `;
+
+    const methodo = $("methodologie");
+    if (methodo) {
+      methodo.innerHTML = `
+        <p>
+          Indicateurs recalculés à chaque chargement à partir des données
+          actuellement en base : lieux de tournage publiés, équipements
+          touristiques DATAtourisme, durées de trajet routières réelles et
+          isochrones IGN pré-calculées. Aucune valeur n'est estimée ou
+          inventée : un indicateur affiché « N/D » signifie que la donnée
+          source correspondante n'est pas encore disponible pour tous les
+          lieux concernés.
+        </p>
+      `;
+    }
   }
 
   // ------------------------------------------------------------
@@ -1192,25 +1400,79 @@
   // DIAGNOSTIC
   // ------------------------------------------------------------
 
-  function diagnostic(data) {
-    const element =
-      $("diagnostic");
+  function calculateRegionalScore(data) {
+    const deps = Array.isArray(data.priorisation_departementale)
+      ? data.priorisation_departementale
+      : [];
 
-    if (!element) {
-      return;
+    const totalLieux = deps.reduce(
+      (sum, d) => sum + (Number(d.nb_lieux) || 0),
+      0
+    );
+
+    if (!deps.length || !totalLieux) {
+      return null;
     }
 
-    const totals =
-      data.totaux || {};
+    const somme = deps.reduce(
+      (sum, d) =>
+        sum + (Number(d.score_investissement) || 0) * (Number(d.nb_lieux) || 0),
+      0
+    );
 
-    element.textContent =
-      `Observation régionale : ${number(
-        totals.films
-      )} œuvres publiées, ${number(
-        totals.lieux
-      )} lieux géolocalisés et ${number(
-        totals.departements
-      )} départements représentés.`;
+    return somme / totalLieux;
+  }
+
+  function diagnostic(data) {
+    const totals = data.totaux || {};
+    const e = data.equipements || {};
+    const a = data.accessibilite || {};
+    const c = data.completude || {};
+
+    const score = calculateRegionalScore(data);
+
+    updateText("score-regional", score !== null ? number(score, 0) : "—");
+
+    const titre = $("diagnostic-titre");
+    if (titre) {
+      if (score === null) {
+        titre.textContent = "Analyse en cours…";
+      } else if (score >= 60) {
+        titre.textContent = "Marge de progression importante pour le ciné-tourisme régional";
+      } else if (score >= 35) {
+        titre.textContent = "Un potentiel ciné-touristique partiellement exploité";
+      } else {
+        titre.textContent = "Un territoire déjà globalement bien préparé";
+      }
+    }
+
+    const texte = $("diagnostic-texte");
+    if (texte) {
+      texte.textContent =
+        `Observation régionale : ${number(totals.films)} œuvres publiées, ` +
+        `${number(totals.lieux)} lieux géolocalisés et ${number(totals.departements)} ` +
+        `départements représentés.`;
+    }
+
+    const tagsEl = $("diagnostic-tags");
+    if (tagsEl) {
+      const tags = [];
+
+      if (isNumber(e.hebergement_presence_pct)) {
+        tags.push(`Hébergement observé : ${pct(e.hebergement_presence_pct)} des lieux`);
+      }
+      if (isNumber(a.pret_15_pct)) {
+        tags.push(`Prêts à 15 min : ${pct(a.pret_15_pct)}`);
+      }
+      if (isNumber(c.isochrones_pct)) {
+        tags.push(`Isochrones calculées : ${pct(c.isochrones_pct)}`);
+      }
+      if (isNumber(a.route_coverage_pct)) {
+        tags.push(`Durées de trajet connues : ${pct(a.route_coverage_pct)}`);
+      }
+
+      tagsEl.innerHTML = tags.map((t) => `<span>${esc(t)}</span>`).join("");
+    }
   }
 
   // ------------------------------------------------------------
@@ -1237,6 +1499,8 @@
     potential(data);
     vigilance(data);
 
+    investmentPriority(data);
+
     films(data);
     territories(data);
 
@@ -1249,6 +1513,11 @@
   // ------------------------------------------------------------
 
   async function load() {
+    const etat = $("etat-donnees");
+    if (etat) {
+      etat.textContent = "Chargement…";
+    }
+
     try {
       const response =
         await fetch(
@@ -1269,6 +1538,18 @@
 
       render(data);
 
+      if (etat) {
+        etat.textContent = "Données à jour";
+      }
+
+      updateText(
+        "date-maj",
+        `Actualisé à ${new Date().toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+      );
+
     } catch (error) {
 
       console.error(
@@ -1276,12 +1557,19 @@
         error
       );
 
-      const diagnostic =
-        $("diagnostic");
+      if (etat) {
+        etat.textContent = "Erreur de chargement";
+      }
 
-      if (diagnostic) {
-        diagnostic.textContent =
-          "Impossible de charger les indicateurs.";
+      const titre = $("diagnostic-titre");
+      if (titre) {
+        titre.textContent = "Impossible de charger les indicateurs.";
+      }
+
+      const texte = $("diagnostic-texte");
+      if (texte) {
+        texte.textContent =
+          "Nouvelle tentative automatique lors du prochain rafraîchissement.";
       }
     }
   }
@@ -1300,6 +1588,11 @@
         load,
         REFRESH_MS
       );
+
+      const btnRefresh = $("btn-refresh");
+      if (btnRefresh) {
+        btnRefresh.addEventListener("click", load);
+      }
 
     }
   );

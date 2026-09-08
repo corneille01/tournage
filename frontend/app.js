@@ -1946,7 +1946,7 @@ async function toggleChoroplethe() {
             <div class="ligne"><span>Lieux de tournage</span><b>${stat.nb_lieux}</b></div>
             <div class="ligne"><span>Hébergements (moy.)</span><b>${stat.moy_hebergement ?? "—"}</b></div>
             <div class="ligne"><span>Restaurants (moy.)</span><b>${stat.moy_restaurant ?? "—"}</b></div>
-            <div class="ligne"><span>Lieux isolés</span><b>${stat.lieux_sans_hebergement_5km ?? 0}</b></div>
+            <div class="ligne"><span>Lieux isolés</span><b>${stat.lieux_sans_hebergement_15km ?? 0}</b></div>
             <div class="recommandation">${stat.recommandation}</div>
           </div>
         ` : `<div class="popup-departement"><h3>${nom}</h3>Aucune donnée pour ce département.</div>`;
@@ -2167,4 +2167,3 @@ document.addEventListener("DOMContentLoaded", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 });
-

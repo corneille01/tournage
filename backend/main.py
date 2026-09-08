@@ -24,7 +24,7 @@ import asyncio
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request, logger
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, JSONResponse
@@ -401,7 +401,7 @@ def _recommandation_departement(d: dict) -> str:
     nb_lieux = d["nb_lieux"] or 0
     moy_heberg = d["moy_hebergement"] or 0
     moy_resto = d["moy_restaurant"] or 0
-    lieux_isoles = d["lieux_sans_hebergement_5km"] or 0
+    lieux_isoles = d["lieux_sans_hebergement_15km"] or 0
     part_isoles = round(100 * lieux_isoles / nb_lieux) if nb_lieux else 0
 
     if nb_lieux == 0:
@@ -650,7 +650,7 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
             ROUND(AVG(hs.nombre_total) FILTER (WHERE hs.categorie = 'restaurant')::numeric, 1) AS moy_restaurant,
             COUNT(DISTINCT hs.lieu_tournage_id) FILTER (
                 WHERE hs.categorie = 'hebergement' AND hs.nombre_total = 0
-            ) AS lieux_sans_hebergement_5km
+            ) AS lieux_sans_hebergement_15km
         FROM lieux_tournage lt
         JOIN films f ON f.id = lt.film_id
         LEFT JOIN amenity_stats hs ON hs.lieu_tournage_id = lt.id

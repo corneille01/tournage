@@ -47,7 +47,7 @@ async def construire_indicateurs_cinetourisme(region="Occitanie"):
             f.titre,
             f.annee,
             f.media_type,
-            COALESCE(f.popularity, 0) AS popularite
+            COALESCE(f.popularite, 0) AS popularite
         FROM lieux_tournage lt
         JOIN films f ON f.id = lt.film_id
         WHERE f.region=%s

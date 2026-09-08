@@ -12,6 +12,9 @@ from geoplateforme import (
     GeoplateformeError,
     RESOURCE_ITINERAIRE,
 )
+import logging
+
+logger = logging.getLogger(__name__)
 from analyse_indicateurs import construire_indicateurs_cinetourisme
 from navigation_cache import navigation_cache
 import os

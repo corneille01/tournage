@@ -7,264 +7,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <style>
-      /* ===== Styles de base ===== */
-      :root {
-        --couleur-fond: #f4f6f9;
-        --couleur-texte: #1a1a2e;
-        --couleur-accent: #e63946;
-        --couleur-panneau: #ffffff;
-        --couleur-bordure: #e0e0e0;
-        --couleur-muted: #6c757d;
-      }
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
-        font-family: "Rajdhani", sans-serif;
-        background-color: var(--couleur-fond);
-        color: var(--couleur-texte);
-        line-height: 1.5;
-        padding: 1rem;
-      }
-      .dashboard-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 1rem;
-        margin-bottom: 2rem;
-      }
-      .dashboard-header h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        color: var(--couleur-texte);
-      }
-      .dashboard-actions {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-      }
-      #etat-donnees {
-        font-weight: 600;
-        color: var(--couleur-muted);
-      }
-      #date-maj {
-        color: var(--couleur-muted);
-        font-size: 0.9rem;
-      }
-      .btn {
-        background-color: var(--couleur-accent);
-        color: white;
-        border: none;
-        padding: 0.6rem 1.2rem;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: 600;
-        font-family: inherit;
-        font-size: 1rem;
-        transition: opacity 0.2s;
-      }
-      .btn:hover {
-        opacity: 0.9;
-      }
-      .analyse-contenu {
-        max-width: 1400px;
-        margin: 0 auto;
-        display: flex;
-        flex-direction: column;
-        gap: 2.5rem;
-      }
-      .analyse-section {
-        background: transparent;
-        border-radius: 8px;
-      }
-      .section-heading {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 1rem;
-      }
-      .section-heading h2 {
-        font-size: 1.8rem;
-        font-weight: 700;
-        letter-spacing: -0.5px;
-      }
-      .eyebrow {
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: var(--couleur-accent);
-        font-weight: 600;
-      }
-      .panel {
-        background: var(--couleur-panneau);
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 8px;
-        padding: 1.5rem;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-        margin-bottom: 1rem;
-      }
-      .dashboard-grid {
-        display: grid;
-        gap: 1rem;
-      }
-      .dashboard-grid.two {
-        grid-template-columns: 1fr 1fr;
-      }
-      @media (max-width: 768px) {
-        .dashboard-grid.two {
-          grid-template-columns: 1fr;
-        }
-      }
-      .chart-wrap {
-        position: relative;
-        height: 300px;
-        width: 100%;
-      }
-      .table-scroll {
-        overflow-x: auto;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.95rem;
-      }
-      th,
-      td {
-        padding: 0.6rem 0.8rem;
-        border-bottom: 1px solid var(--couleur-bordure);
-        text-align: left;
-      }
-      th {
-        background-color: #fafafa;
-        font-weight: 600;
-      }
-      .analyse-note {
-        font-size: 0.9rem;
-        color: var(--couleur-muted);
-        margin-top: 0.5rem;
-      }
-      .data-unavailable {
-        color: #b71c1c;
-        font-style: italic;
-      }
-      .radial-panel {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        text-align: center;
-      }
-      .radial-panel .chart-wrap {
-        height: 150px;
-        width: 100%;
-      }
-      .priorite-card {
-        display: flex;
-        align-items: flex-start;
-        gap: 1rem;
-        padding: 1rem;
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 8px;
-        margin-bottom: 0.8rem;
-        background: white;
-      }
-      .priorite-rang {
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: var(--couleur-accent);
-        min-width: 40px;
-      }
-      .priorite-score {
-        font-size: 1.5rem;
-        font-weight: 700;
-      }
-      .offre-carte {
-        background: white;
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-      }
-      .offre-carte-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-      }
-      .offre-stat-table {
-        margin: 0.8rem 0;
-      }
-      .offre-card-foot {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-        font-size: 0.9rem;
-        color: var(--couleur-muted);
-      }
-      .film-card {
-        background: white;
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 8px;
-        padding: 1rem;
-        margin-bottom: 0.8rem;
-      }
-      .quality-flex {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }
-      .quality-flex > div {
-        flex: 1;
-        min-width: 120px;
-        text-align: center;
-        background: white;
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 8px;
-        padding: 1rem;
-      }
-      .quality-flex strong {
-        font-size: 1.8rem;
-        display: block;
-      }
-      .stat-glossaire-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 0.8rem;
-      }
-      .stat-glossary-item {
-        background: #fafafa;
-        border: 1px solid var(--couleur-bordure);
-        border-radius: 6px;
-        padding: 0.8rem;
-        text-align: center;
-      }
-      .stat-glossary-item strong {
-        display: block;
-        font-size: 1rem;
-      }
-      .stat-glossary-item code {
-        background: #eee;
-        padding: 0.2rem 0.4rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-      }
-      .diagnostic-card {
-        background: #fff8f0;
-        border-left: 4px solid var(--couleur-accent);
-      }
-      .legacy-ambiguous {
-        display: none;
-      }
-      .common-radius-panel {
-        margin: 1rem 0;
-      }
-    </style>
+    <link rel="stylesheet" href="analyse.css" />
   </head>
   <body>
     <header class="dashboard-header">
@@ -348,7 +94,6 @@
             <p></p>
           </article>
         </div>
-        <!-- Le JS injectera ici le panneau infrastructures si nécessaire -->
       </section>
 
       <!-- Section 4 : Offre touristique autour des lieux -->
@@ -360,7 +105,6 @@
           </div>
         </div>
         <div id="offre-categories"></div>
-        <!-- Le JS injectera common-radius ici -->
         <div class="dashboard-grid two">
           <article class="panel">
             <h3>Médiane du nombre d'équipements (rayon DATAtourisme)</h3>
@@ -388,15 +132,24 @@
         <div id="cartes-departements"></div>
       </section>
 
-      <!-- Section 6 : Filmographie notable -->
+      <!-- Section 6 : Filmographie notable (modifiée) -->
       <section class="analyse-section" id="section-films">
         <div class="section-heading">
           <div>
             <span class="eyebrow">FILMOGRAPHIE</span>
-            <h2>Œuvres les plus reconnues</h2>
+            <h2>Notoriété des œuvres et empreinte territoriale</h2>
           </div>
         </div>
-        <div id="films-notables-cartes"></div>
+        <article class="panel">
+          <div class="chart-wrap scatter-wrap">
+            <canvas id="graphe-films-scatter"></canvas>
+          </div>
+          <p class="analyse-note">
+            Chaque point représente une œuvre. La taille du point indique le
+            nombre de départements associés. Survolez pour plus de détails.
+          </p>
+        </article>
+        <div id="films-interpretation"></div>
       </section>
 
       <!-- Section 7 : Qualité des données -->
@@ -423,10 +176,9 @@
           Ce croisement n'est utilisé que lorsque les deux variables sont
           réellement disponibles.
         </p>
-        <!-- Contenu éventuel ajouté par JS si données lieux_potentiel -->
       </section>
 
-      <!-- Section 9 : Opportunités et fragilités (souvent masquée) -->
+      <!-- Sections legacy (masquées par défaut) -->
       <section
         class="analyse-section legacy-ambiguous"
         id="section-opportunites"
@@ -437,10 +189,8 @@
             <h2>Où concentrer les efforts ?</h2>
           </div>
         </div>
-        <!-- Le JS peut injecter ici -->
       </section>
 
-      <!-- Section 10 : Fragilités territoriales -->
       <section class="analyse-section legacy-ambiguous" id="section-fragilites">
         <div class="section-heading">
           <div>
@@ -450,7 +200,7 @@
         </div>
       </section>
 
-      <!-- Section 11 : Priorisation (sera déplacée en fin par JS) -->
+      <!-- Section priorisation -->
       <section class="analyse-section" id="section-priorite">
         <div class="section-heading">
           <div>
@@ -475,12 +225,9 @@
 
       <!-- Synthèse décisionnelle (ajoutée par JS) -->
       <section class="analyse-section" id="synthese-decision"></section>
-
-      <!-- Le glossaire statistique sera ajouté ici par JS -->
       <section class="analyse-section" id="stat-glossaire"></section>
     </main>
 
-    <!-- Chargement de Chart.js AVANT analyse.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="analyse.js"></script>
   </body>

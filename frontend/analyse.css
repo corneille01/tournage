@@ -1,16 +1,33 @@
-/* ===== Variables globales ===== */
+/* ===== Variables globales (thème Pelify) ===== */
 :root {
-    --couleur-fond: #f4f6f9;
-    --couleur-texte: #1a1a2e;
-    --couleur-accent: #e63946;
-    --couleur-panneau: #ffffff;
-    --couleur-bordure: #e0e0e0;
-    --couleur-muted: #6c757d;
-    --police-titres: 'Rajdhani', sans-serif;
-    --police-texte: 'Rajdhani', sans-serif;
+    --primary: #00ffcc;
+    --accent: #ff007f;
+    --gold: #ffd700;
+    --bg: #050508;
+    --card: #0d0d14;
+    --card2: #13131e;
+    --border: rgba(255, 255, 255, 0.07);
+    --text: #dde4f0;
+    --muted: #6b7280;
+    --select-bg: #1a1a2e;
+    --select-text: #dde4f0;
+    --error-bg: rgba(255, 60, 60, 0.1);
+    --error-border: rgba(255, 60, 60, 0.35);
+    --error-text: #ff6b6b;
+    --font-display: "Orbitron", sans-serif;
+    --font-body: "Rajdhani", sans-serif;
+
+    /* Alias pour compatibilité */
+    --couleur-fond: var(--bg);
+    --couleur-carte: var(--card);
+    --couleur-accent: var(--accent);
+    --couleur-texte: var(--text);
+    --couleur-texte-muted: var(--muted);
+    --couleur-bordure: var(--border);
+    --rayon: 12px;
 }
 
-/* ===== Reset de base ===== */
+/* ===== Reset ===== */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -18,15 +35,16 @@
 }
 
 body {
-    font-family: var(--police-texte);
-    background-color: var(--couleur-fond);
-    color: var(--couleur-texte);
+    font-family: var(--font-body);
+    background-color: var(--bg);
+    color: var(--text);
     line-height: 1.5;
     padding: 1rem;
     font-size: 1rem;
+    min-height: 100vh;
 }
 
-/* ===== En-tête du tableau de bord ===== */
+/* ===== En-tête ===== */
 .dashboard-header {
     display: flex;
     justify-content: space-between;
@@ -34,12 +52,16 @@ body {
     flex-wrap: wrap;
     gap: 1rem;
     margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1rem;
 }
 
 .dashboard-header h1 {
+    font-family: var(--font-display);
     font-size: 2rem;
     font-weight: 700;
-    color: var(--couleur-texte);
+    color: var(--primary);
+    letter-spacing: 1px;
 }
 
 .dashboard-actions {
@@ -51,17 +73,17 @@ body {
 
 #etat-donnees {
     font-weight: 600;
-    color: var(--couleur-muted);
+    color: var(--muted);
 }
 
 #date-maj {
-    color: var(--couleur-muted);
+    color: var(--muted);
     font-size: 0.9rem;
 }
 
 /* ===== Boutons ===== */
 .btn {
-    background-color: var(--couleur-accent);
+    background-color: var(--accent);
     color: white;
     border: none;
     padding: 0.6rem 1.2rem;
@@ -70,11 +92,14 @@ body {
     font-weight: 600;
     font-family: inherit;
     font-size: 1rem;
-    transition: opacity 0.2s, background-color 0.2s;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .btn:hover {
     opacity: 0.9;
+    box-shadow: 0 0 10px var(--accent);
 }
 
 /* ===== Conteneur principal ===== */
@@ -86,10 +111,10 @@ body {
     gap: 2.5rem;
 }
 
-/* ===== Sections d'analyse ===== */
+/* ===== Sections ===== */
 .analyse-section {
     background: transparent;
-    border-radius: 8px;
+    border-radius: var(--rayon);
 }
 
 .section-heading {
@@ -100,27 +125,34 @@ body {
 }
 
 .section-heading h2 {
-    font-size: 1.8rem;
-    font-weight: 700;
-    letter-spacing: -0.5px;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--primary);
 }
 
 .eyebrow {
     font-size: 0.85rem;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--couleur-accent);
-    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--accent);
+    font-weight: 700;
 }
 
-/* ===== Panneaux génériques ===== */
+/* ===== Panneaux ===== */
 .panel {
-    background: var(--couleur-panneau);
-    border: 1px solid var(--couleur-bordure);
-    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--rayon);
     padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     margin-bottom: 1rem;
+    transition: border-color 0.2s;
+}
+
+.panel:hover {
+    border-color: rgba(0, 255, 204, 0.3);
 }
 
 /* ===== Grilles ===== */
@@ -133,7 +165,6 @@ body {
     grid-template-columns: 1fr 1fr;
 }
 
-/* Responsive : passe en une colonne sur petits écrans */
 @media (max-width: 768px) {
     .dashboard-grid.two {
         grid-template-columns: 1fr;
@@ -147,9 +178,12 @@ body {
     width: 100%;
 }
 
-/* Ajustement pour les petits graphiques circulaires */
 .radial-panel .chart-wrap {
     height: 150px;
+}
+
+.scatter-wrap {
+    height: 400px;
 }
 
 /* ===== Tableaux ===== */
@@ -165,37 +199,39 @@ table {
 
 th, td {
     padding: 0.6rem 0.8rem;
-    border-bottom: 1px solid var(--couleur-bordure);
+    border-bottom: 1px solid var(--border);
     text-align: left;
+    color: var(--text);
 }
 
 th {
-    background-color: #fafafa;
+    background-color: var(--card2);
     font-weight: 600;
+    color: var(--primary);
 }
 
-/* ===== Notes et messages ===== */
+/* ===== Notes ===== */
 .analyse-note {
     font-size: 0.9rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
     margin-top: 0.5rem;
 }
 
 .data-unavailable {
-    color: #b71c1c;
+    color: var(--error-text);
     font-style: italic;
 }
 
 .analyse-empty {
     padding: 1.5rem;
     text-align: center;
-    color: var(--couleur-muted);
-    border: 1px dashed var(--couleur-bordure);
-    border-radius: 8px;
-    background: #fafafa;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    border-radius: var(--rayon);
+    background: var(--card);
 }
 
-/* ===== Panneaux radiaux ===== */
+/* ===== Radial panels ===== */
 .radial-panel {
     display: flex;
     flex-direction: column;
@@ -207,22 +243,22 @@ th {
     margin-top: 0.5rem;
 }
 
-/* ===== Cartes de priorisation ===== */
+/* ===== Priorisation ===== */
 .priorite-card {
     display: flex;
     align-items: flex-start;
     gap: 1rem;
     padding: 1rem;
-    border: 1px solid var(--couleur-bordure);
-    border-radius: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--rayon);
     margin-bottom: 0.8rem;
-    background: white;
+    background: var(--card);
 }
 
 .priorite-rang {
     font-size: 1.2rem;
     font-weight: 700;
-    color: var(--couleur-accent);
+    color: var(--accent);
     min-width: 40px;
 }
 
@@ -240,20 +276,20 @@ th {
 .priorite-score {
     font-size: 1.5rem;
     font-weight: 700;
-    color: var(--couleur-texte);
+    color: var(--primary);
 }
 
 .priorite-score small {
     font-size: 0.8rem;
     font-weight: 400;
-    color: var(--couleur-muted);
+    color: var(--muted);
 }
 
-/* ===== Cartes d'offre ===== */
+/* ===== Offre ===== */
 .offre-carte {
-    background: white;
-    border: 1px solid var(--couleur-bordure);
-    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--rayon);
     padding: 1rem;
     margin-bottom: 1rem;
 }
@@ -268,6 +304,7 @@ th {
 .offre-carte-head h3 {
     font-size: 1.3rem;
     font-weight: 600;
+    color: var(--primary);
 }
 
 .offre-stat-table {
@@ -279,13 +316,13 @@ th {
     gap: 1rem;
     flex-wrap: wrap;
     font-size: 0.9rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
     margin-bottom: 0.5rem;
 }
 
 .offre-interpretation {
     font-size: 0.9rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
     margin-top: 0.5rem;
 }
 
@@ -294,50 +331,35 @@ th {
     margin: 1rem 0;
 }
 
-/* ===== Cartes de films ===== */
-.film-card {
-    background: white;
-    border: 1px solid var(--couleur-bordure);
-    border-radius: 8px;
-    padding: 1rem;
+/* ===== Films (scatter) ===== */
+#films-interpretation {
+    margin-top: 1.5rem;
+}
+
+#films-interpretation .analysis-text {
+    background: var(--card);
+    border-left: 4px solid var(--primary);
+    padding: 1.2rem;
+    border-radius: var(--rayon);
+}
+
+#films-interpretation h3 {
+    font-family: var(--font-display);
+    color: var(--gold);
     margin-bottom: 0.8rem;
+    font-size: 1.3rem;
 }
 
-.film-card-content {
-    position: relative;
+#films-interpretation p {
+    margin-bottom: 0.8rem;
+    color: var(--text);
 }
 
-.rang-notable {
-    position: absolute;
-    top: -0.2rem;
-    right: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #ddd;
+#films-interpretation strong {
+    color: var(--primary);
 }
 
-.film-card h3 {
-    font-size: 1.2rem;
-    margin-bottom: 0.2rem;
-}
-
-.film-card p {
-    color: var(--couleur-muted);
-    font-size: 0.9rem;
-}
-
-.film-card strong {
-    display: block;
-    font-size: 1.4rem;
-    margin: 0.3rem 0;
-    color: var(--couleur-texte);
-}
-
-.film-card small {
-    color: var(--couleur-muted);
-}
-
-/* ===== Qualité des données ===== */
+/* ===== Qualité ===== */
 .quality-flex {
     display: flex;
     gap: 1rem;
@@ -348,24 +370,24 @@ th {
     flex: 1;
     min-width: 120px;
     text-align: center;
-    background: white;
-    border: 1px solid var(--couleur-bordure);
-    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--rayon);
     padding: 1rem;
 }
 
 .quality-flex strong {
     font-size: 1.8rem;
     display: block;
-    color: var(--couleur-texte);
+    color: var(--primary);
 }
 
 .quality-flex span {
     font-size: 0.9rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
 }
 
-/* ===== Glossaire statistique ===== */
+/* ===== Glossaire ===== */
 .stat-glossaire-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -373,8 +395,8 @@ th {
 }
 
 .stat-glossary-item {
-    background: #fafafa;
-    border: 1px solid var(--couleur-bordure);
+    background: var(--card2);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.8rem;
     text-align: center;
@@ -383,46 +405,49 @@ th {
 .stat-glossary-item strong {
     display: block;
     font-size: 1rem;
+    color: var(--primary);
 }
 
 .stat-glossary-item code {
-    background: #eee;
+    background: #111;
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
     font-size: 0.85rem;
     margin: 0.3rem 0;
     display: inline-block;
+    color: var(--gold);
 }
 
 .stat-glossary-item span {
     display: block;
     font-size: 0.8rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
 }
 
 /* ===== Synthèse décisionnelle ===== */
 .diagnostic-card {
-    background: #fff8f0;
-    border-left: 4px solid var(--couleur-accent);
+    background: var(--card);
+    border-left: 4px solid var(--accent);
     padding: 1.5rem;
-    border-radius: 8px;
+    border-radius: var(--rayon);
 }
 
 .decision-synthesis h3 {
     margin-bottom: 0.8rem;
     font-size: 1.4rem;
+    color: var(--gold);
 }
 
 .decision-synthesis p {
     margin-bottom: 0.6rem;
 }
 
-/* ===== Sections obsolètes / ambiguës ===== */
+/* ===== Legacy ===== */
 .legacy-ambiguous {
     display: none;
 }
 
-/* ===== Carte infrastructures (si utilisée) ===== */
+/* ===== Infra ===== */
 .infra-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -430,8 +455,8 @@ th {
 }
 
 .infra-card {
-    background: #fafafa;
-    border: 1px solid var(--couleur-bordure);
+    background: var(--card2);
+    border: 1px solid var(--border);
     border-radius: 6px;
     padding: 0.8rem;
     text-align: center;
@@ -440,23 +465,25 @@ th {
 .infra-card strong {
     display: block;
     font-size: 1.4rem;
+    color: var(--primary);
 }
 
 .infra-card span {
     display: block;
     font-weight: 600;
     margin: 0.2rem 0;
+    color: var(--text);
 }
 
 .infra-card small {
     display: block;
     font-size: 0.75rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
 }
 
 /* ===== Divers ===== */
 .interpretation-graphe {
     font-size: 0.9rem;
-    color: var(--couleur-muted);
+    color: var(--muted);
     margin-top: 0.5rem;
 }

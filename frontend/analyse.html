@@ -1,127 +1,487 @@
 <!doctype html>
 <html lang="fr">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Observatoire du ciné-tourisme — Pelify</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/analyse.css">
-</head>
-<body class="page-analyse">
-<header class="analyse-header">
-  <div class="header-top">
-    <a href="/" class="ssr-logo">← Lieux de tournage</a>
-    <a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
-  </div>
-  <div class="hero-head">
-    <div>
-      <span class="eyebrow">OBSERVATOIRE TERRITORIAL · OCCITANIE</span>
-      <h1>État du ciné-tourisme</h1>
-      <p class="sous-titre">Empreinte des tournages, offre touristique, mobilité et priorités territoriales, avec une lecture statistique transparente.</p>
-    </div>
-    <div class="hero-score">
-      <span>BESOIN D'ACTION RÉGIONAL</span>
-      <strong id="score-regional">—</strong><small>/100</small>
-    </div>
-  </div>
-  <div class="analyse-toolbar">
-    <span id="etat-donnees">Chargement…</span>
-    <span id="date-maj"></span>
-    <button id="btn-refresh">↻ Actualiser</button>
-  </div>
-</header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tableau de bord – Analyse des lieux de tournage en Occitanie</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ===== Styles de base ===== */
+      :root {
+        --couleur-fond: #f4f6f9;
+        --couleur-texte: #1a1a2e;
+        --couleur-accent: #e63946;
+        --couleur-panneau: #ffffff;
+        --couleur-bordure: #e0e0e0;
+        --couleur-muted: #6c757d;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: "Rajdhani", sans-serif;
+        background-color: var(--couleur-fond);
+        color: var(--couleur-texte);
+        line-height: 1.5;
+        padding: 1rem;
+      }
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 2rem;
+      }
+      .dashboard-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--couleur-texte);
+      }
+      .dashboard-actions {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      #etat-donnees {
+        font-weight: 600;
+        color: var(--couleur-muted);
+      }
+      #date-maj {
+        color: var(--couleur-muted);
+        font-size: 0.9rem;
+      }
+      .btn {
+        background-color: var(--couleur-accent);
+        color: white;
+        border: none;
+        padding: 0.6rem 1.2rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+        font-family: inherit;
+        font-size: 1rem;
+        transition: opacity 0.2s;
+      }
+      .btn:hover {
+        opacity: 0.9;
+      }
+      .analyse-contenu {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2.5rem;
+      }
+      .analyse-section {
+        background: transparent;
+        border-radius: 8px;
+      }
+      .section-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+      .section-heading h2 {
+        font-size: 1.8rem;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+      .eyebrow {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--couleur-accent);
+        font-weight: 600;
+      }
+      .panel {
+        background: var(--couleur-panneau);
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 1rem;
+      }
+      .dashboard-grid {
+        display: grid;
+        gap: 1rem;
+      }
+      .dashboard-grid.two {
+        grid-template-columns: 1fr 1fr;
+      }
+      @media (max-width: 768px) {
+        .dashboard-grid.two {
+          grid-template-columns: 1fr;
+        }
+      }
+      .chart-wrap {
+        position: relative;
+        height: 300px;
+        width: 100%;
+      }
+      .table-scroll {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      th,
+      td {
+        padding: 0.6rem 0.8rem;
+        border-bottom: 1px solid var(--couleur-bordure);
+        text-align: left;
+      }
+      th {
+        background-color: #fafafa;
+        font-weight: 600;
+      }
+      .analyse-note {
+        font-size: 0.9rem;
+        color: var(--couleur-muted);
+        margin-top: 0.5rem;
+      }
+      .data-unavailable {
+        color: #b71c1c;
+        font-style: italic;
+      }
+      .radial-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .radial-panel .chart-wrap {
+        height: 150px;
+        width: 100%;
+      }
+      .priorite-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 8px;
+        margin-bottom: 0.8rem;
+        background: white;
+      }
+      .priorite-rang {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--couleur-accent);
+        min-width: 40px;
+      }
+      .priorite-score {
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .offre-carte {
+        background: white;
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+      .offre-carte-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+      .offre-stat-table {
+        margin: 0.8rem 0;
+      }
+      .offre-card-foot {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+        color: var(--couleur-muted);
+      }
+      .film-card {
+        background: white;
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+      }
+      .quality-flex {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .quality-flex > div {
+        flex: 1;
+        min-width: 120px;
+        text-align: center;
+        background: white;
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 8px;
+        padding: 1rem;
+      }
+      .quality-flex strong {
+        font-size: 1.8rem;
+        display: block;
+      }
+      .stat-glossaire-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.8rem;
+      }
+      .stat-glossary-item {
+        background: #fafafa;
+        border: 1px solid var(--couleur-bordure);
+        border-radius: 6px;
+        padding: 0.8rem;
+        text-align: center;
+      }
+      .stat-glossary-item strong {
+        display: block;
+        font-size: 1rem;
+      }
+      .stat-glossary-item code {
+        background: #eee;
+        padding: 0.2rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+      }
+      .diagnostic-card {
+        background: #fff8f0;
+        border-left: 4px solid var(--couleur-accent);
+      }
+      .legacy-ambiguous {
+        display: none;
+      }
+      .common-radius-panel {
+        margin: 1rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="dashboard-header">
+      <h1>Analyse territoriale des lieux de tournage</h1>
+      <div class="dashboard-actions">
+        <span id="etat-donnees">Chargement…</span>
+        <span id="date-maj"></span>
+        <button id="btn-refresh" class="btn">Actualiser</button>
+      </div>
+    </header>
 
-<main id="analyse-contenu">
-  <section class="analyse-section">
-    <div class="diagnostic-card">
-      <span class="eyebrow">DIAGNOSTIC AUTOMATIQUE</span>
-      <h2 id="diagnostic-titre">Analyse en cours…</h2>
-      <p id="diagnostic-texte"></p>
-      <div id="diagnostic-tags" class="diagnostic-tags"></div>
-    </div>
-  </section>
+    <main id="analyse-contenu" class="analyse-contenu">
+      <!-- Section 1 : Concentration géographique -->
+      <section class="analyse-section" id="section-concentration">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">RÉPARTITION SPATIALE</span>
+            <h2>Où se concentre l’activité de tournage ?</h2>
+          </div>
+        </div>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Nombre de lieux par département</h3>
+            <div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div>
+          </article>
+          <article class="panel">
+            <h3>Concentration des 3 premiers départements</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-concentration"></canvas>
+            </div>
+            <p>
+              Top 3 : <strong id="top3-value">N/D</strong> · HHI :
+              <strong id="hhi-value">N/D</strong>
+            </p>
+          </article>
+        </div>
+        <p class="interpretation-graphe" id="interpretation-lieux"></p>
+      </section>
 
-  <section class="analyse-section">
-    <div id="totaux-cartes" class="kpi-grid"></div>
-  </section>
+      <!-- Section 2 : Accessibilité et mobilité -->
+      <section class="analyse-section" id="section-mobilite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">ACCESSIBILITÉ</span>
+            <h2>Quel rôle joue la mobilité ?</h2>
+          </div>
+        </div>
+        <article class="panel">
+          <h3>Couverture des isochrones</h3>
+          <div class="chart-wrap"><canvas id="graphe-isochrones"></canvas></div>
+          <p>
+            Rapport surface voiture / marche à 15 min :
+            <strong id="ratio-mobilite">N/D</strong>
+          </p>
+          <p class="analyse-note" id="fraicheur-isochrones"></p>
+        </article>
+      </section>
 
-  <section class="analyse-section" id="structure-section">
-    <div class="section-heading"><div><span class="eyebrow">01 · STRUCTURE</span><h2>Où se concentre l’activité cinématographique ?</h2></div><span class="section-number">01</span></div>
-    <div class="dashboard-grid two">
-      <article class="panel"><h3>Répartition des lieux par département</h3><div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div><p id="interpretation-lieux" class="interpretation-graphe"></p></article>
-      <article class="panel"><h3 title="HHI = Σ(parts départementales²). Plus il est élevé, plus la concentration est forte.">Concentration territoriale</h3>
-        <div class="concentration-head"><div class="meter-ring"><strong id="hhi-value">—</strong><span>HHI</span></div><div><strong id="top3-value">—</strong><p>des lieux dans les 3 premiers départements</p></div></div>
-        <div class="chart-wrap small"><canvas id="graphe-concentration"></canvas></div>
-      </article>
-    </div>
-  </section>
+      <!-- Section 3 : Préparation des lieux (radiales) -->
+      <section class="analyse-section" id="section-pret">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">PRÉPARATION DES LIEUX</span>
+            <h2>Les lieux sont-ils prêts à être valorisés ?</h2>
+          </div>
+        </div>
+        <div class="dashboard-grid two">
+          <article class="panel radial-panel">
+            <h3>Accessibles à 15 min</h3>
+            <div class="chart-wrap"><canvas id="graphe-pret15"></canvas></div>
+            <p></p>
+          </article>
+          <article class="panel radial-panel">
+            <h3>Accessibles à 30 min</h3>
+            <div class="chart-wrap"><canvas id="graphe-pret30"></canvas></div>
+            <p></p>
+          </article>
+          <article class="panel radial-panel">
+            <h3>Isolés (plus de 45 min)</h3>
+            <div class="chart-wrap"><canvas id="graphe-isoles"></canvas></div>
+            <p></p>
+          </article>
+        </div>
+        <!-- Le JS injectera ici le panneau infrastructures si nécessaire -->
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">02 · OFFRE TOURISTIQUE</span><h2>Quelle offre entoure réellement les lieux ?</h2></div><span class="section-number">02</span></div>
-    <p class="analyse-note">Toutes les statistiques sont calculées au niveau des lieux de tournage. Les huit indicateurs affichés sont : moyenne, médiane, Q1, Q3, IQR, écart-type, P90 et CV.</p>
-    <div id="offre-categories" class="offre-categories"></div>
-    <div class="dashboard-grid two">
-      <article class="panel"><h3 title="La médiane du nombre d'équipements est la valeur centrale de la distribution. Elle est calculée sur le rayon de recherche de la catégorie : elle ne doit pas être comparée directement entre catégories lorsque ces rayons diffèrent.">Nombre médian d'équipements par catégorie</h3><div class="chart-wrap"><canvas id="graphe-offre-nombre"></canvas></div></article>
-      <article class="panel"><h3 title="Distance au plus proche équipement : médiane = lieu central de la distribution, P90 = distance en dessous de laquelle se trouvent 90 % des lieux disposant de cette donnée.">Distance au plus proche équipement</h3><div class="chart-wrap"><canvas id="graphe-offre-distance"></canvas></div></article>
-    </div>
-    <h3 class="sous-titre-tableau" title="Les intitulés de colonnes sont accompagnés des formules dans les éléments survolables. La comparaison départementale détaillée utilise la catégorie de référence retenue par le backend.">Comparaison départementale</h3>
-    <div id="cartes-departements" class="cartes-departements"></div>
-    <div id="avertissements-methodologiques" class="avertissements"></div>
-  </section>
+      <!-- Section 4 : Offre touristique autour des lieux -->
+      <section class="analyse-section" id="section-offre">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">ÉQUIPEMENTS TOURISTIQUES</span>
+            <h2>Offre touristique autour des lieux</h2>
+          </div>
+        </div>
+        <div id="offre-categories"></div>
+        <!-- Le JS injectera common-radius ici -->
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Médiane du nombre d'équipements (rayon DATAtourisme)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-nombre"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3>Distance au plus proche (médiane & P90, en km)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-distance"></canvas>
+            </div>
+          </article>
+        </div>
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">03 · CAPACITÉ / SERVICES</span><h2>Les lieux sont-ils prêts à être valorisés ?</h2></div><span class="section-number">03</span></div>
-    <div class="dashboard-grid three">
-      <article class="panel radial-panel"><canvas id="graphe-pret15"></canvas><h3>Prêts à 15 min</h3><p>Donnée présentée uniquement si les durées routières réelles couvrent tous les lieux.</p></article>
-      <article class="panel radial-panel"><canvas id="graphe-pret30"></canvas><h3>Prêts à 30 min</h3><p>Donnée présentée uniquement si les durées routières réelles couvrent tous les lieux.</p></article>
-      <article class="panel radial-panel"><canvas id="graphe-isoles"></canvas><h3>Isolés &gt; 45 min</h3><p>Non calculé en l'absence d'une durée fiable pour tous les lieux.</p></article>
-    </div>
-    <article class="panel"><h3>Présence observée des équipements</h3><div class="chart-wrap"><canvas id="graphe-equipement"></canvas></div><p id="interpretation-equipement" class="interpretation-graphe"></p></article>
-  </section>
+      <!-- Section 5 : Tableau de bord départemental -->
+      <section class="analyse-section" id="section-departements">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">DÉPARTEMENTS</span>
+            <h2>Tableau de bord départemental</h2>
+          </div>
+        </div>
+        <div id="cartes-departements"></div>
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">04 · MOBILITÉ</span><h2>Quel rôle joue la mobilité ?</h2></div><span class="section-number">04</span></div>
-    <div class="dashboard-grid two">
-      <article class="panel mobility-panel"><span class="eyebrow">EMPRISE SPATIALE</span><div class="mobility-kpi"><strong id="ratio-mobilite">—</strong><span>×</span></div><h3>Surface voiture / marche à 15 min</h3><p>Mesure spatiale des isochrones IGN. Ce n’est pas une mesure de population ou de fréquentation.</p></article>
-      <article class="panel"><h3>Couverture des isochrones</h3><div class="chart-wrap small"><canvas id="graphe-isochrones"></canvas></div><p id="fraicheur-isochrones" class="interpretation-graphe"></p></article>
-    </div>
-  </section>
+      <!-- Section 6 : Filmographie notable -->
+      <section class="analyse-section" id="section-films">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">FILMOGRAPHIE</span>
+            <h2>Œuvres les plus reconnues</h2>
+          </div>
+        </div>
+        <div id="films-notables-cartes"></div>
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">05 · TERRITOIRES</span><h2>Comment les départements diffèrent-ils ?</h2></div><span class="section-number">05</span></div>
-    <p class="analyse-note">La comparaison départementale doit être lue avec N, médiane, dispersion et proximité. Un département avec peu de lieux ne doit pas être surinterprété.</p>
-  </section>
+      <!-- Section 7 : Qualité des données -->
+      <section class="analyse-section" id="section-qualite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">QUALITÉ DES DONNÉES</span>
+            <h2>Qualité et couverture</h2>
+          </div>
+        </div>
+        <div id="completude-contenu" class="panel"></div>
+        <article class="panel" id="methodologie"></article>
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">06 · FILMOGRAPHIE</span><h2>Œuvres les plus reconnues</h2></div><span class="section-number">06</span></div>
-    <article class="panel"><div id="films-notables-cartes" class="cartes-films-notables"></div></article>
-  </section>
+      <!-- Section 8 : Popularité × préparation (potentiel) -->
+      <section class="analyse-section" id="section-potentiel">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">POTENTIEL</span>
+            <h2>Popularité cinématographique × préparation touristique</h2>
+          </div>
+        </div>
+        <p class="analyse-note">
+          Ce croisement n'est utilisé que lorsque les deux variables sont
+          réellement disponibles.
+        </p>
+        <!-- Contenu éventuel ajouté par JS si données lieux_potentiel -->
+      </section>
 
-  <section class="analyse-section">
-    <div class="section-heading"><div><span class="eyebrow">07 · QUALITÉ</span><h2>Qualité et couverture de l’observation</h2></div><span class="section-number">07</span></div>
-    <div id="completude-contenu" class="kpi-grid"></div>
-    <div id="methodologie" class="methodologie"></div>
-  </section>
+      <!-- Section 9 : Opportunités et fragilités (souvent masquée) -->
+      <section
+        class="analyse-section legacy-ambiguous"
+        id="section-opportunites"
+      >
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">OPPORTUNITÉS</span>
+            <h2>Où concentrer les efforts ?</h2>
+          </div>
+        </div>
+        <!-- Le JS peut injecter ici -->
+      </section>
 
-  <section class="analyse-section" id="section-priorite">
-    <div class="section-heading"><div><span class="eyebrow">08 · PRIORITÉ D'INVESTISSEMENT</span><h2>Où un élu devrait-il agir en premier ?</h2></div><span class="section-number">08</span></div>
-    <div class="dashboard-grid two">
-      <article class="panel"><div class="chart-wrap tall"><canvas id="graphe-priorisation"></canvas></div></article>
-      <article class="panel"><p class="analyse-note">Le score est un outil d'aide à la décision : il ne constitue pas une mesure scientifique universelle. Sa formule, ses pondérations et ses variables sont affichées.</p></article>
-    </div>
-    <div id="liste-priorisation" class="insight-grid"></div>
-  </section>
-</main>
+      <!-- Section 10 : Fragilités territoriales -->
+      <section class="analyse-section legacy-ambiguous" id="section-fragilites">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">FRAGILITÉS</span>
+            <h2>Quels territoires présentent des fragilités ?</h2>
+          </div>
+        </div>
+      </section>
 
-<footer class="liens-legaux" style="padding:20px">
-  <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a>
-</footer>
+      <!-- Section 11 : Priorisation (sera déplacée en fin par JS) -->
+      <section class="analyse-section" id="section-priorite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">AIDE À LA DÉCISION</span>
+            <h2>Où un élu devrait-il agir en priorité ?</h2>
+          </div>
+        </div>
+        <p class="analyse-note"></p>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Score de besoin d'action</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-priorisation"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3>Classement des départements</h3>
+            <div id="liste-priorisation"></div>
+          </article>
+        </div>
+      </section>
 
-<script src="/vendor/chartjs/chart.umd.js"></script>
-<script src="/i18n.js" defer></script>
-<script src="/analyse.js" defer></script>
-</body>
+      <!-- Synthèse décisionnelle (ajoutée par JS) -->
+      <section class="analyse-section" id="synthese-decision"></section>
+
+      <!-- Le glossaire statistique sera ajouté ici par JS -->
+      <section class="analyse-section" id="stat-glossaire"></section>
+    </main>
+
+    <!-- Chargement de Chart.js AVANT analyse.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="analyse.js"></script>
+  </body>
 </html>

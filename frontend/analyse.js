@@ -178,7 +178,6 @@
     const qualite = find("qualité et couverture");
     const filmographie = find("œuvres les plus reconnues");
 
-    // We keep the existing sections but append the decision section last.
     const ordered = [
       ...[structure, offre, capacite, mobilite, territoires, filmographie, qualite, potentiel, opportunites, fragilites]
         .filter(Boolean),
@@ -217,7 +216,6 @@
         "Ce croisement n'est utilisé que lorsque les deux variables sont réellement disponibles. La popularité TMDB est un proxy numérique de notoriété, pas une fréquentation touristique ni un impact économique.";
     }
 
-    // Remove ambiguous old score language.
     document.querySelectorAll("[title]").forEach(el => {
       if ((el.title || "").includes("score composite")) {
         el.title = "Voir la formule détaillée dans la section Priorité d'investissement.";
@@ -270,57 +268,57 @@
     if (txt) txt.innerHTML = `Une surface d'isochrone mesure une <strong>emprise spatiale</strong>. Elle ne mesure ni population, ni emplois, ni fréquentation accessibles. À 15 min, un rapport de surface de ${NUM(iso.ratio_surface_voiture_marche_15) ? N(iso.ratio_surface_voiture_marche_15,2)+"×" : "N/D"} signifie que la voiture couvre une emprise spatiale plus large que la marche, pas qu'elle transporte ${N(iso.ratio_surface_voiture_marche_15,2)} fois plus de personnes.`;
   }
 
- function renderRadials(data) {
-  const a = data.accessibilite || {};
+  function renderRadials(data) {
+    const a = data.accessibilite || {};
 
-  const radial = (id, val, label) => {
-    const el = $(id);
-    if (!el || typeof Chart === "undefined") return;
+    const radial = (id, val, label) => {
+      const el = $(id);
+      if (!el || typeof Chart === "undefined") return;
 
-    destroy(id);
+      destroy(id);
 
-    const known = NUM(val);
+      const known = NUM(val);
 
-    charts[id] = new Chart(el.getContext("2d"), {
-      type: "doughnut",
-      data: {
-        labels: [
-          label,
-          known ? "Non couvert" : "Donnée indisponible"
-        ],
-        datasets: [{
-          data: known
-            ? [Number(val), Math.max(0, 100 - Number(val))]
-            : [1]
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: "70%",
-        plugins: {
-          legend: {
-            display: false
+      charts[id] = new Chart(el.getContext("2d"), {
+        type: "doughnut",
+        data: {
+          labels: [
+            label,
+            known ? "Non couvert" : "Donnée indisponible"
+          ],
+          datasets: [{
+            data: known
+              ? [Number(val), Math.max(0, 100 - Number(val))]
+              : [1]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: "70%",
+          plugins: {
+            legend: {
+              display: false
+            }
           }
         }
+      });
+
+      if (!known) {
+        const p = el
+          .closest(".radial-panel")
+          ?.querySelector("p");
+
+        if (p) {
+          p.classList.add("data-unavailable");
+        }
       }
-    });
+    };
 
-    if (!known) {
-      const p = el
-        .closest(".radial-panel")
-        ?.querySelector("p");
-
-      if (p) {
-        p.classList.add("data-unavailable");
-      }
-    }
-  };
-
-  radial("graphe-pret15", a.pret_15_pct, "15 min");
-  radial("graphe-pret30", a.pret_30_pct, "30 min");
-  radial("graphe-isoles", a.isoles_45_pct, "45 min");
-}
+    radial("graphe-pret15", a.pret_15_pct, "15 min");
+    radial("graphe-pret30", a.pret_30_pct, "30 min");
+    radial("graphe-isoles", a.isoles_45_pct, "45 min");
+  }
 
   function normalized(v, min, max) {
     if (!NUM(v) || !NUM(min) || !NUM(max) || max === min) return null;
@@ -347,16 +345,12 @@
       const offer = NUM(r.hebergement_presence_pct) && NUM(r.restaurant_presence_pct)
         ? (Number(r.hebergement_presence_pct)+Number(r.restaurant_presence_pct))/2 : null;
 
-      // Offre faible => besoin d'action plus fort.
       const deficitOffer = NUM(offer) && NUM(minOffer) && NUM(maxOffer)
         ? 100 - normalized(offer,minOffer,maxOffer) : null;
 
-      // Surface faible => accessibilité spatiale plus faible.
       const deficitMobility = NUM(r.surface_moyenne_15min_km2) && NUM(minSurface) && NUM(maxSurface)
         ? 100 - normalized(r.surface_moyenne_15min_km2,minSurface,maxSurface) : null;
 
-      // Plus de lieux => plus d'enjeu pour une politique de valorisation,
-      // sans prétendre mesurer l'impact économique.
       const cinemaPresence = maxPlaces ? (Number(r.nb_lieux)/maxPlaces)*100 : null;
 
       const parts = [
@@ -456,7 +450,6 @@
       return {key:k,stat};
     }).filter(x => x.stat && NUM(x.stat.mediane));
 
-    // The current backend may not yet expose the 1-km bundle.
     const commonPanel = document.createElement("div");
     commonPanel.className = "panel common-radius-panel";
     commonPanel.innerHTML = common.length ? `
@@ -472,7 +465,13 @@
       const old = $("offre-common-radius");
       if (old) old.remove();
       commonPanel.id = "offre-common-radius";
-      sec.insertBefore(commonPanel, sec.querySelector(".dashboard-grid"));
+      // Correction : insertion conditionnelle si dashboard-grid existe
+      const refNode = sec.querySelector(".dashboard-grid");
+      if (refNode) {
+        sec.insertBefore(commonPanel, refNode);
+      } else {
+        sec.appendChild(commonPanel);
+      }
     }
 
     if (common.length) {
@@ -674,11 +673,8 @@
     renderQuality(data);
     renderInfrastructure(data);
 
-    // Replaces opaque existing score presentation without inventing a zero.
     const priorityRows = renderPriority(data);
 
-    // Hide old opportunity / fragility / potential sections if their score language
-    // conflicts with the transparent decision framework.
     document.querySelectorAll(".analyse-section").forEach(section => {
       const text = section.textContent || "";
       if (text.includes("Score de priorisation transparent") ||
@@ -694,7 +690,6 @@
     addStatsGlossary();
     moveSections();
 
-    // Regional score: weighted mean of the transparent department score when available.
     const weighted = priorityRows.length
       ? priorityRows.reduce((s,r)=>s+(Number(r.score_priorite)||0)*(Number(r.nb_lieux)||0),0) /
         Math.max(1,priorityRows.reduce((s,r)=>s+(Number(r.nb_lieux)||0),0))
@@ -728,22 +723,22 @@
       setText("etat-donnees","Données à jour");
       setText("date-maj",`Actualisé à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}`);
     } catch (e) {
-  console.error("ERREUR OBSERVATOIRE :", e);
-  console.error("MESSAGE :", e?.message);
-  console.error("STACK :", e?.stack);
+      console.error("ERREUR OBSERVATOIRE :", e);
+      console.error("MESSAGE :", e?.message);
+      console.error("STACK :", e?.stack);
 
-  setText("etat-donnees", "Erreur de chargement");
+      setText("etat-donnees", "Erreur de chargement");
 
-  const t = $("diagnostic-titre");
-  if (t) {
-    t.textContent = "Erreur JavaScript";
-  }
+      const t = $("diagnostic-titre");
+      if (t) {
+        t.textContent = "Erreur JavaScript";
+      }
 
-  const p = $("diagnostic-texte");
-  if (p) {
-    p.textContent = e?.message || String(e);
-  }
-}
+      const p = $("diagnostic-texte");
+      if (p) {
+        p.textContent = e?.message || String(e);
+      }
+    }
   }
 
   document.addEventListener("DOMContentLoaded",()=>{

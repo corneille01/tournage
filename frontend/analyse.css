@@ -1,302 +1,462 @@
-/* ============================================================
-   OBSERVATOIRE STATISTIQUE — COMPLÉMENTS
-   ============================================================ */
-
-.stats-glossaire-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+/* ===== Variables globales ===== */
+:root {
+    --couleur-fond: #f4f6f9;
+    --couleur-texte: #1a1a2e;
+    --couleur-accent: #e63946;
+    --couleur-panneau: #ffffff;
+    --couleur-bordure: #e0e0e0;
+    --couleur-muted: #6c757d;
+    --police-titres: 'Rajdhani', sans-serif;
+    --police-texte: 'Rajdhani', sans-serif;
 }
 
-.stat-glossary-item {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
-  min-height: 92px;
-  cursor: help;
+/* ===== Reset de base ===== */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
-.stat-glossary-item strong {
-  display: block;
-  font: 700 0.9rem var(--font-display);
-  color: var(--primary);
+body {
+    font-family: var(--police-texte);
+    background-color: var(--couleur-fond);
+    color: var(--couleur-texte);
+    line-height: 1.5;
+    padding: 1rem;
+    font-size: 1rem;
 }
 
-.stat-glossary-item code {
-  display: block;
-  margin: 5px 0;
-  font-size: 0.68rem;
+/* ===== En-tête du tableau de bord ===== */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
 }
 
-.stat-glossary-item span {
-  display: block;
-  font-size: 0.69rem;
-  line-height: 1.35;
-  color: var(--couleur-texte-muted);
+.dashboard-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--couleur-texte);
 }
 
-
-/* ============================================================
-   CARTE / BLOC OFFRE
-   ============================================================ */
-
-.offre-carte {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.dashboard-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
 }
 
-.offre-stat-table {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+#etat-donnees {
+    font-weight: 600;
+    color: var(--couleur-muted);
 }
 
-.offre-stat-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.72rem;
+#date-maj {
+    color: var(--couleur-muted);
+    font-size: 0.9rem;
 }
 
-.offre-stat-table th,
-.offre-stat-table td {
-  padding: 7px 9px;
-  border-top: 1px solid var(--border);
+/* ===== Boutons ===== */
+.btn {
+    background-color: var(--couleur-accent);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 1rem;
+    transition: opacity 0.2s, background-color 0.2s;
 }
 
-.offre-stat-table thead th {
-  border-top: 0;
-  color: var(--primary);
-  font: 700 0.62rem var(--font-display);
-  text-align: left;
+.btn:hover {
+    opacity: 0.9;
 }
 
-.offre-stat-table tbody th {
-  color: var(--couleur-texte);
-  text-transform: none;
-  letter-spacing: 0;
-  background: transparent;
-  position: static;
+/* ===== Conteneur principal ===== */
+.analyse-contenu {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
 }
 
-.offre-stat-table tbody th:hover {
-  background: rgba(255, 255, 255, 0.04);
+/* ===== Sections d'analyse ===== */
+.analyse-section {
+    background: transparent;
+    border-radius: 8px;
 }
 
-.offre-card-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  font-size: 0.65rem;
-  color: var(--couleur-texte-muted);
+.section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
 }
 
-.offre-card-foot span {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 7px;
+.section-heading h2 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
 }
 
-.offre-interpretation {
-  margin: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  font-size: 0.7rem !important;
-  line-height: 1.45 !important;
+.eyebrow {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--couleur-accent);
+    font-weight: 600;
 }
 
+/* ===== Panneaux génériques ===== */
+.panel {
+    background: var(--couleur-panneau);
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1rem;
+}
 
-/* ============================================================
-   RAYON STANDARD / DONNÉES INDISPONIBLES
-   ============================================================ */
+/* ===== Grilles ===== */
+.dashboard-grid {
+    display: grid;
+    gap: 1rem;
+}
 
-.common-radius-panel {
-  margin: 14px 0;
+.dashboard-grid.two {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* Responsive : passe en une colonne sur petits écrans */
+@media (max-width: 768px) {
+    .dashboard-grid.two {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===== Graphiques ===== */
+.chart-wrap {
+    position: relative;
+    height: 300px;
+    width: 100%;
+}
+
+/* Ajustement pour les petits graphiques circulaires */
+.radial-panel .chart-wrap {
+    height: 150px;
+}
+
+/* ===== Tableaux ===== */
+.table-scroll {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+th, td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid var(--couleur-bordure);
+    text-align: left;
+}
+
+th {
+    background-color: #fafafa;
+    font-weight: 600;
+}
+
+/* ===== Notes et messages ===== */
+.analyse-note {
+    font-size: 0.9rem;
+    color: var(--couleur-muted);
+    margin-top: 0.5rem;
 }
 
 .data-unavailable {
-  border: 1px dashed var(--border);
-  padding: 10px;
-  border-radius: 9px;
+    color: #b71c1c;
+    font-style: italic;
 }
 
-.data-unavailable + * {
-  opacity: 0.9;
+.analyse-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--couleur-muted);
+    border: 1px dashed var(--couleur-bordure);
+    border-radius: 8px;
+    background: #fafafa;
 }
 
-
-/* ============================================================
-   QUALITÉ DES DONNÉES
-   ============================================================ */
-
-.quality-flex {
-  display: flex !important;
-  flex-wrap: wrap;
-  gap: 10px;
+/* ===== Panneaux radiaux ===== */
+.radial-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
 }
 
-.quality-flex > div {
-  flex: 1 1 150px;
-  min-width: 145px;
-  background: var(--couleur-carte);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
-  text-align: center;
+.radial-panel p {
+    margin-top: 0.5rem;
 }
 
-.quality-flex strong {
-  display: block;
-  font: 700 1.3rem var(--font-display);
-  color: var(--primary);
-}
-
-.quality-flex span {
-  display: block;
-  margin-top: 4px;
-  font-size: 0.68rem;
-  color: var(--couleur-texte-muted);
-}
-
-
-/* ============================================================
-   INFRASTRUCTURES / INDICATEURS
-   ============================================================ */
-
-.infra-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 9px;
-}
-
-.infra-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 11px;
-}
-
-.infra-card strong {
-  display: block;
-  font: 700 1.2rem var(--font-display);
-  color: var(--primary);
-}
-
-.infra-card span {
-  display: block;
-  font-size: 0.76rem;
-  font-weight: 700;
-  margin-top: 4px;
-}
-
-.infra-card small {
-  display: block;
-  color: var(--couleur-texte-muted);
-  font-size: 0.59rem;
-  line-height: 1.35;
-  margin-top: 5px;
-}
-
-
-/* ============================================================
-   TABLEAUX STATISTIQUES
-   ============================================================ */
-
-.tableau-stats th[title],
-.sous-titre-tableau[title] {
-  cursor: help;
-}
-
-.tableau-stats tbody tr:hover {
-  background: rgba(255, 255, 255, 0.035);
-}
-
-
-/* ============================================================
-   SYNTHÈSE / DÉCISION
-   ============================================================ */
-
-.decision-synthesis p {
-  font-size: 0.8rem;
-  line-height: 1.55;
-  color: var(--couleur-texte-muted);
-}
-
-.decision-synthesis h3 {
-  margin-top: 0;
-}
-
-
-/* ============================================================
-   CARTE DE PRIORITÉ
-   ============================================================ */
-
+/* ===== Cartes de priorisation ===== */
 .priorite-card {
-  background: var(--couleur-carte);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 8px;
+    margin-bottom: 0.8rem;
+    background: white;
 }
 
 .priorite-rang {
-  font: 900 1.25rem var(--font-display);
-  color: var(--primary);
-  min-width: 2em;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--couleur-accent);
+    min-width: 40px;
 }
 
+.priorite-corps {
+    flex: 1;
+}
 
-/* ============================================================
-   COMPATIBILITÉ / ÉLÉMENTS ANCIENS
-   ============================================================ */
+.priorite-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.3rem;
+}
 
+.priorite-score {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--couleur-texte);
+}
+
+.priorite-score small {
+    font-size: 0.8rem;
+    font-weight: 400;
+    color: var(--couleur-muted);
+}
+
+/* ===== Cartes d'offre ===== */
+.offre-carte {
+    background: white;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.offre-carte-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.offre-carte-head h3 {
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+
+.offre-stat-table {
+    margin: 0.8rem 0;
+}
+
+.offre-card-foot {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+    color: var(--couleur-muted);
+    margin-bottom: 0.5rem;
+}
+
+.offre-interpretation {
+    font-size: 0.9rem;
+    color: var(--couleur-muted);
+    margin-top: 0.5rem;
+}
+
+/* ===== Panneau commun rayon 1 km ===== */
+.common-radius-panel {
+    margin: 1rem 0;
+}
+
+/* ===== Cartes de films ===== */
+.film-card {
+    background: white;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.8rem;
+}
+
+.film-card-content {
+    position: relative;
+}
+
+.rang-notable {
+    position: absolute;
+    top: -0.2rem;
+    right: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #ddd;
+}
+
+.film-card h3 {
+    font-size: 1.2rem;
+    margin-bottom: 0.2rem;
+}
+
+.film-card p {
+    color: var(--couleur-muted);
+    font-size: 0.9rem;
+}
+
+.film-card strong {
+    display: block;
+    font-size: 1.4rem;
+    margin: 0.3rem 0;
+    color: var(--couleur-texte);
+}
+
+.film-card small {
+    color: var(--couleur-muted);
+}
+
+/* ===== Qualité des données ===== */
+.quality-flex {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.quality-flex > div {
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+    background: white;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.quality-flex strong {
+    font-size: 1.8rem;
+    display: block;
+    color: var(--couleur-texte);
+}
+
+.quality-flex span {
+    font-size: 0.9rem;
+    color: var(--couleur-muted);
+}
+
+/* ===== Glossaire statistique ===== */
+.stat-glossaire-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.8rem;
+}
+
+.stat-glossary-item {
+    background: #fafafa;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 6px;
+    padding: 0.8rem;
+    text-align: center;
+}
+
+.stat-glossary-item strong {
+    display: block;
+    font-size: 1rem;
+}
+
+.stat-glossary-item code {
+    background: #eee;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    margin: 0.3rem 0;
+    display: inline-block;
+}
+
+.stat-glossary-item span {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--couleur-muted);
+}
+
+/* ===== Synthèse décisionnelle ===== */
+.diagnostic-card {
+    background: #fff8f0;
+    border-left: 4px solid var(--couleur-accent);
+    padding: 1.5rem;
+    border-radius: 8px;
+}
+
+.decision-synthesis h3 {
+    margin-bottom: 0.8rem;
+    font-size: 1.4rem;
+}
+
+.decision-synthesis p {
+    margin-bottom: 0.6rem;
+}
+
+/* ===== Sections obsolètes / ambiguës ===== */
 .legacy-ambiguous {
-  display: none !important;
+    display: none;
 }
 
-
-/* ============================================================
-   FILMOGRAPHIE
-   ============================================================ */
-
-.filmography-note {
-  border-left: 3px solid var(--primary);
-  padding-left: 12px;
+/* ===== Carte infrastructures (si utilisée) ===== */
+.infra-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.8rem;
 }
 
-
-/* ============================================================
-   RESPONSIVE — TABLETTE
-   ============================================================ */
-
-@media (max-width: 900px) {
-  .stats-glossaire-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.infra-card {
+    background: #fafafa;
+    border: 1px solid var(--couleur-bordure);
+    border-radius: 6px;
+    padding: 0.8rem;
+    text-align: center;
 }
 
+.infra-card strong {
+    display: block;
+    font-size: 1.4rem;
+}
 
-/* ============================================================
-   RESPONSIVE — MOBILE
-   ============================================================ */
+.infra-card span {
+    display: block;
+    font-weight: 600;
+    margin: 0.2rem 0;
+}
 
-@media (max-width: 600px) {
-  .stats-glossaire-grid {
-    grid-template-columns: 1fr;
-  }
+.infra-card small {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--couleur-muted);
+}
 
-  .offre-stat-table {
-    font-size: 0.68rem;
-  }
-
-  .offre-stat-table th,
-  .offre-stat-table td {
-    padding: 6px 7px;
-  }
-
-  .quality-flex > div {
-    flex: 1 1 100%;
-  }
-
-  .infra-grid {
-    grid-template-columns: 1fr;
-  }
+/* ===== Divers ===== */
+.interpretation-graphe {
+    font-size: 0.9rem;
+    color: var(--couleur-muted);
+    margin-top: 0.5rem;
 }

@@ -270,27 +270,57 @@
     if (txt) txt.innerHTML = `Une surface d'isochrone mesure une <strong>emprise spatiale</strong>. Elle ne mesure ni population, ni emplois, ni fréquentation accessibles. À 15 min, un rapport de surface de ${NUM(iso.ratio_surface_voiture_marche_15) ? N(iso.ratio_surface_voiture_marche_15,2)+"×" : "N/D"} signifie que la voiture couvre une emprise spatiale plus large que la marche, pas qu'elle transporte ${N(iso.ratio_surface_voiture_marche_15,2)} fois plus de personnes.`;
   }
 
-  function renderRadials(data) {
-    const a = data.accessibilite || {};
-    const radial = (id,val,label) => {
-      const el = $(id);
-      if (!el || typeof Chart === "undefined") return;
-      destroy(id);
-      const known = NUM(val);
-      new Chart(el.getContext("2d"), {
-        type:"doughnut",
-        data:{labels:[label,known?"Non couvert":"Donnée indisponible"],datasets:[{data:known?[Number(val),Math.max(0,100-Number(val))]:[1]}]},
-        options:{responsive:true,maintainAspectRatio:false,cutout:"70%",plugins:{legend:{display:false}}}
-      });
-      if (!known) {
-        const p = el.closest(".radial-panel")?.querySelector("p");
-        if (p) p.classList.add("data-unavailable");
+ function renderRadials(data) {
+  const a = data.accessibilite || {};
+
+  const radial = (id, val, label) => {
+    const el = $(id);
+    if (!el || typeof Chart === "undefined") return;
+
+    destroy(id);
+
+    const known = NUM(val);
+
+    charts[id] = new Chart(el.getContext("2d"), {
+      type: "doughnut",
+      data: {
+        labels: [
+          label,
+          known ? "Non couvert" : "Donnée indisponible"
+        ],
+        datasets: [{
+          data: known
+            ? [Number(val), Math.max(0, 100 - Number(val))]
+            : [1]
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "70%",
+        plugins: {
+          legend: {
+            display: false
+          }
+        }
       }
-    };
-    radial("graphe-pret15", a.pret_15_pct, "15 min");
-    radial("graphe-pret30", a.pret_30_pct, "30 min");
-    radial("graphe-isoles", a.isoles_45_pct, "45 min");
-  }
+    });
+
+    if (!known) {
+      const p = el
+        .closest(".radial-panel")
+        ?.querySelector("p");
+
+      if (p) {
+        p.classList.add("data-unavailable");
+      }
+    }
+  };
+
+  radial("graphe-pret15", a.pret_15_pct, "15 min");
+  radial("graphe-pret30", a.pret_30_pct, "30 min");
+  radial("graphe-isoles", a.isoles_45_pct, "45 min");
+}
 
   function normalized(v, min, max) {
     if (!NUM(v) || !NUM(min) || !NUM(max) || max === min) return null;
@@ -698,11 +728,22 @@
       setText("etat-donnees","Données à jour");
       setText("date-maj",`Actualisé à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}`);
     } catch (e) {
-      console.error("Erreur observatoire",e);
-      setText("etat-donnees","Erreur de chargement");
-      const t=$("diagnostic-titre"); if(t)t.textContent="Impossible de charger l'observatoire";
-      const p=$("diagnostic-texte"); if(p)p.textContent="Vérifiez les endpoints /api/analyse/indicateurs et /api/analyse/observatoire.";
-    }
+  console.error("ERREUR OBSERVATOIRE :", e);
+  console.error("MESSAGE :", e?.message);
+  console.error("STACK :", e?.stack);
+
+  setText("etat-donnees", "Erreur de chargement");
+
+  const t = $("diagnostic-titre");
+  if (t) {
+    t.textContent = "Erreur JavaScript";
+  }
+
+  const p = $("diagnostic-texte");
+  if (p) {
+    p.textContent = e?.message || String(e);
+  }
+}
   }
 
   document.addEventListener("DOMContentLoaded",()=>{

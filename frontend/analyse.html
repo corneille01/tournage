@@ -1,373 +1,127 @@
 <!doctype html>
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Observatoire du ciné-tourisme — Pelify</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="/style.css" />
-    <link rel="stylesheet" href="/analyse.css" />
-  </head>
-  <body class="page-analyse">
-    <header class="analyse-header">
-      <div class="header-top">
-        <a href="/" class="ssr-logo">← Lieux de tournage</a
-        ><a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
-      </div>
-      <div class="hero-head">
-        <div>
-          <span class="eyebrow">OBSERVATOIRE TERRITORIAL · OCCITANIE</span>
-          <h1>État du ciné-tourisme</h1>
-          <p class="sous-titre">
-            Empreinte des tournages, accessibilité touristique et territoires où
-            l’investissement peut créer le plus de valeur.
-          </p>
-        </div>
-        <div class="hero-score">
-          <span>INDICE D’OPPORTUNITÉ</span><strong id="score-regional">—</strong
-          ><small>/100</small>
-        </div>
-      </div>
-      <div class="analyse-toolbar">
-        <span id="etat-donnees">Chargement…</span><span id="date-maj"></span
-        ><button id="btn-refresh">↻ Actualiser</button>
-      </div>
-    </header>
-    <main id="analyse-contenu">
-      <section class="analyse-section">
-        <div class="diagnostic-card">
-          <span class="eyebrow">DIAGNOSTIC AUTOMATIQUE</span>
-          <h2 id="diagnostic-titre">Analyse en cours…</h2>
-          <p id="diagnostic-texte"></p>
-          <div id="diagnostic-tags" class="diagnostic-tags"></div>
-        </div>
-      </section>
-      <section class="analyse-section">
-        <div id="totaux-cartes" class="kpi-grid"></div>
-      </section>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Observatoire du ciné-tourisme — Pelify</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/analyse.css">
+</head>
+<body class="page-analyse">
+<header class="analyse-header">
+  <div class="header-top">
+    <a href="/" class="ssr-logo">← Lieux de tournage</a>
+    <a href="https://pelify.app" class="lien-pelify-badge">Pelify</a>
+  </div>
+  <div class="hero-head">
+    <div>
+      <span class="eyebrow">OBSERVATOIRE TERRITORIAL · OCCITANIE</span>
+      <h1>État du ciné-tourisme</h1>
+      <p class="sous-titre">Empreinte des tournages, offre touristique, mobilité et priorités territoriales, avec une lecture statistique transparente.</p>
+    </div>
+    <div class="hero-score">
+      <span>BESOIN D'ACTION RÉGIONAL</span>
+      <strong id="score-regional">—</strong><small>/100</small>
+    </div>
+  </div>
+  <div class="analyse-toolbar">
+    <span id="etat-donnees">Chargement…</span>
+    <span id="date-maj"></span>
+    <button id="btn-refresh">↻ Actualiser</button>
+  </div>
+</header>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">01 · STRUCTURE</span>
-            <h2
-              title="On compte combien de lieux de tournage sont recensés dans chaque département, et on regarde si cette activité est répartie de façon équilibrée ou concentrée sur quelques départements seulement (indice de concentration HHI)."
-            >
-              Où se concentre l’activité cinématographique ?
-            </h2>
-          </div>
-          <span class="section-number">01</span>
-        </div>
-        <div class="dashboard-grid two">
-          <article class="panel">
-            <h3>Répartition des lieux par département</h3>
-            <div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div>
-            <p id="interpretation-lieux" class="interpretation-graphe"></p>
-          </article>
-          <article class="panel">
-            <h3>Concentration territoriale</h3>
-            <div class="concentration-head">
-              <div class="meter-ring">
-                <strong id="hhi-value">—</strong><span>HHI</span>
-              </div>
-              <div>
-                <strong id="top3-value">—</strong>
-                <p>des lieux dans les 3 premiers départements</p>
-                <small id="hhi-label"></small>
-              </div>
-            </div>
-            <div class="chart-wrap small">
-              <canvas id="graphe-concentration"></canvas>
-            </div>
-          </article>
-        </div>
-      </section>
+<main id="analyse-contenu">
+  <section class="analyse-section">
+    <div class="diagnostic-card">
+      <span class="eyebrow">DIAGNOSTIC AUTOMATIQUE</span>
+      <h2 id="diagnostic-titre">Analyse en cours…</h2>
+      <p id="diagnostic-texte"></p>
+      <div id="diagnostic-tags" class="diagnostic-tags"></div>
+    </div>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">02 · CAPACITÉ TOURISTIQUE</span>
-            <h2
-              title="Pour chaque lieu, on regarde s’il existe un hébergement et un restaurant à proximité, et si le trajet réel en voiture jusqu’au lieu prend moins de 15 ou 30 minutes. Un pourcentage n’est affiché que si la donnée est disponible pour TOUS les lieux concernés — sinon on affiche « donnée insuffisante » plutôt qu’un chiffre trompeur."
-            >
-              Les lieux sont-ils prêts à être valorisés ?
-            </h2>
-          </div>
-          <span class="section-number">02</span>
-        </div>
-        <div class="dashboard-grid three">
-          <article class="panel radial-panel">
-            <canvas id="graphe-pret15"></canvas>
-            <h3>Prêts à 15 min</h3>
-            <p>Hébergement + restaurant accessibles en voiture.</p>
-          </article>
-          <article class="panel radial-panel">
-            <canvas id="graphe-pret30"></canvas>
-            <h3>Prêts à 30 min</h3>
-            <p>Zone touristique élargie.</p>
-          </article>
-          <article class="panel radial-panel">
-            <canvas id="graphe-isoles"></canvas>
-            <h3>Lieux isolés</h3>
-            <p>Aucun hébergement accessible en moins de 45 min.</p>
-          </article>
-        </div>
-        <article class="panel">
-          <h3>Équipement moyen autour des lieux</h3>
-          <div class="chart-wrap"><canvas id="graphe-equipement"></canvas></div>
-          <p id="interpretation-equipement" class="interpretation-graphe"></p>
-        </article>
-      </section>
+  <section class="analyse-section">
+    <div id="totaux-cartes" class="kpi-grid"></div>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">03 · MOBILITÉ</span>
-            <h2
-              title="Une isochrone est la zone qu’on peut atteindre en un temps donné (ex: 15 minutes). On compare la surface accessible en voiture à celle accessible à pied dans le même temps : plus l’écart est grand, plus le territoire dépend de la voiture pour être exploré."
-            >
-              Quel rôle joue la mobilité ?
-            </h2>
-          </div>
-          <span class="section-number">03</span>
-        </div>
-        <div class="dashboard-grid two">
-          <article class="panel mobility-panel">
-            <span class="eyebrow">EMPRISE SPATIALE</span>
-            <div class="mobility-kpi">
-              <strong id="ratio-mobilite">—</strong><span>×</span>
-            </div>
-            <h3>Surface voiture / marche à 15 min</h3>
-            <p>
-              Comparaison des surfaces d’isochrones IGN, pas une mesure de
-              population accessible.
-            </p>
-          </article>
-          <article class="panel">
-            <h3>Couverture des isochrones pré-calculés</h3>
-            <div class="chart-wrap small">
-              <canvas id="graphe-isochrones"></canvas>
-            </div>
-            <p id="fraicheur-isochrones" class="interpretation-graphe"></p>
-          </article>
-        </div>
-      </section>
+  <section class="analyse-section" id="structure-section">
+    <div class="section-heading"><div><span class="eyebrow">01 · STRUCTURE</span><h2>Où se concentre l’activité cinématographique ?</h2></div><span class="section-number">01</span></div>
+    <div class="dashboard-grid two">
+      <article class="panel"><h3>Répartition des lieux par département</h3><div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div><p id="interpretation-lieux" class="interpretation-graphe"></p></article>
+      <article class="panel"><h3 title="HHI = Σ(parts départementales²). Plus il est élevé, plus la concentration est forte.">Concentration territoriale</h3>
+        <div class="concentration-head"><div class="meter-ring"><strong id="hhi-value">—</strong><span>HHI</span></div><div><strong id="top3-value">—</strong><p>des lieux dans les 3 premiers départements</p></div></div>
+        <div class="chart-wrap small"><canvas id="graphe-concentration"></canvas></div>
+      </article>
+    </div>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">04 · OPPORTUNITÉS</span>
-            <h2
-              title="Chaque lieu reçoit un score qui combine sa popularité cinématographique et son niveau d’équipement touristique actuel. Un score élevé signale un lieu déjà populaire mais encore peu équipé — donc un potentiel de valorisation à court terme."
-            >
-              Où concentrer les efforts ?
-            </h2>
-          </div>
-          <span class="section-number">04</span>
-        </div>
-        <article class="panel">
-          <div class="chart-wrap tall">
-            <canvas id="graphe-opportunites"></canvas>
-          </div>
-          <p class="analyse-note">
-            Score de priorisation transparent : présence cinématographique +
-            préparation touristique + popularité.
-          </p>
-        </article>
-        <div id="liste-opportunites" class="insight-grid"></div>
-      </section>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">02 · OFFRE TOURISTIQUE</span><h2>Quelle offre entoure réellement les lieux ?</h2></div><span class="section-number">02</span></div>
+    <p class="analyse-note">Toutes les statistiques sont calculées au niveau des lieux de tournage. Les huit indicateurs affichés sont : moyenne, médiane, Q1, Q3, IQR, écart-type, P90 et CV.</p>
+    <div id="offre-categories" class="offre-categories"></div>
+    <div class="dashboard-grid two">
+      <article class="panel"><h3 title="La médiane du nombre d'équipements est la valeur centrale de la distribution. Elle est calculée sur le rayon de recherche de la catégorie : elle ne doit pas être comparée directement entre catégories lorsque ces rayons diffèrent.">Nombre médian d'équipements par catégorie</h3><div class="chart-wrap"><canvas id="graphe-offre-nombre"></canvas></div></article>
+      <article class="panel"><h3 title="Distance au plus proche équipement : médiane = lieu central de la distribution, P90 = distance en dessous de laquelle se trouvent 90 % des lieux disposant de cette donnée.">Distance au plus proche équipement</h3><div class="chart-wrap"><canvas id="graphe-offre-distance"></canvas></div></article>
+    </div>
+    <h3 class="sous-titre-tableau" title="Les intitulés de colonnes sont accompagnés des formules dans les éléments survolables. La comparaison départementale détaillée utilise la catégorie de référence retenue par le backend.">Comparaison départementale</h3>
+    <div id="cartes-departements" class="cartes-departements"></div>
+    <div id="avertissements-methodologiques" class="avertissements"></div>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">05 · FRAGILITÉS</span>
-            <h2
-              title="Repère les lieux qui cumulent plusieurs signaux défavorables réels (pas de source de données manquante prise pour un problème) : éloignement confirmé des services, absence d’hébergement recensé à proximité, etc."
-            >
-              Quels territoires doivent être renforcés ?
-            </h2>
-          </div>
-          <span class="section-number">05</span>
-        </div>
-        <article class="panel">
-          <div class="chart-wrap tall">
-            <canvas id="graphe-vigilances"></canvas>
-          </div>
-          <p class="analyse-note">
-            Un score élevé signale un décalage entre présence des tournages et
-            accessibilité touristique observée.
-          </p>
-        </article>
-        <div id="liste-vigilances" class="insight-grid"></div>
-      </section>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">03 · CAPACITÉ / SERVICES</span><h2>Les lieux sont-ils prêts à être valorisés ?</h2></div><span class="section-number">03</span></div>
+    <div class="dashboard-grid three">
+      <article class="panel radial-panel"><canvas id="graphe-pret15"></canvas><h3>Prêts à 15 min</h3><p>Donnée présentée uniquement si les durées routières réelles couvrent tous les lieux.</p></article>
+      <article class="panel radial-panel"><canvas id="graphe-pret30"></canvas><h3>Prêts à 30 min</h3><p>Donnée présentée uniquement si les durées routières réelles couvrent tous les lieux.</p></article>
+      <article class="panel radial-panel"><canvas id="graphe-isoles"></canvas><h3>Isolés &gt; 45 min</h3><p>Non calculé en l'absence d'une durée fiable pour tous les lieux.</p></article>
+    </div>
+    <article class="panel"><h3>Présence observée des équipements</h3><div class="chart-wrap"><canvas id="graphe-equipement"></canvas></div><p id="interpretation-equipement" class="interpretation-graphe"></p></article>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">06 · POTENTIEL</span>
-            <h2
-              title="Chaque point du graphique est un lieu de tournage : sa position horizontale reflète la popularité du film associé, sa position verticale son niveau d’équipement touristique. Les points en haut à droite sont déjà populaires ET équipés ; ceux en haut à gauche sont populaires mais encore peu équipés."
-            >
-              Popularité cinématographique × préparation touristique
-            </h2>
-          </div>
-          <span class="section-number">06</span>
-        </div>
-        <article class="panel">
-          <div class="chart-wrap scatter">
-            <canvas id="graphe-potentiel"></canvas>
-          </div>
-          <p class="analyse-note">
-            Chaque point représente un lieu. Popularité élevée + faible
-            préparation = opportunité de structuration potentielle.
-          </p>
-        </article>
-        <div id="top-lieux" class="insight-grid"></div>
-      </section>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">04 · MOBILITÉ</span><h2>Quel rôle joue la mobilité ?</h2></div><span class="section-number">04</span></div>
+    <div class="dashboard-grid two">
+      <article class="panel mobility-panel"><span class="eyebrow">EMPRISE SPATIALE</span><div class="mobility-kpi"><strong id="ratio-mobilite">—</strong><span>×</span></div><h3>Surface voiture / marche à 15 min</h3><p>Mesure spatiale des isochrones IGN. Ce n’est pas une mesure de population ou de fréquentation.</p></article>
+      <article class="panel"><h3>Couverture des isochrones</h3><div class="chart-wrap small"><canvas id="graphe-isochrones"></canvas></div><p id="fraicheur-isochrones" class="interpretation-graphe"></p></article>
+    </div>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">07 · PRIORITÉ D'INVESTISSEMENT</span>
-            <h2
-              title="Score composite (sur 100) qui combine trois éléments mesurés pour chaque département : l’attractivité cinématographique, le retard d’équipement touristique et l’enclavement routier. Plus le score est élevé, plus le besoin d’action est marqué — ce n’est pas un jugement de valeur sur le département."
-            >
-              Où un élu devrait-il agir en premier ?
-            </h2>
-          </div>
-          <span class="section-number">07</span>
-        </div>
-        <div class="dashboard-grid two">
-          <article class="panel">
-            <div class="chart-wrap tall">
-              <canvas id="graphe-priorisation"></canvas>
-            </div>
-          </article>
-          <article class="panel">
-            <p class="analyse-note">
-              Score composite (0-100) mêlant attractivité cinématographique,
-              retard d'équipement touristique et enclavement routier — recalculé
-              automatiquement à chaque mise à jour des données, sans seuil
-              arbitraire ni valeur inventée.
-            </p>
-          </article>
-        </div>
-        <div id="liste-priorisation" class="insight-grid"></div>
-      </section>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">05 · TERRITOIRES</span><h2>Comment les départements diffèrent-ils ?</h2></div><span class="section-number">05</span></div>
+    <p class="analyse-note">La comparaison départementale doit être lue avec N, médiane, dispersion et proximité. Un département avec peu de lieux ne doit pas être surinterprété.</p>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">08 · TERRITOIRES</span>
-            <h2
-              title="Reprend, département par département, les mêmes indicateurs que les sections précédentes (équipement moyen, accessibilité à 15 minutes, surface accessible en voiture) pour permettre une lecture territoriale directe."
-            >
-              Tableau de bord départemental
-            </h2>
-          </div>
-          <span class="section-number">08</span>
-        </div>
-        <div id="cartes-departements" class="cartes-departements"></div>
-      </section>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">06 · FILMOGRAPHIE</span><h2>Œuvres les plus reconnues</h2></div><span class="section-number">06</span></div>
+    <article class="panel"><div id="films-notables-cartes" class="cartes-films-notables"></div></article>
+  </section>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">09 · OFFRE TOURISTIQUE</span>
-            <h2
-              title="Pour chaque catégorie d'équipement (hébergement, restaurant, activité, office de tourisme), on compte combien il y en a autour de chaque lieu de tournage et à quelle distance se trouve le plus proche. La « médiane » est la valeur du milieu une fois tous les lieux classés du moins bien desservi au mieux desservi — souvent plus parlante que la moyenne, qui peut être faussée par un ou deux lieux exceptionnellement bien équipés."
-            >
-              Offre touristique autour des lieux de tournage
-            </h2>
-          </div>
-          <span class="section-number">09</span>
-        </div>
-        <p class="analyse-note">
-          Une observation = un lieu de tournage. Le nombre affiché « N » précise
-          toujours sur combien de lieux chaque chiffre est réellement calculé —
-          un chiffre basé sur 20 lieux n'a pas le même poids qu'un chiffre basé
-          sur 240.
-        </p>
-        <div id="offre-categories" class="offre-categories"></div>
+  <section class="analyse-section">
+    <div class="section-heading"><div><span class="eyebrow">07 · QUALITÉ</span><h2>Qualité et couverture de l’observation</h2></div><span class="section-number">07</span></div>
+    <div id="completude-contenu" class="kpi-grid"></div>
+    <div id="methodologie" class="methodologie"></div>
+  </section>
 
-        <div class="dashboard-grid two">
-          <article class="panel">
-            <h3
-              title="Pour chaque catégorie, la barre représente le nombre médian d'équipements trouvés autour d'un lieu de tournage (dans le rayon de recherche propre à cette catégorie). Attention : les rayons diffèrent selon la catégorie, donc ce graphique ne dit pas quelle catégorie est « la mieux representée » dans l'absolu."
-            >
-              Nombre médian d'équipements par catégorie
-            </h3>
-            <div class="chart-wrap">
-              <canvas id="graphe-offre-nombre"></canvas>
-            </div>
-          </article>
-          <article class="panel">
-            <h3
-              title="Distance (en km) à laquelle se trouve l'équipement le plus proche, pour un lieu « médian » (au milieu du classement) et pour le 90e percentile (P90) — la distance en dessous de laquelle se trouvent 90% des lieux disposant de cet équipement."
-            >
-              Distance au plus proche équipement
-            </h3>
-            <div class="chart-wrap">
-              <canvas id="graphe-offre-distance"></canvas>
-            </div>
-          </article>
-        </div>
+  <section class="analyse-section" id="section-priorite">
+    <div class="section-heading"><div><span class="eyebrow">08 · PRIORITÉ D'INVESTISSEMENT</span><h2>Où un élu devrait-il agir en premier ?</h2></div><span class="section-number">08</span></div>
+    <div class="dashboard-grid two">
+      <article class="panel"><div class="chart-wrap tall"><canvas id="graphe-priorisation"></canvas></div></article>
+      <article class="panel"><p class="analyse-note">Le score est un outil d'aide à la décision : il ne constitue pas une mesure scientifique universelle. Sa formule, ses pondérations et ses variables sont affichées.</p></article>
+    </div>
+    <div id="liste-priorisation" class="insight-grid"></div>
+  </section>
+</main>
 
-        <h3
-          class="sous-titre-tableau"
-          title="Le tableau compare chaque département à la référence régionale sur la catégorie « hébergement ». L'écart est purement descriptif : « au-dessus » ou « en-dessous » de la moyenne régionale ne veut pas dire « bon » ou « mauvais », seulement différent — à interpréter selon le contexte local."
-        >
-          Comparaison départementale
-        </h3>
-        <div class="table-scroll">
-          <table id="tableau-departemental" class="tableau-stats"></table>
-        </div>
-        <div id="avertissements-methodologiques" class="avertissements"></div>
-      </section>
+<footer class="liens-legaux" style="padding:20px">
+  <a href="/mentions-legales.html">Mentions légales</a> · <a href="/cgu.html">CGU</a>
+</footer>
 
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">10 · QUALITÉ</span>
-            <h2
-              title="Indique, pour chaque type de donnée (coordonnées GPS, équipements touristiques, popularité, isochrones, durées de trajet), sur quelle proportion des lieux elle est réellement disponible. Un indicateur calculé sur 40% des lieux seulement doit être lu avec plus de prudence qu’un indicateur calculé sur 95% des lieux."
-            >
-              Qualité et couverture de l’observation
-            </h2>
-          </div>
-          <span class="section-number">10</span>
-        </div>
-        <div id="completude-contenu" class="kpi-grid"></div>
-        <div id="methodologie" class="methodologie"></div>
-      </section>
-
-      <section class="analyse-section">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">FILMOGRAPHIE</span>
-            <h2
-              title="Classement des œuvres dont les lieux de tournage sont les plus reconnus, d’après la popularité mesurée par la base de données TMDB — un indice de notoriété numérique, pas une mesure de fréquentation touristique réelle."
-            >
-              Œuvres les plus reconnues
-            </h2>
-          </div>
-        </div>
-        <article class="panel">
-          <div id="films-notables-cartes" class="cartes-films-notables"></div>
-        </article>
-      </section>
-    </main>
-    <footer class="liens-legaux" style="padding: 20px">
-      <a href="/mentions-legales.html">Mentions légales</a> ·
-      <a href="/cgu.html">CGU</a>
-    </footer>
-    <script src="/vendor/chartjs/chart.umd.js"></script>
-    <script src="/i18n.js" defer></script>
-    <script src="/analyse.js" defer></script>
-  </body>
+<script src="/vendor/chartjs/chart.umd.js"></script>
+<script src="/i18n.js" defer></script>
+<script src="/analyse.js" defer></script>
+</body>
 </html>

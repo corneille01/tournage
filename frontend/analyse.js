@@ -5,6 +5,13 @@
   const charts = {};
   const $ = (id) => document.getElementById(id);
 
+  // Configuration globale de Chart.js pour le thème sombre
+  if (typeof Chart !== "undefined") {
+    Chart.defaults.color = "#dde4f0";
+    Chart.defaults.borderColor = "rgba(255,255,255,0.07)";
+    Chart.defaults.font.family = "'Rajdhani', sans-serif";
+  }
+
   const ESC = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
   }[c]));
@@ -55,7 +62,7 @@
             if (value === null || value === undefined || Number.isNaN(Number(value))) return;
             ctx.save();
             ctx.font = "600 11px Rajdhani, sans-serif";
-            ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--couleur-texte") || "#fff";
+            ctx.fillStyle = "#dde4f0";
             ctx.textAlign = "center";
             ctx.textBaseline = "bottom";
             if (chartInstance.config.type === "bar") {
@@ -150,7 +157,8 @@
           ["IQR","Q3 − Q1","Mesure de dispersion du cœur de 50 % des lieux."],
           ["Écart-type","√variance","Dispersion absolue autour de la moyenne."],
           ["P90","90e percentile","Repère des situations les plus éloignées / fortement équipées."],
-          ["CV","σ / moyenne × 100","Dispersion relative : utile pour repérer l’hétérogénéité."]
+          ["CV","σ / moyenne × 100","Dispersion relative : utile pour repérer l’hétérogénéité."],
+          ["HHI","Σ(part_i)²","Indice de concentration (0 = répartition parfaite, 1 = monopole)."]
         ].map(([a,b,c]) => `<div class="stat-glossary-item" title="${ESC(c)}">
           <strong>${a}</strong><code>${b}</code><span>${c}</span>
         </div>`).join("")}
@@ -167,25 +175,25 @@
     const find = (text) => sections.find(s => s.textContent.toLowerCase().includes(text));
 
     const structure = find("où se concentre");
+    const offre = find("offre touristique autour");
     const capacite = find("les lieux sont-ils prêts");
     const mobilite = find("quel rôle joue");
-    const opportunites = find("où concentrer les efforts");
-    const fragilites = find("quels territoires");
+    const territoires = find("tableau de bord départemental");
+    const filmographie = find("potentiel de valorisation ciné-touristique");
+    const qualite = find("qualité et couverture");
     const potentiel = find("popularité cinématographique");
     const priorite = find("où un élu devrait-il agir");
-    const territoires = find("tableau de bord départemental");
-    const offre = find("offre touristique autour");
-    const qualite = find("qualité et couverture");
-    const filmographie = find("œuvres les plus reconnues");
+    const synthese = find("ce que l'élu doit retenir");
+    const glossaire = find("comment lire les indicateurs");
 
     const ordered = [
-      ...[structure, offre, capacite, mobilite, territoires, filmographie, qualite, potentiel, opportunites, fragilites]
+      ...[structure, offre, capacite, mobilite, territoires, filmographie, qualite, potentiel, priorite]
         .filter(Boolean),
     ];
 
     ordered.forEach(s => main.appendChild(s));
-    if (priorite) main.appendChild(priorite);
-    addStatsGlossary();
+    if (synthese) main.appendChild(synthese);
+    if (glossaire) main.appendChild(glossaire);
   }
 
   function improveExistingLabels(data) {
@@ -245,7 +253,7 @@
     const i = $("interpretation-lieux");
     if (i && deps.length) {
       const d = deps[0];
-      i.innerHTML = `<strong>${ESC(d.departement)}</strong> concentre <strong>${N(d.nb_lieux)}</strong> lieux (${P(d.part_pct)} du total). Cette concentration indique où l'écosystème cinéma est le plus visible, mais ne prouve pas à elle seule un potentiel touristique supérieur.`;
+      i.innerHTML = `<strong>${ESC(d.departement)}</strong> concentre <strong>${N(d.nb_lieux)}</strong> lieux (${P(d.part_pct)} du total). Cette concentration indique où l'écosystème cinéma est le plus visible, mais ne prouve pas à elle seule un potentiel touristique supérieur. L'indice HHI de ${N(hhi,2)} traduit une concentration ${hhi > 0.25 ? "élevée" : hhi > 0.15 ? "modérée" : "faible"}.`;
     }
   }
 
@@ -445,6 +453,7 @@
       `;
     }).join("") : `<div class="analyse-empty">Aucune catégorie statistique disponible.</div>`;
 
+    // Panneau commun rayon 1 km
     const common = keys.map(k => {
       const stat = eq[k]?.nombre_rayon_standard_1km || eq[k]?.nombre_1km;
       return {key:k,stat};
@@ -465,7 +474,6 @@
       const old = $("offre-common-radius");
       if (old) old.remove();
       commonPanel.id = "offre-common-radius";
-      // Correction : insertion conditionnelle si dashboard-grid existe
       const refNode = sec.querySelector(".dashboard-grid");
       if (refNode) {
         sec.insertBefore(commonPanel, refNode);
@@ -496,6 +504,29 @@
       ]},
       options:{responsive:true,maintainAspectRatio:false}
     });
+
+    // Synthèse de la section offre
+    const synth = $("offre-synthese");
+    if (synth) {
+      // Calculer des indicateurs globaux
+      const categories = keys.map(k => {
+        const stat = eq[k]?.nombre_rayon_standard_1km || eq[k]?.nombre_1km;
+        return { key: k, mediane: stat?.mediane };
+      }).filter(x => NUM(x.mediane));
+      const plusFrequente = categories.sort((a,b) => b.mediane - a.mediane)[0];
+      const moinsFrequente = categories.sort((a,b) => a.mediane - b.mediane)[0];
+      const distanceMedianeGlobale = keys
+        .map(k => eq[k]?.distance_plus_proche_m?.mediane)
+        .filter(NUM)
+        .sort((a,b) => a - b);
+      const medianeGlobale = distanceMedianeGlobale.length ? distanceMedianeGlobale[Math.floor(distanceMedianeGlobale.length/2)] : null;
+
+      synth.innerHTML = `
+        <h3>Synthèse de l’offre touristique</h3>
+        <p>La catégorie la plus fréquente à 1 km est <strong>${CAT[plusFrequente?.key] || "N/D"}</strong> (médiane ${N(plusFrequente?.mediane,1)} équipements), tandis que <strong>${CAT[moinsFrequente?.key] || "N/D"}</strong> est la moins présente (médiane ${N(moinsFrequente?.mediane,1)}).</p>
+        <p>La distance médiane au plus proche équipement est de ${KM(medianeGlobale)}. Cette synthèse met en évidence que l’offre est <strong>globalement accessible</strong> mais avec des <strong>disparités par catégorie</strong> : certaines fonctions (hébergement, restauration) sont très répandues, tandis que d’autres (aéroport, refuge) sont plus rares et donc stratégiques.</p>
+      `;
+    }
   }
 
   function offerInterpretation(key,b) {
@@ -558,33 +589,163 @@
     }
   }
 
-  function renderFilmography(data) {
-    const rows = Array.isArray(data.films_notables) ? data.films_notables : [];
-    const host = $("films-notables-cartes");
-    if (!host) return;
-    host.innerHTML = rows.length ? rows.map((f,i)=>`
-      <article class="film-card">
-        <div class="film-card-content">
-          <span class="rang-notable">#${i+1}</span>
-          <h3>${ESC(f.titre||"Sans titre")}</h3>
-          <p>${f.annee ? ESC(f.annee) : ""}</p>
-          <strong>${NUM(f.popularite)?N(f.popularite,2):"N/D"}</strong>
-          <small>Popularité TMDB · ${N(f.nb_lieux)} lieux · ${N(f.nb_departements)} départements</small>
-        </div>
-      </article>
-    `).join("") : `<div class="analyse-empty">Aucune œuvre classable.</div>`;
+  // ===== NOUVELLE FONCTION POUR LE GRAPHIQUE À QUADRANTS =====
+  function renderFilmographyQuadrants(data) {
+    const films = Array.isArray(data.films_notables) ? data.films_notables : [];
+    const canvas = $("graphe-films-quadrants");
+    const interpretationHost = $("films-interpretation");
+    if (!canvas || !interpretationHost) return;
 
-    const sec = host.closest(".analyse-section");
-    if (sec) {
-      let note = sec.querySelector(".filmography-note");
-      if (!note) {
-        note = document.createElement("p");
-        note.className = "analyse-note filmography-note";
-        sec.appendChild(note);
-      }
-      note.innerHTML = "<strong>Interprétation :</strong> la popularité TMDB est un indicateur de notoriété / engagement numérique. Elle ne mesure ni les entrées en salle, ni la fréquentation des lieux, ni les retombées économiques. Elle peut néanmoins aider à repérer quelles œuvres sont les plus susceptibles d'être mises en avant dans une stratégie éditoriale, un parcours ou une campagne.";
+    const validFilms = films.filter(f => NUM(f.popularite) && NUM(f.nb_lieux));
+    if (!validFilms.length) {
+      interpretationHost.innerHTML = `<div class="analyse-empty">Aucune œuvre avec données suffisantes.</div>`;
+      return;
     }
+
+    // Calcul des médianes pour les seuils des quadrants
+    const popValues = validFilms.map(f => Number(f.popularite));
+    const lieuValues = validFilms.map(f => Number(f.nb_lieux));
+    const medianPop = median(popValues);
+    const medianLieux = median(lieuValues);
+
+    const scatterData = validFilms.map(f => ({
+      x: Number(f.nb_lieux),
+      y: Number(f.popularite),
+      r: 5 + (f.departements?.length || 0) * 3,
+      titre: f.titre || "Sans titre",
+      annee: f.annee || "",
+      deps: f.departements && f.departements.length ? f.departements.join(", ") : "Non précisé",
+      nbLieux: f.nb_lieux,
+      nbDeps: f.departements?.length || 0
+    }));
+
+    // Plugin pour dessiner les lignes de quadrant
+    const quadrantPlugin = {
+      id: 'quadrantLines',
+      afterDraw(chart) {
+        const ctx = chart.ctx;
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        const xCenter = xScale.getPixelForValue(medianLieux);
+        const yCenter = yScale.getPixelForValue(medianPop);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+
+        // Ligne verticale
+        ctx.beginPath();
+        ctx.moveTo(xCenter, yScale.top);
+        ctx.lineTo(xCenter, yScale.bottom);
+        ctx.stroke();
+
+        // Ligne horizontale
+        ctx.beginPath();
+        ctx.moveTo(xScale.left, yCenter);
+        ctx.lineTo(xScale.right, yCenter);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    };
+
+    destroy("graphe-films-quadrants");
+    charts["graphe-films-quadrants"] = new Chart(canvas.getContext("2d"), {
+      type: "scatter",
+      data: {
+        datasets: [{
+          label: "Œuvres",
+          data: scatterData,
+          backgroundColor: "#00ffcc",
+          borderColor: "#00ffcc",
+          borderWidth: 1,
+          pointRadius: scatterData.map(d => d.r),
+          pointHoverRadius: scatterData.map(d => d.r + 3)
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const d = context.raw;
+                return [
+                  `${d.titre} (${d.annee})`,
+                  `Popularité : ${d.y.toFixed(2)}`,
+                  `Lieux : ${d.x}`,
+                  `Départements : ${d.deps}`
+                ];
+              }
+            }
+          },
+          legend: { display: false },
+          quadrantLines: {} // pour activer le plugin
+        },
+        scales: {
+          x: {
+            title: { display: true, text: "Nombre de lieux de tournage", color: "#dde4f0" },
+            ticks: { stepSize: 1, color: "#dde4f0" },
+            grid: { color: "rgba(255,255,255,0.07)" }
+          },
+          y: {
+            title: { display: true, text: "Popularité TMDB", color: "#dde4f0" },
+            ticks: { color: "#dde4f0" },
+            grid: { color: "rgba(255,255,255,0.07)" }
+          }
+        }
+      },
+      plugins: [quadrantPlugin]
+    });
+
+    // Interprétation dynamique
+    const topPop = validFilms.reduce((a,b) => a.popularite > b.popularite ? a : b);
+    const topLieux = validFilms.reduce((a,b) => a.nb_lieux > b.nb_lieux ? a : b);
+    const forteNotoriete = validFilms.filter(f => f.popularite > medianPop);
+    const forteEmpreinte = validFilms.filter(f => f.nb_lieux > medianLieux);
+    const locomotives = forteNotoriete.filter(f => f.nb_lieux <= medianLieux);
+    const patrimoine = forteEmpreinte.filter(f => f.popularite <= medianPop);
+    const doubleFort = forteNotoriete.filter(f => f.nb_lieux > medianLieux);
+    const doubleFaible = validFilms.filter(f => f.popularite <= medianPop && f.nb_lieux <= medianLieux);
+
+    const lister = (arr) => arr.map(f => f.titre).join(", ") || "aucune œuvre";
+
+    interpretationHost.innerHTML = `
+      <div class="analysis-text">
+        <h3>Ce que la notoriété des œuvres révèle pour le territoire</h3>
+        <p>Les données de notoriété mettent en évidence un <strong>potentiel de valorisation touristique encore largement exploitable</strong>. Plusieurs œuvres connues du grand public sont associées à des lieux de tournage en Occitanie, notamment <strong>${lister(forteNotoriete)}</strong>.</p>
+        <p>Le cas de <strong>${topPop.titre}</strong> est particulièrement remarquable : l'œuvre obtient de très loin le niveau de popularité TMDB le plus élevé du corpus, avec <strong>${topPop.popularite.toFixed(2)}</strong>, alors qu'elle n'est associée ici qu'à <strong>${topPop.nb_lieux} lieu(x)</strong> et <strong>${topPop.departements?.length || 0} département(s)</strong>. Cela montre qu'un territoire peut disposer d'une œuvre à forte notoriété sans que celle-ci soit nécessairement déclinée en un réseau important de lieux ou en parcours touristiques identifiables.</p>
+        <p>À l'inverse, certaines œuvres présentent une <strong>empreinte territoriale plus importante</strong>. <strong>${topLieux.titre}</strong>, par exemple, est associé à <strong>${topLieux.nb_lieux} lieux</strong> répartis dans <strong>${topLieux.departements?.length || 0} département(s)</strong>, tandis que <strong>${lister(forteEmpreinte)}</strong> offrent potentiellement davantage de matière pour construire des parcours.</p>
+        <h4>Lecture des quadrants</h4>
+        <ul>
+          <li><strong>Quadrant supérieur gauche</strong> (forte notoriété, faible empreinte) : œuvres locomotives à fort potentiel de communication mais peu de lieux associés, comme <strong>${lister(locomotives)}</strong>.</li>
+          <li><strong>Quadrant supérieur droit</strong> (forte notoriété, forte empreinte) : œuvres prioritaires pour créer des parcours, comme <strong>${lister(doubleFort)}</strong>.</li>
+          <li><strong>Quadrant inférieur droit</strong> (faible notoriété, forte empreinte) : patrimoine cinématographique territorial à mieux raconter, comme <strong>${lister(patrimoine)}</strong>.</li>
+          <li><strong>Quadrant inférieur gauche</strong> (faible notoriété, faible empreinte) : intérêt local, priorité moindre, comme <strong>${lister(doubleFaible)}</strong>.</li>
+        </ul>
+        <p>L'enjeu pour une collectivité n'est donc pas seulement de rechercher les œuvres les plus populaires. Il consiste à <strong>croiser la notoriété d'une œuvre avec son implantation géographique</strong>. Une œuvre très connue associée à un lieu facilement accessible peut constituer un excellent support de communication. Une œuvre moins connue mais présente sur plusieurs sites peut, quant à elle, contribuer à construire un parcours territorial plus structuré.</p>
+        <h3>Un potentiel de communication à transformer en expérience</h3>
+        <p>Ces résultats permettent ainsi d'identifier des <strong>« locomotives narratives »</strong> : des œuvres suffisamment connues pour attirer l'attention et servir de porte d'entrée vers un territoire.</p>
+        <p>L'objectif peut être de passer d'une simple information — « un film a été tourné ici » — à une véritable expérience touristique : <strong>carte des lieux de tournage, parcours, signalétique, contenus numériques, visites guidées, photographies avant/après, événements ou mise en réseau avec les acteurs touristiques locaux</strong>.</p>
+        <p>La présence d'œuvres internationales ou de films à forte notoriété, comme <strong>${lister(forteNotoriete)}</strong>, constitue également un argument potentiel pour diversifier la communication du territoire auprès de publics qui ne connaissent pas nécessairement celui-ci pour ses seuls attraits touristiques traditionnels.</p>
+        <h3>Un signal stratégique, pas une mesure d'impact économique</h3>
+        <p>Il convient toutefois de rester prudent : <strong>la popularité TMDB ne mesure ni les entrées en salle, ni les audiences télévisées, ni les visiteurs réellement générés sur les lieux de tournage, ni les retombées économiques locales</strong>.</p>
+        <p>Elle constitue plutôt un <strong>indicateur de potentiel de visibilité et de valorisation éditoriale</strong>. Pour mesurer réellement l'effet du cinéma sur l'attractivité du territoire, il faudrait ensuite rapprocher ces données de données de fréquentation touristique, de fréquentation des lieux de tournage, de recherches en ligne, de fréquentation des parcours ou encore de dépenses touristiques.</p>
+        <p><strong>Pour un élu, le message essentiel est donc le suivant : le territoire dispose déjà d'un patrimoine cinématographique identifiable et parfois associé à des œuvres très connues. L'enjeu n'est plus seulement de recenser les tournages, mais de déterminer lesquels peuvent être transformés en véritables supports d'attractivité, de communication et de découverte du territoire.</strong></p>
+      </div>
+    `;
   }
+
+  function median(arr) {
+    if (!arr.length) return null;
+    const sorted = [...arr].sort((a,b) => a-b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+  }
+
+  // ===== FIN =====
 
   function renderQuality(data) {
     const c = data.completude||{};
@@ -669,7 +830,7 @@
     renderMobility(data);
     renderOffer(obs);
     renderDepartmentDashboard(obs, data);
-    renderFilmography(data);
+    renderFilmographyQuadrants(data); // Remplace l'ancien renderFilmography
     renderQuality(data);
     renderInfrastructure(data);
 

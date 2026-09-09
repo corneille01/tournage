@@ -17,7 +17,7 @@
     --font-display: "Orbitron", sans-serif;
     --font-body: "Rajdhani", sans-serif;
 
-    /* Alias pour compatibilité */
+    /* Alias */
     --couleur-fond: var(--bg);
     --couleur-carte: var(--card);
     --couleur-accent: var(--accent);
@@ -165,8 +165,13 @@ body {
     grid-template-columns: 1fr 1fr;
 }
 
+.dashboard-grid.three {
+    grid-template-columns: repeat(3, 1fr);
+}
+
 @media (max-width: 768px) {
-    .dashboard-grid.two {
+    .dashboard-grid.two,
+    .dashboard-grid.three {
         grid-template-columns: 1fr;
     }
 }
@@ -286,12 +291,23 @@ th {
 }
 
 /* ===== Offre ===== */
+.offre-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
 .offre-carte {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--rayon);
     padding: 1rem;
-    margin-bottom: 1rem;
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.offre-carte:hover {
+    transform: translateY(-3px);
+    border-color: var(--primary);
 }
 
 .offre-carte-head {
@@ -302,7 +318,7 @@ th {
 }
 
 .offre-carte-head h3 {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     font-weight: 600;
     color: var(--primary);
 }
@@ -326,12 +342,20 @@ th {
     margin-top: 0.5rem;
 }
 
+#offre-synthese {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: var(--card2);
+    border-left: 4px solid var(--primary);
+    border-radius: var(--rayon);
+}
+
 /* ===== Panneau commun rayon 1 km ===== */
 .common-radius-panel {
     margin: 1rem 0;
 }
 
-/* ===== Films (scatter) ===== */
+/* ===== Films (quadrants) ===== */
 #films-interpretation {
     margin-top: 1.5rem;
 }

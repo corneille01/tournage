@@ -50,23 +50,30 @@
         <p class="interpretation-graphe" id="interpretation-lieux"></p>
       </section>
 
-      <!-- Section 2 : Accessibilité et mobilité -->
-      <section class="analyse-section" id="section-mobilite">
+      <!-- Section 2 : Offre touristique (réorganisée) -->
+      <section class="analyse-section" id="section-offre">
         <div class="section-heading">
           <div>
-            <span class="eyebrow">ACCESSIBILITÉ</span>
-            <h2>Quel rôle joue la mobilité ?</h2>
+            <span class="eyebrow">ÉQUIPEMENTS TOURISTIQUES</span>
+            <h2>Offre touristique autour des lieux</h2>
           </div>
         </div>
-        <article class="panel">
-          <h3>Couverture des isochrones</h3>
-          <div class="chart-wrap"><canvas id="graphe-isochrones"></canvas></div>
-          <p>
-            Rapport surface voiture / marche à 15 min :
-            <strong id="ratio-mobilite">N/D</strong>
-          </p>
-          <p class="analyse-note" id="fraicheur-isochrones"></p>
-        </article>
+        <div id="offre-categories" class="offre-grid"></div>
+        <div id="offre-synthese"></div>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Médiane du nombre d'équipements (rayon DATAtourisme)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-nombre"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3>Distance au plus proche (médiane & P90, en km)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-distance"></canvas>
+            </div>
+          </article>
+        </div>
       </section>
 
       <!-- Section 3 : Préparation des lieux (radiales) -->
@@ -77,7 +84,7 @@
             <h2>Les lieux sont-ils prêts à être valorisés ?</h2>
           </div>
         </div>
-        <div class="dashboard-grid two">
+        <div class="dashboard-grid three">
           <article class="panel radial-panel">
             <h3>Accessibles à 15 min</h3>
             <div class="chart-wrap"><canvas id="graphe-pret15"></canvas></div>
@@ -96,29 +103,23 @@
         </div>
       </section>
 
-      <!-- Section 4 : Offre touristique autour des lieux -->
-      <section class="analyse-section" id="section-offre">
+      <!-- Section 4 : Accessibilité et mobilité -->
+      <section class="analyse-section" id="section-mobilite">
         <div class="section-heading">
           <div>
-            <span class="eyebrow">ÉQUIPEMENTS TOURISTIQUES</span>
-            <h2>Offre touristique autour des lieux</h2>
+            <span class="eyebrow">ACCESSIBILITÉ</span>
+            <h2>Quel rôle joue la mobilité ?</h2>
           </div>
         </div>
-        <div id="offre-categories"></div>
-        <div class="dashboard-grid two">
-          <article class="panel">
-            <h3>Médiane du nombre d'équipements (rayon DATAtourisme)</h3>
-            <div class="chart-wrap">
-              <canvas id="graphe-offre-nombre"></canvas>
-            </div>
-          </article>
-          <article class="panel">
-            <h3>Distance au plus proche (médiane & P90, en km)</h3>
-            <div class="chart-wrap">
-              <canvas id="graphe-offre-distance"></canvas>
-            </div>
-          </article>
-        </div>
+        <article class="panel">
+          <h3>Couverture des isochrones</h3>
+          <div class="chart-wrap"><canvas id="graphe-isochrones"></canvas></div>
+          <p>
+            Rapport surface voiture / marche à 15 min :
+            <strong id="ratio-mobilite">N/D</strong>
+          </p>
+          <p class="analyse-note" id="fraicheur-isochrones"></p>
+        </article>
       </section>
 
       <!-- Section 5 : Tableau de bord départemental -->
@@ -132,17 +133,17 @@
         <div id="cartes-departements"></div>
       </section>
 
-      <!-- Section 6 : Filmographie notable (modifiée) -->
+      <!-- Section 6 : Filmographie (quadrants) -->
       <section class="analyse-section" id="section-films">
         <div class="section-heading">
           <div>
             <span class="eyebrow">FILMOGRAPHIE</span>
-            <h2>Notoriété des œuvres et empreinte territoriale</h2>
+            <h2>Potentiel de valorisation ciné-touristique</h2>
           </div>
         </div>
         <article class="panel">
           <div class="chart-wrap scatter-wrap">
-            <canvas id="graphe-films-scatter"></canvas>
+            <canvas id="graphe-films-quadrants"></canvas>
           </div>
           <p class="analyse-note">
             Chaque point représente une œuvre. La taille du point indique le
@@ -178,29 +179,7 @@
         </p>
       </section>
 
-      <!-- Sections legacy (masquées par défaut) -->
-      <section
-        class="analyse-section legacy-ambiguous"
-        id="section-opportunites"
-      >
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">OPPORTUNITÉS</span>
-            <h2>Où concentrer les efforts ?</h2>
-          </div>
-        </div>
-      </section>
-
-      <section class="analyse-section legacy-ambiguous" id="section-fragilites">
-        <div class="section-heading">
-          <div>
-            <span class="eyebrow">FRAGILITÉS</span>
-            <h2>Quels territoires présentent des fragilités ?</h2>
-          </div>
-        </div>
-      </section>
-
-      <!-- Section priorisation -->
+      <!-- Section 9 : Priorisation -->
       <section class="analyse-section" id="section-priorite">
         <div class="section-heading">
           <div>
@@ -228,6 +207,7 @@
       <section class="analyse-section" id="stat-glossaire"></section>
     </main>
 
+    <!-- Chargement de Chart.js AVANT analyse.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="analyse.js"></script>
   </body>

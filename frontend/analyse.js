@@ -1479,6 +1479,246 @@
   // RENDU GLOBAL
   // ------------------------------------------------------------
 
+  // ------------------------------------------------------------
+  // OFFRE TOURISTIQUE DÉTAILLÉE (dictionnaire statistique complet)
+  // ------------------------------------------------------------
+
+  const LABELS_CATEGORIE_OBSERVATOIRE = {
+    hebergement: "Hébergement",
+    restaurant: "Restauration",
+    activite: "Activités",
+    office_tourisme: "Office de tourisme",
+    refuge: "Refuge",
+    gare: "Gare",
+    aeroport: "Aéroport",
+    aerodrome: "Aérodrome",
+    arret_bus: "Arrêt de bus",
+    parking: "Parking",
+    distributeur: "Distributeur",
+    police: "Police",
+    hopital: "Hôpital",
+  };
+
+  function libelleCategorie(cle) {
+    return LABELS_CATEGORIE_OBSERVATOIRE[cle] || cle;
+  }
+
+  function interpretationCategorie(nomCategorie, bloc) {
+    const off = bloc.nombre || {};
+    const prox = bloc.distance_plus_proche_m || {};
+    const phrases = [];
+
+    if (isNumber(off.moyenne) && isNumber(off.mediane)) {
+      const ratio = off.mediane > 0 ? off.moyenne / off.mediane : null;
+      if (ratio !== null && ratio >= 2) {
+        phrases.push(
+          `L'offre moyenne (${number(off.moyenne, 1)}) est nettement supérieure à la médiane ` +
+          `(${number(off.mediane, 1)}), signe qu'une partie des lieux concentre l'essentiel de l'offre.`
+        );
+      } else {
+        phrases.push(
+          `Offre médiane de ${number(off.mediane, 1)} équipement(s) par lieu (moyenne : ${number(off.moyenne, 1)}).`
+        );
+      }
+    }
+
+    if (isNumber(off.cv_pct) && off.cv_pct >= 80) {
+      phrases.push(`Dispersion importante entre lieux (CV : ${number(off.cv_pct, 0)} %) : l'offre n'est pas homogène.`);
+    }
+
+    if (isNumber(prox.p90)) {
+      phrases.push(
+        `Pour 90 % des lieux disposant de cet équipement, le plus proche se situe à moins de ${km(prox.p90)}.`
+      );
+    }
+
+    return phrases.join(" ");
+  }
+
+  function renderOffreCategories(equipements) {
+    const container = $("offre-categories");
+    if (!container) {
+      return;
+    }
+
+    const cles = Object.keys(equipements || {});
+
+    if (!cles.length) {
+      container.innerHTML = `<div class="analyse-empty">Aucune catégorie d'équipement disponible pour l'instant.</div>`;
+      return;
+    }
+
+    container.innerHTML = cles
+      .map((cle) => {
+        const bloc = equipements[cle] || {};
+        const off = bloc.nombre || {};
+        const prox = bloc.distance_plus_proche_m || {};
+        const proximite = bloc.proximite || {};
+        const carence = bloc.carence || {};
+
+        return `
+          <article class="offre-carte">
+            <div class="offre-carte-head">
+              <h3>${esc(libelleCategorie(cle))}</h3>
+              <span>N = ${number(bloc.n)}</span>
+            </div>
+
+            <div class="offre-grid">
+              <div>
+                <b>${isNumber(off.mediane) ? number(off.mediane, 1) : "N/D"}</b>
+                <small>Médiane / lieu</small>
+              </div>
+              <div>
+                <b>${isNumber(off.ecart_type) ? number(off.ecart_type, 1) : "N/D"}</b>
+                <small>Écart-type</small>
+              </div>
+              <div>
+                <b>${isNumber(prox.mediane) ? km(prox.mediane) : "N/D"}</b>
+                <small>Distance médiane</small>
+              </div>
+              <div>
+                <b>${isNumber(prox.p90) ? km(prox.p90) : "N/D"}</b>
+                <small>P90</small>
+              </div>
+              <div>
+                <b>${pct(proximite.a_500m_pct)}</b>
+                <small>À ≤ 500 m</small>
+              </div>
+              <div>
+                <b>${number(carence.sans_equipement_n)}</b>
+                <small>Lieux sans équipement</small>
+              </div>
+            </div>
+
+            <p>${esc(interpretationCategorie(cle, bloc))}</p>
+          </article>
+        `;
+      })
+      .join("");
+  }
+
+  function renderOffreCharts(equipements) {
+    const cles = Object.keys(equipements || {});
+
+    if (!cles.length) {
+      return;
+    }
+
+    const labels = cles.map(libelleCategorie);
+
+    chart("graphe-offre-nombre", {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Nombre médian d'équipements par lieu",
+            data: cles.map((c) => (equipements[c].nombre || {}).mediane),
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    chart("graphe-offre-distance", {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Distance médiane (km)",
+            data: cles.map((c) => {
+              const v = (equipements[c].distance_plus_proche_m || {}).mediane;
+              return isNumber(v) ? Number(v) / 1000 : null;
+            }),
+          },
+          {
+            label: "P90 (km)",
+            data: cles.map((c) => {
+              const v = (equipements[c].distance_plus_proche_m || {}).p90;
+              return isNumber(v) ? Number(v) / 1000 : null;
+            }),
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+      },
+    });
+  }
+
+  function renderTableauDepartemental(departements) {
+    const table = $("tableau-departemental");
+    if (!table) {
+      return;
+    }
+
+    const rows = Array.isArray(departements) ? departements : [];
+
+    if (!rows.length) {
+      table.innerHTML = "";
+      return;
+    }
+
+    const entetes = [
+      "Département", "N lieux", "Moyenne", "Médiane", "Écart-type", "CV",
+      "Distance médiane", "P90", "≤ 500 m", "Sans équipement", "Position régionale",
+    ];
+
+    table.innerHTML = `
+      <thead>
+        <tr>${entetes.map((e) => `<th>${esc(e)}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map(
+            (row) => `
+              <tr>
+                <td>${esc(row.departement)}</td>
+                <td>${number(row.n_lieux)}</td>
+                <td>${isNumber(row.moyenne) ? number(row.moyenne, 1) : "N/D"}</td>
+                <td>${isNumber(row.mediane) ? number(row.mediane, 1) : "N/D"}</td>
+                <td>${isNumber(row.ecart_type) ? number(row.ecart_type, 1) : "N/D"}</td>
+                <td>${isNumber(row.cv_pct) ? pct(row.cv_pct) : "N/D"}</td>
+                <td>${isNumber(row.distance_mediane_m) ? km(row.distance_mediane_m) : "N/D"}</td>
+                <td>${isNumber(row.distance_p90_m) ? km(row.distance_p90_m) : "N/D"}</td>
+                <td>${pct(row.a_500m_pct)}</td>
+                <td>${number(row.sans_equipement_n)}</td>
+                <td>${row.position_regionale ? esc(row.position_regionale) : "N/D"}</td>
+              </tr>
+            `
+          )
+          .join("")}
+      </tbody>
+    `;
+  }
+
+  function renderObservatoire(obs) {
+    if (!obs) {
+      return;
+    }
+
+    renderOffreCategories(obs.equipements);
+    renderOffreCharts(obs.equipements);
+    renderTableauDepartemental(obs.departements);
+
+    const avertissements = $("avertissements-methodologiques");
+    if (avertissements) {
+      const items = Array.isArray(obs.avertissements_methodologiques)
+        ? obs.avertissements_methodologiques
+        : [];
+
+      avertissements.innerHTML = items.length
+        ? `<ul>${items.map((texte) => `<li>${esc(texte)}</li>`).join("")}</ul>`
+        : "";
+    }
+  }
+
   function render(data) {
     if (!data) {
       return;
@@ -1519,24 +1759,41 @@
     }
 
     try {
-      const response =
-        await fetch(
+      const [reponseIndicateurs, reponseObservatoire] = await Promise.all([
+        fetch(
           "/api/analyse/indicateurs?region=Occitanie",
-          {
-            cache: "no-store",
-          }
-        );
+          { cache: "no-store" }
+        ),
+        fetch(
+          "/api/analyse/observatoire?region=Occitanie",
+          { cache: "no-store" }
+        ),
+      ]);
 
-      if (!response.ok) {
+      if (!reponseIndicateurs.ok) {
         throw new Error(
-          `HTTP ${response.status}`
+          `HTTP ${reponseIndicateurs.status}`
         );
       }
 
       const data =
-        await response.json();
+        await reponseIndicateurs.json();
 
       render(data);
+
+      // L'observatoire statistique détaillé est traité séparément :
+      // une panne ou une lenteur sur ce bloc plus lourd ne doit pas
+      // empêcher l'affichage du reste du tableau de bord.
+      if (reponseObservatoire.ok) {
+        try {
+          const obs = await reponseObservatoire.json();
+          renderObservatoire(obs);
+        } catch (erreurObservatoire) {
+          console.error("Erreur observatoire détaillé :", erreurObservatoire);
+        }
+      } else {
+        console.error("Erreur observatoire détaillé : HTTP", reponseObservatoire.status);
+      }
 
       if (etat) {
         etat.textContent = "Données à jour";

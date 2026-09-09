@@ -76,9 +76,19 @@ async def main(categorie: str, lieu_id: int | None):
                 ),
             )
 
+            # IMPORTANT : nombre_500m et nombre_1000m doivent porter sur
+            # TOUS les objets du rayon, pas seulement sur les 10 plus
+            # proches (`resultats` ci-dessus est plafonné par LIMIT 10
+            # et ne peut donc pas servir de source à ces comptages —
+            # c'était le bug avant ce correctif : un lieu avec plus de
+            # 10 objets à moins de 500m voyait ce chiffre sous-évalué).
             total = await fetch_all(
                 """
-                SELECT COUNT(*) AS total FROM (
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE distance_metres <= 500) AS total_500m,
+                    COUNT(*) FILTER (WHERE distance_metres <= 1000) AS total_1000m
+                FROM (
                     SELECT
                         (
                             6371000 * acos(
@@ -97,6 +107,8 @@ async def main(categorie: str, lieu_id: int | None):
                 (float(lieu["latitude"]), float(lieu["longitude"]), float(lieu["latitude"]), categorie, rayon),
             )
             nombre_total = total[0]["total"] if total else 0
+            nombre_500m = total[0]["total_500m"] if total else 0
+            nombre_1000m = total[0]["total_1000m"] if total else 0
 
             await execute(
                 "DELETE FROM amenity_cache WHERE lieu_tournage_id = %s AND categorie = %s",
@@ -133,13 +145,14 @@ async def main(categorie: str, lieu_id: int | None):
                 ON CONFLICT (lieu_tournage_id, categorie) DO UPDATE SET
                     rayon_metres = EXCLUDED.rayon_metres,
                     nombre_total = EXCLUDED.nombre_total,
+                    nombre_500m = EXCLUDED.nombre_500m,
+                    nombre_1000m = EXCLUDED.nombre_1000m,
                     distance_min_m = EXCLUDED.distance_min_m,
                     distance_moy_top10_m = EXCLUDED.distance_moy_top10_m
                 """,
                 (
                     lieu["id"], categorie, rayon, nombre_total,
-                    sum(1 for r in resultats if r["distance_metres"] <= 500),
-                    sum(1 for r in resultats if r["distance_metres"] <= 1000),
+                    nombre_500m, nombre_1000m,
                     resultats[0]["distance_metres"] if resultats else None,
                     round(sum(r["distance_metres"] for r in resultats) / len(resultats)) if resultats else None,
                 ),

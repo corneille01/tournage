@@ -55,7 +55,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">01 · STRUCTURE</span>
-            <h2>Où se concentre l’activité cinématographique ?</h2>
+            <h2
+              title="On compte combien de lieux de tournage sont recensés dans chaque département, et on regarde si cette activité est répartie de façon équilibrée ou concentrée sur quelques départements seulement (indice de concentration HHI)."
+            >
+              Où se concentre l’activité cinématographique ?
+            </h2>
           </div>
           <span class="section-number">01</span>
         </div>
@@ -88,7 +92,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">02 · CAPACITÉ TOURISTIQUE</span>
-            <h2>Les lieux sont-ils prêts à être valorisés ?</h2>
+            <h2
+              title="Pour chaque lieu, on regarde s’il existe un hébergement et un restaurant à proximité, et si le trajet réel en voiture jusqu’au lieu prend moins de 15 ou 30 minutes. Un pourcentage n’est affiché que si la donnée est disponible pour TOUS les lieux concernés — sinon on affiche « donnée insuffisante » plutôt qu’un chiffre trompeur."
+            >
+              Les lieux sont-ils prêts à être valorisés ?
+            </h2>
           </div>
           <span class="section-number">02</span>
         </div>
@@ -120,7 +128,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">03 · MOBILITÉ</span>
-            <h2>Quel rôle joue la mobilité ?</h2>
+            <h2
+              title="Une isochrone est la zone qu’on peut atteindre en un temps donné (ex: 15 minutes). On compare la surface accessible en voiture à celle accessible à pied dans le même temps : plus l’écart est grand, plus le territoire dépend de la voiture pour être exploré."
+            >
+              Quel rôle joue la mobilité ?
+            </h2>
           </div>
           <span class="section-number">03</span>
         </div>
@@ -150,7 +162,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">04 · OPPORTUNITÉS</span>
-            <h2>Où concentrer les efforts ?</h2>
+            <h2
+              title="Chaque lieu reçoit un score qui combine sa popularité cinématographique et son niveau d’équipement touristique actuel. Un score élevé signale un lieu déjà populaire mais encore peu équipé — donc un potentiel de valorisation à court terme."
+            >
+              Où concentrer les efforts ?
+            </h2>
           </div>
           <span class="section-number">04</span>
         </div>
@@ -170,7 +186,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">05 · FRAGILITÉS</span>
-            <h2>Quels territoires doivent être renforcés ?</h2>
+            <h2
+              title="Repère les lieux qui cumulent plusieurs signaux défavorables réels (pas de source de données manquante prise pour un problème) : éloignement confirmé des services, absence d’hébergement recensé à proximité, etc."
+            >
+              Quels territoires doivent être renforcés ?
+            </h2>
           </div>
           <span class="section-number">05</span>
         </div>
@@ -190,7 +210,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">06 · POTENTIEL</span>
-            <h2>Popularité cinématographique × préparation touristique</h2>
+            <h2
+              title="Chaque point du graphique est un lieu de tournage : sa position horizontale reflète la popularité du film associé, sa position verticale son niveau d’équipement touristique. Les points en haut à droite sont déjà populaires ET équipés ; ceux en haut à gauche sont populaires mais encore peu équipés."
+            >
+              Popularité cinématographique × préparation touristique
+            </h2>
           </div>
           <span class="section-number">06</span>
         </div>
@@ -210,7 +234,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">07 · PRIORITÉ D'INVESTISSEMENT</span>
-            <h2>Où un élu devrait-il agir en premier ?</h2>
+            <h2
+              title="Score composite (sur 100) qui combine trois éléments mesurés pour chaque département : l’attractivité cinématographique, le retard d’équipement touristique et l’enclavement routier. Plus le score est élevé, plus le besoin d’action est marqué — ce n’est pas un jugement de valeur sur le département."
+            >
+              Où un élu devrait-il agir en premier ?
+            </h2>
           </div>
           <span class="section-number">07</span>
         </div>
@@ -236,7 +264,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">08 · TERRITOIRES</span>
-            <h2>Tableau de bord départemental</h2>
+            <h2
+              title="Reprend, département par département, les mêmes indicateurs que les sections précédentes (équipement moyen, accessibilité à 15 minutes, surface accessible en voiture) pour permettre une lecture territoriale directe."
+            >
+              Tableau de bord départemental
+            </h2>
           </div>
           <span class="section-number">08</span>
         </div>
@@ -246,10 +278,69 @@
       <section class="analyse-section">
         <div class="section-heading">
           <div>
-            <span class="eyebrow">09 · QUALITÉ</span>
-            <h2>Qualité et couverture de l’observation</h2>
+            <span class="eyebrow">09 · OFFRE TOURISTIQUE</span>
+            <h2
+              title="Pour chaque catégorie d'équipement (hébergement, restaurant, activité, office de tourisme), on compte combien il y en a autour de chaque lieu de tournage et à quelle distance se trouve le plus proche. La « médiane » est la valeur du milieu une fois tous les lieux classés du moins bien desservi au mieux desservi — souvent plus parlante que la moyenne, qui peut être faussée par un ou deux lieux exceptionnellement bien équipés."
+            >
+              Offre touristique autour des lieux de tournage
+            </h2>
           </div>
           <span class="section-number">09</span>
+        </div>
+        <p class="analyse-note">
+          Une observation = un lieu de tournage. Le nombre affiché « N » précise
+          toujours sur combien de lieux chaque chiffre est réellement calculé —
+          un chiffre basé sur 20 lieux n'a pas le même poids qu'un chiffre basé
+          sur 240.
+        </p>
+        <div id="offre-categories" class="offre-categories"></div>
+
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3
+              title="Pour chaque catégorie, la barre représente le nombre médian d'équipements trouvés autour d'un lieu de tournage (dans le rayon de recherche propre à cette catégorie). Attention : les rayons diffèrent selon la catégorie, donc ce graphique ne dit pas quelle catégorie est « la mieux representée » dans l'absolu."
+            >
+              Nombre médian d'équipements par catégorie
+            </h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-nombre"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3
+              title="Distance (en km) à laquelle se trouve l'équipement le plus proche, pour un lieu « médian » (au milieu du classement) et pour le 90e percentile (P90) — la distance en dessous de laquelle se trouvent 90% des lieux disposant de cet équipement."
+            >
+              Distance au plus proche équipement
+            </h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-distance"></canvas>
+            </div>
+          </article>
+        </div>
+
+        <h3
+          class="sous-titre-tableau"
+          title="Le tableau compare chaque département à la référence régionale sur la catégorie « hébergement ». L'écart est purement descriptif : « au-dessus » ou « en-dessous » de la moyenne régionale ne veut pas dire « bon » ou « mauvais », seulement différent — à interpréter selon le contexte local."
+        >
+          Comparaison départementale
+        </h3>
+        <div class="table-scroll">
+          <table id="tableau-departemental" class="tableau-stats"></table>
+        </div>
+        <div id="avertissements-methodologiques" class="avertissements"></div>
+      </section>
+
+      <section class="analyse-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">10 · QUALITÉ</span>
+            <h2
+              title="Indique, pour chaque type de donnée (coordonnées GPS, équipements touristiques, popularité, isochrones, durées de trajet), sur quelle proportion des lieux elle est réellement disponible. Un indicateur calculé sur 40% des lieux seulement doit être lu avec plus de prudence qu’un indicateur calculé sur 95% des lieux."
+            >
+              Qualité et couverture de l’observation
+            </h2>
+          </div>
+          <span class="section-number">10</span>
         </div>
         <div id="completude-contenu" class="kpi-grid"></div>
         <div id="methodologie" class="methodologie"></div>
@@ -259,7 +350,11 @@
         <div class="section-heading">
           <div>
             <span class="eyebrow">FILMOGRAPHIE</span>
-            <h2>Œuvres les plus reconnues</h2>
+            <h2
+              title="Classement des œuvres dont les lieux de tournage sont les plus reconnus, d’après la popularité mesurée par la base de données TMDB — un indice de notoriété numérique, pas une mesure de fréquentation touristique réelle."
+            >
+              Œuvres les plus reconnues
+            </h2>
           </div>
         </div>
         <article class="panel">

@@ -15,7 +15,7 @@ from geoplateforme import (
 import logging
 
 logger = logging.getLogger(__name__)
-from analyse_indicateurs import construire_indicateurs_cinetourisme
+from analyse_indicateurs import construire_indicateurs_cinetourisme, construire_observatoire_statistique
 from navigation_cache import navigation_cache
 import os
 import json
@@ -98,6 +98,31 @@ async def api_analyse_indicateurs(
         raise HTTPException(
             status_code=500,
             detail=f"Erreur lors du calcul des indicateurs : {exc}"
+        )
+
+
+@app.get("/api/analyse/observatoire")
+async def api_analyse_observatoire(
+    region: str = Query("Occitanie")
+):
+    """
+    Dictionnaire statistique complet (offre, proximité, carence,
+    diversité fonctionnelle, disparités départementales) par catégorie
+    DATAtourisme. Endpoint séparé de /api/analyse/indicateurs pour ne
+    pas alourdir son cycle de rafraîchissement principal : ce bloc fait
+    davantage de requêtes SQL agrégées (percentiles par catégorie et
+    par département) et change moins souvent que les KPI de tête de page.
+    """
+    try:
+        return await construire_observatoire_statistique(region)
+    except Exception as exc:
+        logger.exception(
+            "Erreur lors du calcul de l'observatoire statistique"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur lors du calcul de l'observatoire : {exc}"
         )
 # ─────────────────────────────────────────────────────────────
 # ISOCHRONES D'UN LIEU DE TOURNAGE

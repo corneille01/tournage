@@ -663,6 +663,352 @@ async def _charger_isochrones(
 
 
 # ---------------------------------------------------------------------------
+# Observatoire statistique — dictionnaire complet (OFF/PROX/LAC/DIV/DIS)
+#
+# Convention statistique (documentée, cf. audit) :
+#   - moyenne  : avg()
+#   - médiane / Q1 / Q3 / P90 : percentile_cont() — interpolation continue
+#   - écart-type : stddev_pop() — on décrit LA POPULATION des lieux de
+#     l'observatoire, pas un échantillon aléatoire d'une population plus
+#     large, donc population et non échantillon (stddev_samp aurait été
+#     le mauvais choix ici).
+#   - CV = écart-type / moyenne × 100, NULL si moyenne = 0 (jamais 0
+#     silencieusement, jamais une exception qui casse tout l'endpoint).
+#
+# N = nombre de LIEUX disposant de la donnée nécessaire (pas de films).
+# Toute valeur non calculable reste None — jamais remplacée par 0.
+# ---------------------------------------------------------------------------
+
+def _bundle_percentiles(row: dict, prefixe: str) -> dict[str, Any]:
+    """
+    Construit le bloc {moyenne, mediane, q1, q3, iqr, ecart_type, p90, cv_pct}
+    à partir d'une ligne SQL contenant déjà les agrégats {prefixe}_moyenne,
+    {prefixe}_mediane, etc. (calculés côté PostgreSQL par percentile_cont
+    et stddev_pop — jamais recalculés côté Python sur un échantillon
+    partiel, cf. section 31/32 de la spec).
+    """
+
+    moyenne = _safe_float(row.get(f"{prefixe}_moyenne"))
+    mediane = _safe_float(row.get(f"{prefixe}_mediane"))
+    q1 = _safe_float(row.get(f"{prefixe}_q1"))
+    q3 = _safe_float(row.get(f"{prefixe}_q3"))
+    ecart_type = _safe_float(row.get(f"{prefixe}_ecart_type"))
+    p90 = _safe_float(row.get(f"{prefixe}_p90"))
+
+    iqr = round(q3 - q1, 2) if (q1 is not None and q3 is not None) else None
+
+    cv_pct = (
+        round(ecart_type / moyenne * 100, 1)
+        if (ecart_type is not None and moyenne not in (None, 0))
+        else None
+    )
+
+    return {
+        "moyenne": round(moyenne, 2) if moyenne is not None else None,
+        "mediane": round(mediane, 2) if mediane is not None else None,
+        "q1": round(q1, 2) if q1 is not None else None,
+        "q3": round(q3, 2) if q3 is not None else None,
+        "iqr": iqr,
+        "ecart_type": round(ecart_type, 2) if ecart_type is not None else None,
+        "p90": round(p90, 2) if p90 is not None else None,
+        "cv_pct": cv_pct,
+    }
+
+
+async def _stats_categorie(
+    region: str,
+    categorie: str,
+    departement: str | None = None,
+) -> dict[str, Any]:
+    """
+    Bloc statistique complet pour UNE catégorie DATAtourisme, à l'échelle
+    régionale (departement=None) ou pour un seul département.
+
+    Calcule tout en une requête SQL agrégée (percentile_cont/stddev_pop
+    côté PostgreSQL) : aucune boucle Python par lieu, cf. section 31 de
+    la spec (performance).
+    """
+
+    condition_dep = "AND lt.departement = %s" if departement else ""
+    params: tuple = (categorie, region) + ((departement,) if departement else ())
+
+    row = await fetch_all(
+        f"""
+        SELECT
+            COUNT(ast.id) AS n,
+
+            AVG(ast.nombre_total) AS off_moyenne,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY ast.nombre_total) AS off_mediane,
+            percentile_cont(0.25) WITHIN GROUP (ORDER BY ast.nombre_total) AS off_q1,
+            percentile_cont(0.75) WITHIN GROUP (ORDER BY ast.nombre_total) AS off_q3,
+            stddev_pop(ast.nombre_total) AS off_ecart_type,
+            percentile_cont(0.9) WITHIN GROUP (ORDER BY ast.nombre_total) AS off_p90,
+
+            COUNT(ast.distance_min_m) AS n_distance,
+            AVG(ast.distance_min_m) AS prox_moyenne,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY ast.distance_min_m) AS prox_mediane,
+            percentile_cont(0.25) WITHIN GROUP (ORDER BY ast.distance_min_m) AS prox_q1,
+            percentile_cont(0.75) WITHIN GROUP (ORDER BY ast.distance_min_m) AS prox_q3,
+            stddev_pop(ast.distance_min_m) AS prox_ecart_type,
+            percentile_cont(0.9) WITHIN GROUP (ORDER BY ast.distance_min_m) AS prox_p90,
+
+            AVG(ast.distance_moy_top10_m) AS top10_moyenne,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY ast.distance_moy_top10_m) AS top10_mediane,
+            stddev_pop(ast.distance_moy_top10_m) AS top10_ecart_type,
+
+            COUNT(*) FILTER (WHERE ast.distance_min_m <= 250)  AS prox_250,
+            COUNT(*) FILTER (WHERE ast.distance_min_m <= 500)  AS prox_500,
+            COUNT(*) FILTER (WHERE ast.distance_min_m <= 1000) AS prox_1000,
+            COUNT(*) FILTER (WHERE ast.distance_min_m <= 2000) AS prox_2000,
+            COUNT(*) FILTER (WHERE ast.distance_min_m <= 5000) AS prox_5000,
+
+            COUNT(*) FILTER (WHERE ast.nombre_total = 0) AS lac_sans_equipement,
+            COUNT(*) FILTER (WHERE ast.distance_min_m > 500)  AS lac_500,
+            COUNT(*) FILTER (WHERE ast.distance_min_m > 1000) AS lac_1000,
+            COUNT(*) FILTER (WHERE ast.distance_min_m > 2000) AS lac_2000,
+            COUNT(*) FILTER (WHERE ast.distance_min_m > 5000) AS lac_5000
+
+        FROM lieux_tournage lt
+        JOIN films f ON f.id = lt.film_id
+        LEFT JOIN amenity_stats ast
+               ON ast.lieu_tournage_id = lt.id
+              AND ast.categorie = %s
+        WHERE f.region = %s
+          AND f.statut = 'publie'
+          {condition_dep}
+        """,
+        params,
+    )
+
+    if not row:
+        return {}
+
+    r = row[0]
+    n = _safe_int(r.get("n")) or 0
+
+    def _pct_n(cle: str) -> float | None:
+        valeur = _safe_int(r.get(cle))
+        return round(valeur / n * 100, 1) if (n > 0 and valeur is not None) else None
+
+    return {
+        "n": n,
+        "nombre": _bundle_percentiles(r, "off"),
+        "distance_plus_proche_m": _bundle_percentiles(r, "prox"),
+        # Rappel explicite : porte sur les 10 objets les plus proches
+        # uniquement — jamais sur l'ensemble de la catégorie (cf. section 20).
+        "distance_moyenne_10_plus_proches_m": _bundle_percentiles(r, "top10"),
+        "proximite": {
+            "a_250m_pct": _pct_n("prox_250"),
+            "a_500m_pct": _pct_n("prox_500"),
+            "a_1km_pct": _pct_n("prox_1000"),
+            "a_2km_pct": _pct_n("prox_2000"),
+            "a_5km_pct": _pct_n("prox_5000"),
+        },
+        "carence": {
+            "sans_equipement_n": _safe_int(r.get("lac_sans_equipement")),
+            "sans_equipement_pct": _pct_n("lac_sans_equipement"),
+            "au_dela_500m_n": _safe_int(r.get("lac_500")),
+            "au_dela_1km_n": _safe_int(r.get("lac_1000")),
+            "au_dela_2km_n": _safe_int(r.get("lac_2000")),
+            "au_dela_5km_n": _safe_int(r.get("lac_5000")),
+        },
+    }
+
+
+async def _diversite_fonctionnelle(
+    region: str,
+    departement: str | None = None,
+) -> dict[str, Any]:
+    """
+    Nombre de fonctions DATAtourisme (catégories avec au moins un
+    équipement observé) réellement présentes par lieu — cf. Groupe F.
+
+    Pas de seuil X arbitraire (DIV06) : on fournit la distribution
+    complète, au lecteur (ou au frontend) d'en tirer ses propres seuils.
+    """
+
+    condition_dep = "AND lt.departement = %s" if departement else ""
+    params: tuple = (region,) + ((departement,) if departement else ())
+
+    rows = await fetch_all(
+        f"""
+        WITH diversite AS (
+            SELECT
+                lt.id AS lieu_id,
+                COUNT(DISTINCT ast.categorie) FILTER (WHERE ast.nombre_total > 0) AS nb_fonctions
+            FROM lieux_tournage lt
+            JOIN films f ON f.id = lt.film_id
+            LEFT JOIN amenity_stats ast ON ast.lieu_tournage_id = lt.id
+            WHERE f.region = %s
+              AND f.statut = 'publie'
+              {condition_dep}
+            GROUP BY lt.id
+        )
+        SELECT nb_fonctions, COUNT(*) AS n
+        FROM diversite
+        GROUP BY nb_fonctions
+        ORDER BY nb_fonctions
+        """,
+        params,
+    )
+
+    if not rows:
+        return {"n": 0, "moyenne": None, "mediane": None, "q1": None, "q3": None, "ecart_type": None, "distribution": []}
+
+    valeurs: list[int] = []
+    distribution = []
+    for row in rows:
+        nb = _safe_int(row.get("nb_fonctions")) or 0
+        n = _safe_int(row.get("n")) or 0
+        distribution.append({"nb_fonctions": nb, "n_lieux": n})
+        valeurs.extend([nb] * n)
+
+    n_total = len(valeurs)
+    if not n_total:
+        return {"n": 0, "moyenne": None, "mediane": None, "q1": None, "q3": None, "ecart_type": None, "distribution": distribution}
+
+    valeurs.sort()
+    moyenne = sum(valeurs) / n_total
+    mediane = _median(valeurs)
+    q1 = _median(valeurs[: n_total // 2]) if n_total >= 4 else None
+    q3 = _median(valeurs[(n_total + 1) // 2 :]) if n_total >= 4 else None
+    variance = sum((v - moyenne) ** 2 for v in valeurs) / n_total
+    ecart_type = math.sqrt(variance)
+
+    return {
+        "n": n_total,
+        "moyenne": round(moyenne, 2),
+        "mediane": mediane,
+        "q1": q1,
+        "q3": q3,
+        "ecart_type": round(ecart_type, 2),
+        "distribution": distribution,
+    }
+
+
+async def construire_observatoire_statistique(
+    region: str = "Occitanie",
+) -> dict[str, Any]:
+    """
+    Dictionnaire statistique complet (Groupes A à I de la spec), calculé
+    directement à partir des observations individuelles des lieux —
+    jamais par moyenne des indicateurs départementaux (cf. section 4).
+
+    Catégories couvertes : découvertes dynamiquement dans amenity_stats
+    (jamais une liste codée en dur qui pourrait diverger du schéma réel).
+    """
+
+    categories_rows = await fetch_all(
+        """
+        SELECT DISTINCT ast.categorie
+        FROM amenity_stats ast
+        JOIN lieux_tournage lt ON lt.id = ast.lieu_tournage_id
+        JOIN films f ON f.id = lt.film_id
+        WHERE f.region = %s AND f.statut = 'publie'
+        ORDER BY ast.categorie
+        """,
+        (region,),
+    )
+    categories = [row["categorie"] for row in categories_rows if row.get("categorie")]
+
+    departements_rows = await fetch_all(
+        """
+        SELECT DISTINCT lt.departement
+        FROM lieux_tournage lt
+        JOIN films f ON f.id = lt.film_id
+        WHERE f.region = %s AND f.statut = 'publie' AND lt.departement IS NOT NULL
+        ORDER BY lt.departement
+        """,
+        (region,),
+    )
+    departements = [row["departement"] for row in departements_rows if row.get("departement")]
+
+    equipements: dict[str, Any] = {}
+    for categorie in categories:
+        equipements[categorie] = await _stats_categorie(region, categorie)
+
+    diversite_regionale = await _diversite_fonctionnelle(region)
+
+    # ── Tableau départemental (Groupe G) ──
+    # Une catégorie de référence est nécessaire pour un tableau lisible
+    # par un élu ; on retient "hebergement" si elle existe (c'est la
+    # catégorie la plus directement actionnable pour la valorisation
+    # touristique), sinon la première catégorie disponible.
+    categorie_reference = "hebergement" if "hebergement" in categories else (categories[0] if categories else None)
+
+    tableau_departemental = []
+    if categorie_reference:
+        ref_regionale = equipements.get(categorie_reference, {})
+        ref_off = ref_regionale.get("nombre", {})
+        ref_prox = ref_regionale.get("distance_plus_proche_m", {})
+
+        for dep in departements:
+            stats_dep = await _stats_categorie(region, categorie_reference, departement=dep)
+            diversite_dep = await _diversite_fonctionnelle(region, departement=dep)
+
+            off = stats_dep.get("nombre", {})
+            prox = stats_dep.get("distance_plus_proche_m", {})
+
+            # DIS01/DIS02 : écart à la référence régionale, jamais de
+            # classement "bon/mauvais" arbitraire (DIS03) — seulement
+            # l'écart numérique et un intitulé neutre.
+            def _ecart(dep_val, ref_val):
+                if dep_val is None or ref_val is None:
+                    return None, None
+                absolu = round(dep_val - ref_val, 2)
+                relatif = round((dep_val - ref_val) / ref_val * 100, 1) if ref_val != 0 else None
+                return absolu, relatif
+
+            ecart_off_absolu, ecart_off_relatif = _ecart(off.get("moyenne"), ref_off.get("moyenne"))
+
+            tableau_departemental.append({
+                "departement": dep,
+                "n_lieux": stats_dep.get("n", 0),
+                "categorie_reference": categorie_reference,
+                "moyenne": off.get("moyenne"),
+                "mediane": off.get("mediane"),
+                "ecart_type": off.get("ecart_type"),
+                "cv_pct": off.get("cv_pct"),
+                "distance_mediane_m": prox.get("mediane"),
+                "distance_p90_m": prox.get("p90"),
+                "a_500m_pct": stats_dep.get("proximite", {}).get("a_500m_pct"),
+                "sans_equipement_n": stats_dep.get("carence", {}).get("sans_equipement_n"),
+                "diversite_moyenne": diversite_dep.get("moyenne"),
+                "ecart_absolu_regional": ecart_off_absolu,
+                "ecart_relatif_regional_pct": ecart_off_relatif,
+                "position_regionale": (
+                    None if ecart_off_relatif is None
+                    else "au-dessus de la référence régionale" if ecart_off_relatif > 10
+                    else "en-dessous de la référence régionale" if ecart_off_relatif < -10
+                    else "proche de la référence régionale"
+                ),
+            })
+
+    return {
+        "region": region,
+        "categories_disponibles": categories,
+        "equipements": equipements,
+        "diversite_fonctionnelle": diversite_regionale,
+        "categorie_reference_tableau": categorie_reference,
+        "departements": tableau_departemental,
+        "avertissements_methodologiques": [
+            "Les statistiques « distance_moyenne_10_plus_proches_m » portent "
+            "uniquement sur les 10 équipements les plus proches de chaque lieu, "
+            "jamais sur l'ensemble des équipements de la catégorie.",
+            "Le rayon de recherche varie selon la catégorie (hébergement/activité "
+            ": 15 km, restaurant : 8 km, office de tourisme : 20 km) — les "
+            "comparaisons intercatégories de « nombre » ne sont donc pas directement "
+            "comparables ; utiliser les taux de proximité (250 m/500 m/1 km) pour comparer.",
+            "Le classement « position régionale » est purement descriptif : un écart "
+            ">10% ou <-10% par rapport à la référence régionale, sans seuil "
+            "scientifique universel — à interpréter avec prudence.",
+            "L'écart-type est calculé sur la population des lieux observés "
+            "(stddev_pop), pas sur un échantillon.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Construction principale
 # ---------------------------------------------------------------------------
 

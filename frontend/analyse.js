@@ -178,7 +178,7 @@
     const offre = find("offre touristique autour");
     const capacite = find("les lieux sont-ils prêts");
     const mobilite = find("quel rôle joue");
-    const territoires = find("tableau de bord départemental");
+    const territoires = find("accessibilité des équipements par département");
     const filmographie = find("potentiel de valorisation ciné-touristique");
     const qualite = find("qualité et couverture");
     const potentiel = find("popularité cinématographique");
@@ -508,7 +508,6 @@
     // Synthèse de la section offre
     const synth = $("offre-synthese");
     if (synth) {
-      // Calculer des indicateurs globaux
       const categories = keys.map(k => {
         const stat = eq[k]?.nombre_rayon_standard_1km || eq[k]?.nombre_1km;
         return { key: k, mediane: stat?.mediane };
@@ -540,224 +539,224 @@
   }
 
   function renderDepartmentDashboard(obs, data) {
-  const container = $("cartes-departements");
-  const rows = Array.isArray(obs?.departements) ? obs.departements : [];
-  if (!container) return;
+    const container = $("cartes-departements");
+    const rows = Array.isArray(obs?.departements) ? obs.departements : [];
+    if (!container) return;
 
-  if (!rows.length) {
-    container.innerHTML = `<div class="analyse-empty">Aucun département statistiquement comparable.</div>`;
-    return;
-  }
-
-  // Définition des catégories disponibles
-  const CATEGORIES_ACCESS = [
-    { key: "hebergement", label: "Hébergement" },
-    { key: "restauration", label: "Restauration" },
-    { key: "arret_bus", label: "Arrêt de bus" },
-    { key: "gare", label: "Gare" },
-    { key: "parking", label: "Parking" },
-    { key: "aeroport", label: "Aéroport" },
-    { key: "aerodrome", label: "Aérodrome" },
-    { key: "hopital", label: "Hôpital" },
-    { key: "office_tourisme", label: "Office de tourisme" },
-    { key: "refuge", label: "Refuge" },
-    { key: "distributeur", label: "Distributeur" },
-    { key: "police", label: "Police" }
-  ];
-
-  // État de sélection (par défaut : hébergement)
-  let selectedCategories = new Set(["hebergement"]);
-
-  // Helper pour récupérer les stats d'une catégorie pour un département
-  function getCategoryStats(dep, catKey) {
-    // Nouvelle structure imbriquée
-    if (dep.categories && dep.categories[catKey]) {
-      return dep.categories[catKey];
-    }
-    // Rétrocompatibilité ancienne structure plate (uniquement hébergement)
-    if (catKey === "hebergement") {
-      return {
-        n_lieux: dep.n_lieux,
-        mediane: dep.mediane,
-        distance_mediane_m: dep.distance_mediane_m,
-        distance_p90_m: dep.distance_p90_m,
-        a_500m_pct: dep.a_500m_pct,
-        sans_equipement_n: dep.sans_equipement_n
-      };
-    }
-    return null;
-  }
-
-  // Construit le HTML des chips de catégories
-  function renderCategoryChips() {
-    const filtres = $("filtres-categories");
-    if (!filtres) return;
-    filtres.innerHTML = CATEGORIES_ACCESS.map(cat => `
-      <button class="chip-categorie ${selectedCategories.has(cat.key) ? "active" : ""}" 
-              data-cat="${cat.key}">
-        ${cat.label}
-      </button>
-    `).join("");
-
-    filtres.querySelectorAll(".chip-categorie").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const key = btn.dataset.cat;
-        if (selectedCategories.has(key)) {
-          if (selectedCategories.size > 1) selectedCategories.delete(key);
-        } else {
-          selectedCategories.add(key);
-        }
-        renderCategoryChips();
-        renderChartsAndTable();
-      });
-    });
-  }
-
-  // Construit les graphiques et le tableau
-  function renderChartsAndTable() {
-    const selectedArray = [...selectedCategories];
-    const labels = rows.map(r => r.departement);
-
-    // Prépare les datasets pour le graphique groupé (une barre par catégorie)
-    const datasets = selectedArray.map(catKey => {
-      const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-      return {
-        label: cat ? cat.label : catKey,
-        data: rows.map(r => {
-          const stats = getCategoryStats(r, catKey);
-          return stats && stats.distance_mediane_m ? Number(stats.distance_mediane_m) / 1000 : null;
-        }),
-        backgroundColor: null // sera assigné par chart.js ou votre helper
-      };
-    });
-
-    // Construction du contenu
-    container.innerHTML = `
-      <div class="department-graphs dashboard-grid two">
-        <article class="panel">
-          <h3>Distance médiane aux équipements sélectionnés</h3>
-          <div class="chart-wrap"><canvas id="graphe-dep-distances-categories"></canvas></div>
-          <p class="interpretation-graphe" id="interpretation-accessibilite"></p>
-        </article>
-        <article class="panel">
-          <h3>Part des lieux à moins de 500 m</h3>
-          <div class="chart-wrap"><canvas id="graphe-dep-part-500m"></canvas></div>
-        </article>
-      </div>
-      <div class="table-scroll">
-        <table class="tableau-stats" id="tableau-accessibilite"></table>
-      </div>
-    `;
-
-    // Graphique 1 : distances médianes groupées
-    if (window.chart) {
-      chart("graphe-dep-distances-categories", {
-        type: "bar",
-        data: {
-          labels: labels,
-          datasets: datasets
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: true } },
-          scales: { y: { beginAtZero: true, title: { display: true, text: "km" } } }
-        }
-      });
-
-      // Graphique 2 : part ≤ 500 m
-      chart("graphe-dep-part-500m", {
-        type: "bar",
-        data: {
-          labels: labels,
-          datasets: selectedArray.map(catKey => {
-            const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-            return {
-              label: cat ? cat.label : catKey,
-              data: rows.map(r => {
-                const stats = getCategoryStats(r, catKey);
-                return stats ? Number(stats.a_500m_pct) : null;
-              })
-            };
-          })
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: true } },
-          scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "%" } } }
-        }
-      });
+    if (!rows.length) {
+      container.innerHTML = `<div class="analyse-empty">Aucun département statistiquement comparable.</div>`;
+      return;
     }
 
-    // Tableau
-    const table = $("tableau-accessibilite");
-    if (table) {
-      const head = ["Département"];
-      selectedArray.forEach(catKey => {
-        const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-        const label = cat ? cat.label : catKey;
-        head.push(`${label} – médiane (km)`, `${label} – P90 (km)`, `${label} – ≤500m (%)`, `${label} – sans équip.`);
-      });
+    // Définition des catégories disponibles
+    const CATEGORIES_ACCESS = [
+      { key: "hebergement", label: "Hébergement" },
+      { key: "restauration", label: "Restauration" },
+      { key: "arret_bus", label: "Arrêt de bus" },
+      { key: "gare", label: "Gare" },
+      { key: "parking", label: "Parking" },
+      { key: "aeroport", label: "Aéroport" },
+      { key: "aerodrome", label: "Aérodrome" },
+      { key: "hopital", label: "Hôpital" },
+      { key: "office_tourisme", label: "Office de tourisme" },
+      { key: "refuge", label: "Refuge" },
+      { key: "distributeur", label: "Distributeur" },
+      { key: "police", label: "Police" }
+    ];
 
-      const thead = `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
-      const tbody = rows.map(r => {
-        let cells = `<td>${ESC(r.departement)}</td>`;
-        selectedArray.forEach(catKey => {
-          const stats = getCategoryStats(r, catKey);
-          if (stats) {
-            cells += `
-              <td>${KM(stats.distance_mediane_m)}</td>
-              <td>${KM(stats.distance_p90_m)}</td>
-              <td>${P(stats.a_500m_pct)}</td>
-              <td>${N(stats.sans_equipement_n)}</td>
-            `;
+    // État de sélection (par défaut : hébergement)
+    let selectedCategories = new Set(["hebergement"]);
+
+    // Helper pour récupérer les stats d'une catégorie pour un département
+    function getCategoryStats(dep, catKey) {
+      // Nouvelle structure imbriquée
+      if (dep.categories && dep.categories[catKey]) {
+        return dep.categories[catKey];
+      }
+      // Rétrocompatibilité ancienne structure plate (uniquement hébergement)
+      if (catKey === "hebergement") {
+        return {
+          n_lieux: dep.n_lieux,
+          mediane: dep.mediane,
+          distance_mediane_m: dep.distance_mediane_m,
+          distance_p90_m: dep.distance_p90_m,
+          a_500m_pct: dep.a_500m_pct,
+          sans_equipement_n: dep.sans_equipement_n
+        };
+      }
+      return null;
+    }
+
+    // Construit le HTML des chips de catégories
+    function renderCategoryChips() {
+      const filtres = $("filtres-categories");
+      if (!filtres) return;
+      filtres.innerHTML = CATEGORIES_ACCESS.map(cat => `
+        <button class="chip-categorie ${selectedCategories.has(cat.key) ? "active" : ""}" 
+                data-cat="${cat.key}">
+          ${cat.label}
+        </button>
+      `).join("");
+
+      filtres.querySelectorAll(".chip-categorie").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const key = btn.dataset.cat;
+          if (selectedCategories.has(key)) {
+            if (selectedCategories.size > 1) selectedCategories.delete(key);
           } else {
-            cells += `<td colspan="4" class="na">—</td>`;
+            selectedCategories.add(key);
+          }
+          renderCategoryChips();
+          renderChartsAndTable();
+        });
+      });
+    }
+
+    // Construit les graphiques et le tableau
+    function renderChartsAndTable() {
+      const selectedArray = [...selectedCategories];
+      const labels = rows.map(r => r.departement);
+
+      // Prépare les datasets pour le graphique groupé (une barre par catégorie)
+      const datasets = selectedArray.map(catKey => {
+        const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
+        return {
+          label: cat ? cat.label : catKey,
+          data: rows.map(r => {
+            const stats = getCategoryStats(r, catKey);
+            return stats && stats.distance_mediane_m ? Number(stats.distance_mediane_m) / 1000 : null;
+          }),
+          backgroundColor: null // sera assigné par chart.js ou votre helper
+        };
+      });
+
+      // Construction du contenu
+      container.innerHTML = `
+        <div class="department-graphs dashboard-grid two">
+          <article class="panel">
+            <h3>Distance médiane aux équipements sélectionnés</h3>
+            <div class="chart-wrap"><canvas id="graphe-dep-distances-categories"></canvas></div>
+            <p class="interpretation-graphe" id="interpretation-accessibilite"></p>
+          </article>
+          <article class="panel">
+            <h3>Part des lieux à moins de 500 m</h3>
+            <div class="chart-wrap"><canvas id="graphe-dep-part-500m"></canvas></div>
+          </article>
+        </div>
+        <div class="table-scroll">
+          <table class="tableau-stats" id="tableau-accessibilite"></table>
+        </div>
+      `;
+
+      // Graphique 1 : distances médianes groupées
+      if (window.chart) {
+        chart("graphe-dep-distances-categories", {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: datasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: true, title: { display: true, text: "km" } } }
           }
         });
-        return `<tr>${cells}</tr>`;
-      }).join("");
 
-      table.innerHTML = `${thead}<tbody>${tbody}</tbody>`;
-    }
+        // Graphique 2 : part ≤ 500 m
+        chart("graphe-dep-part-500m", {
+          type: "bar",
+          data: {
+            labels: labels,
+            datasets: selectedArray.map(catKey => {
+              const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
+              return {
+                label: cat ? cat.label : catKey,
+                data: rows.map(r => {
+                  const stats = getCategoryStats(r, catKey);
+                  return stats ? Number(stats.a_500m_pct) : null;
+                })
+              };
+            })
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "%" } } }
+          }
+        });
+      }
 
-    // Paragraphe d'interprétation automatique
-    const interp = $("interpretation-accessibilite");
-    if (interp) {
-      const selectedLabels = selectedArray.map(k => {
-        const cat = CATEGORIES_ACCESS.find(c => c.key === k);
-        return cat ? cat.label.toLowerCase() : k;
-      }).join(", ");
+      // Tableau
+      const table = $("tableau-accessibilite");
+      if (table) {
+        const head = ["Département"];
+        selectedArray.forEach(catKey => {
+          const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
+          const label = cat ? cat.label : catKey;
+          head.push(`${label} – médiane (km)`, `${label} – P90 (km)`, `${label} – ≤500m (%)`, `${label} – sans équip.`);
+        });
 
-      // Recherche des valeurs min/max pour la première catégorie sélectionnée
-      const firstCat = selectedArray[0];
-      const statsFirst = rows.map(r => getCategoryStats(r, firstCat)).filter(Boolean);
-      if (statsFirst.length) {
-        const medians = statsFirst.map(s => s.distance_mediane_m / 1000);
-        const minMed = Math.min(...medians);
-        const maxMed = Math.max(...medians);
-        const minDept = rows[medians.indexOf(minMed)].departement;
-        const maxDept = rows[medians.indexOf(maxMed)].departement;
+        const thead = `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
+        const tbody = rows.map(r => {
+          let cells = `<td>${ESC(r.departement)}</td>`;
+          selectedArray.forEach(catKey => {
+            const stats = getCategoryStats(r, catKey);
+            if (stats) {
+              cells += `
+                <td>${KM(stats.distance_mediane_m)}</td>
+                <td>${KM(stats.distance_p90_m)}</td>
+                <td>${P(stats.a_500m_pct)}</td>
+                <td>${N(stats.sans_equipement_n)}</td>
+              `;
+            } else {
+              cells += `<td colspan="4" class="na">—</td>`;
+            }
+          });
+          return `<tr>${cells}</tr>`;
+        }).join("");
 
-        interp.innerHTML = `
-          Pour les catégories sélectionnées (${selectedLabels}), la distance médiane varie de 
-          <strong>${minMed.toFixed(1)} km</strong> (${minDept}) à 
-          <strong>${maxMed.toFixed(1)} km</strong> (${maxDept}).
-          Les valeurs élevées indiquent une offre plus éloignée des lieux de tournage, 
-          donc une accessibilité moindre. La part des lieux à moins de 500 m renforce 
-          cette lecture : plus elle est faible, plus l’équipement est éloigné.
-        `;
-      } else {
-        interp.textContent = "Aucune donnée disponible pour les catégories sélectionnées.";
+        table.innerHTML = `${thead}<tbody>${tbody}</tbody>`;
+      }
+
+      // Paragraphe d'interprétation automatique
+      const interp = $("interpretation-accessibilite");
+      if (interp) {
+        const selectedLabels = selectedArray.map(k => {
+          const cat = CATEGORIES_ACCESS.find(c => c.key === k);
+          return cat ? cat.label.toLowerCase() : k;
+        }).join(", ");
+
+        // Recherche des valeurs min/max pour la première catégorie sélectionnée
+        const firstCat = selectedArray[0];
+        const statsFirst = rows.map(r => getCategoryStats(r, firstCat)).filter(Boolean);
+        if (statsFirst.length) {
+          const medians = statsFirst.map(s => s.distance_mediane_m / 1000);
+          const minMed = Math.min(...medians);
+          const maxMed = Math.max(...medians);
+          const minDept = rows[medians.indexOf(minMed)].departement;
+          const maxDept = rows[medians.indexOf(maxMed)].departement;
+
+          interp.innerHTML = `
+            Pour les catégories sélectionnées (${selectedLabels}), la distance médiane varie de 
+            <strong>${minMed.toFixed(1)} km</strong> (${minDept}) à 
+            <strong>${maxMed.toFixed(1)} km</strong> (${maxDept}).
+            Les valeurs élevées indiquent une offre plus éloignée des lieux de tournage, 
+            donc une accessibilité moindre. La part des lieux à moins de 500 m renforce 
+            cette lecture : plus elle est faible, plus l’équipement est éloigné.
+          `;
+        } else {
+          interp.textContent = "Aucune donnée disponible pour les catégories sélectionnées.";
+        }
       }
     }
-  }
 
-  // Rendu initial
-  renderCategoryChips();
-  renderChartsAndTable();
-}
+    // Rendu initial
+    renderCategoryChips();
+    renderChartsAndTable();
+  }
 
   // ===== NOUVELLE FONCTION POUR LE GRAPHIQUE À QUADRANTS =====
   function renderFilmographyQuadrants(data) {

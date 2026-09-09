@@ -108,13 +108,16 @@ body {
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 2.5rem;
+    gap: 2rem; /* espace entre sections */
 }
 
 /* ===== Sections ===== */
 .analyse-section {
-    background: transparent;
+    background: rgba(13, 13, 20, 0.6); /* fond léger */
+    border: 1px solid var(--border);
     border-radius: var(--rayon);
+    padding: 1.5rem; /* marge interne uniforme */
+    margin-bottom: 0; /* géré par gap du parent */
 }
 
 .section-heading {
@@ -138,6 +141,12 @@ body {
     letter-spacing: 2px;
     color: var(--accent);
     font-weight: 700;
+}
+
+.section-subtitle {
+    font-size: 0.95rem;
+    color: var(--muted);
+    margin-top: 0.3rem;
 }
 
 /* ===== Panneaux ===== */
@@ -511,24 +520,28 @@ th {
     color: var(--muted);
     margin-top: 0.5rem;
 }
+
+/* ===== Filtres catégories (ajout) ===== */
 .filtres-categories {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
 }
+
 .chip-categorie {
-  padding: 0.5rem 1rem;
-  border-radius: 999px;
-  background: var(--surface, #1e1e2f);
-  color: var(--text, #e0e0e0);
-  border: 1px solid var(--border, #333);
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    background: var(--surface, #1e1e2f);
+    color: var(--text, #e0e0e0);
+    border: 1px solid var(--border, #333);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.9rem;
 }
+
 .chip-categorie.active {
-  background: var(--accent, #6c5ce7);
-  border-color: var(--accent, #6c5ce7);
-  color: white;
+    background: var(--accent, #6c5ce7);
+    border-color: var(--accent, #6c5ce7);
+    color: white;
 }

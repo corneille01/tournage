@@ -586,6 +586,10 @@ function ouvrirPopupLieu(film, lieu) {
 
   overlay.dataset.lieuId = lieu.id;
   effacerTrace();
+  // Toute navigation en cours (tracé, marqueur "ma position", suivi
+  // GPS) appartenait au lieu précédemment ouvert — on repart d'un
+  // état propre pour ce nouveau lieu.
+  nettoyerNavigation();
   document.getElementById("section-reservation").innerHTML = "";
 
   // Même lieu rouvert : on garde l'état (catégorie sélectionnée,
@@ -1910,6 +1914,12 @@ async function demarrerNavigation(destLat, destLon, mode) {
     return;
   }
 
+  // Repart toujours d'un état propre : évite qu'un tracé, un marqueur
+  // "ma position" ou un suivi GPS d'une navigation précédente (vers
+  // un autre lieu ou une autre commodité) ne reste affiché ou
+  // n'entre en conflit avec cette nouvelle navigation.
+  nettoyerNavigation();
+
   const panneau = document.getElementById("panneau-navigation");
   panneau.classList.remove("hidden");
   panneau.querySelector(".nav-instruction").textContent = "Localisation en cours…";
@@ -1936,7 +1946,6 @@ indexEtapeCourante = 0;
 
    
 
-    if (coucheItineraireCommodite) map.removeLayer(coucheItineraireCommodite);
     coucheItineraireCommodite = L.geoJSON(data.geometry, {
       style: { color: "#00ffcc", weight: 5, opacity: 0.9 },
     }).addTo(map);
@@ -1951,7 +1960,6 @@ indexEtapeCourante = 0;
 
     // Marqueur du point de départ réel de l'utilisateur — distinct des
     // icônes de lieu de tournage et de commodité.
-    if (coucheMarqueurDepart) map.removeLayer(coucheMarqueurDepart);
     coucheMarqueurDepart = L.marker([departLat, departLon], {
       icon: L.divIcon({
         html: '<div class="marqueur-depart">📍</div>',
@@ -1962,7 +1970,6 @@ indexEtapeCourante = 0;
     _parler(etapesNavigationCourantes[0].instruction);
     panneau.querySelector(".nav-instruction").textContent = etapesNavigationCourantes[0].instruction;
 
-    if (suiviPositionId) navigator.geolocation.clearWatch(suiviPositionId);
     suiviPositionId = navigator.geolocation.watchPosition(_surNouvellePosition, null, {
       enableHighAccuracy: true, maximumAge: 2000, timeout: 10000,
     });
@@ -2002,9 +2009,30 @@ function haversineApprox(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function nettoyerNavigation() {
+  // Tout ce qui appartient à UNE navigation guidée en cours : le
+  // suivi GPS, le tracé sur la carte et le marqueur "ma position".
+  // Appelée à l'arrêt explicite, à l'arrivée, ou avant d'en démarrer
+  // une nouvelle (vers un autre lieu/une autre commodité) — pour ne
+  // jamais laisser de résidu visuel de l'ancienne navigation.
+  if (suiviPositionId) {
+    navigator.geolocation.clearWatch(suiviPositionId);
+    suiviPositionId = null;
+  }
+  if (coucheItineraireCommodite) {
+    map.removeLayer(coucheItineraireCommodite);
+    coucheItineraireCommodite = null;
+  }
+  if (coucheMarqueurDepart) {
+    map.removeLayer(coucheMarqueurDepart);
+    coucheMarqueurDepart = null;
+  }
+  etapesNavigationCourantes = [];
+  indexEtapeCourante = 0;
+}
+
 function arreterNavigation() {
-  if (suiviPositionId) navigator.geolocation.clearWatch(suiviPositionId);
-  suiviPositionId = null;
+  nettoyerNavigation();
   setTimeout(() => document.getElementById("panneau-navigation").classList.add("hidden"), 3000);
 }
 

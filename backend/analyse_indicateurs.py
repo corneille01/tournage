@@ -1964,50 +1964,58 @@ async def construire_observatoire_statistique(
     )
 
     # ------------------------------------------------------------------
-    # Tableau départemental
+    # Tableau départemental (comparaison multi-catégories)
     # ------------------------------------------------------------------
+    #
+    # On ne se limite plus à une seule catégorie de référence : on compare,
+    # pour chaque département, plusieurs catégories d'équipements afin de
+    # pouvoir les représenter côte à côte (hébergement, restauration,
+    # arrêts de bus, gares, parkings, aéroports...).
+    #
+    # L'indicateur pivot est "nombre_rayon_standard_1km" : il repose sur
+    # un rayon fixe de 1 km, identique pour toutes les catégories — donc
+    # comparable entre elles, contrairement à "nombre" qui dépend du
+    # rayon de recherche propre à chaque catégorie DATAtourisme.
 
-    categorie_reference = (
-        "hebergement"
-        if "hebergement" in categories
-        else (
-            categories[0]
-            if categories
-            else None
-        )
-    )
+    CATEGORIES_COMPARAISON_PRIORITAIRES = [
+        "hebergement",
+        "restaurant",
+        "arret_bus",
+        "gare",
+        "parking",
+        "aeroport",
+    ]
+
+    categories_comparaison = [
+        cat
+        for cat in CATEGORIES_COMPARAISON_PRIORITAIRES
+        if cat in categories
+    ] or categories[:6]
 
     tableau_departemental = []
 
-    if categorie_reference:
+    for dep in departements:
 
-        ref_regionale = equipements.get(
-            categorie_reference,
-            {},
+        diversite_dep = (
+            await _diversite_fonctionnelle(
+                region,
+                departement=dep,
+            )
         )
 
-        ref_off = ref_regionale.get(
-            "nombre",
-            {},
-        )
+        entry_categories: dict[str, Any] = {}
+        n_lieux_dep = 0
 
-        for dep in departements:
+        for cat in categories_comparaison:
 
             stats_dep = await _stats_categorie(
                 region,
-                categorie_reference,
+                cat,
                 departement=dep,
             )
 
-            diversite_dep = (
-                await _diversite_fonctionnelle(
-                    region,
-                    departement=dep,
-                )
-            )
-
-            off = stats_dep.get(
-                "nombre",
+            rayon1km = stats_dep.get(
+                "nombre_rayon_standard_1km",
                 {},
             )
 
@@ -2016,151 +2024,90 @@ async def construire_observatoire_statistique(
                 {},
             )
 
-            def _ecart(
-                dep_val: Any,
-                ref_val: Any,
-            ) -> tuple[
-                float | None,
-                float | None,
-            ]:
-
-                dep_val = _safe_float(
-                    dep_val
-                )
-
-                ref_val = _safe_float(
-                    ref_val
-                )
-
-                if (
-                    dep_val is None
-                    or ref_val is None
-                ):
-                    return None, None
-
-                absolu = round(
-                    dep_val - ref_val,
-                    2,
-                )
-
-                relatif = (
-                    round(
-                        (
-                            dep_val - ref_val
-                        )
-                        / ref_val
-                        * 100.0,
-                        1,
-                    )
-                    if ref_val != 0
-                    else None
-                )
-
-                return (
-                    absolu,
-                    relatif,
-                )
-
-            (
-                ecart_off_absolu,
-                ecart_off_relatif,
-            ) = _ecart(
-                off.get("moyenne"),
-                ref_off.get("moyenne"),
+            n_lieux_cat = (
+                stats_dep.get("n", 0) or 0
             )
 
-            tableau_departemental.append(
-                {
-                    "departement": dep,
+            n_lieux_dep = max(
+                n_lieux_dep,
+                n_lieux_cat,
+            )
 
-                    "n_lieux": stats_dep.get(
-                        "n",
-                        0,
-                    ),
+            entry_categories[cat] = {
+                "n_lieux": n_lieux_cat,
 
-                    "categorie_reference": (
-                        categorie_reference
-                    ),
+                "nombre_1km_moyenne": rayon1km.get(
+                    "moyenne"
+                ),
 
-                    "moyenne": off.get(
+                "nombre_1km_mediane": rayon1km.get(
+                    "mediane"
+                ),
+
+                "nombre_1km_ecart_type": rayon1km.get(
+                    "ecart_type"
+                ),
+
+                "nombre_1km_cv_pct": rayon1km.get(
+                    "cv_pct"
+                ),
+
+                "distance_mediane_m": prox.get(
+                    "mediane"
+                ),
+
+                "distance_p90_m": prox.get(
+                    "p90"
+                ),
+
+                "a_500m_pct": (
+                    stats_dep
+                    .get("proximite", {})
+                    .get("a_500m_pct")
+                ),
+
+                "a_1km_pct": (
+                    stats_dep
+                    .get("proximite", {})
+                    .get("a_1km_pct")
+                ),
+
+                "sans_equipement_n": (
+                    stats_dep
+                    .get("carence", {})
+                    .get("sans_equipement_n")
+                ),
+            }
+
+        tableau_departemental.append(
+            {
+                "departement": dep,
+
+                "n_lieux": n_lieux_dep,
+
+                "diversite_moyenne": (
+                    diversite_dep.get(
                         "moyenne"
-                    ),
+                    )
+                ),
 
-                    "mediane": off.get(
-                        "mediane"
-                    ),
-
-                    "ecart_type": off.get(
-                        "ecart_type"
-                    ),
-
-                    "cv_pct": off.get(
-                        "cv_pct"
-                    ),
-
-                    "distance_mediane_m": prox.get(
-                        "mediane"
-                    ),
-
-                    "distance_p90_m": prox.get(
-                        "p90"
-                    ),
-
-                    "a_500m_pct": (
-                        stats_dep
-                        .get("proximite", {})
-                        .get("a_500m_pct")
-                    ),
-
-                    "sans_equipement_n": (
-                        stats_dep
-                        .get("carence", {})
-                        .get("sans_equipement_n")
-                    ),
-
-                    "diversite_moyenne": (
-                        diversite_dep.get(
-                            "moyenne"
-                        )
-                    ),
-
-                    "ecart_absolu_regional": (
-                        ecart_off_absolu
-                    ),
-
-                    "ecart_relatif_regional_pct": (
-                        ecart_off_relatif
-                    ),
-
-                    "position_regionale": (
-                        None
-                        if ecart_off_relatif is None
-                        else (
-                            "au-dessus de la référence régionale"
-                            if ecart_off_relatif > 10
-                            else (
-                                "en-dessous de la référence régionale"
-                                if ecart_off_relatif < -10
-                                else "proche de la référence régionale"
-                            )
-                        )
-                    ),
-                }
-            )
+                "categories": entry_categories,
+            }
+        )
 
     return {
         "region": region,
 
         "categories_disponibles": categories,
 
+        "categories_comparaison_departementale": (
+            categories_comparaison
+        ),
+
         "equipements": equipements,
 
         "diversite_fonctionnelle": (
             diversite_regionale
-        ),
-
-        "categorie_reference_tableau": (
-            categorie_reference
         ),
 
         "departements": (

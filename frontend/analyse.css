@@ -108,16 +108,13 @@ body {
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 2rem; /* espace entre sections */
+    gap: 2.5rem;
 }
 
 /* ===== Sections ===== */
 .analyse-section {
-    background: rgba(13, 13, 20, 0.6); /* fond léger */
-    border: 1px solid var(--border);
+    background: transparent;
     border-radius: var(--rayon);
-    padding: 1.5rem; /* marge interne uniforme */
-    margin-bottom: 0; /* géré par gap du parent */
 }
 
 .section-heading {
@@ -141,12 +138,6 @@ body {
     letter-spacing: 2px;
     color: var(--accent);
     font-weight: 700;
-}
-
-.section-subtitle {
-    font-size: 0.95rem;
-    color: var(--muted);
-    margin-top: 0.3rem;
 }
 
 /* ===== Panneaux ===== */
@@ -297,6 +288,37 @@ th {
     font-size: 0.8rem;
     font-weight: 400;
     color: var(--muted);
+}
+
+/* ===== Sélecteur de catégorie (tableau départemental) ===== */
+.dept-cat-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.btn-chip {
+    background-color: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-chip:hover {
+    border-color: var(--primary);
+}
+
+.btn-chip.active {
+    background-color: var(--primary);
+    color: #050508;
+    border-color: var(--primary);
+    font-weight: 600;
 }
 
 /* ===== Offre ===== */
@@ -519,29 +541,4 @@ th {
     font-size: 0.9rem;
     color: var(--muted);
     margin-top: 0.5rem;
-}
-
-/* ===== Filtres catégories (ajout) ===== */
-.filtres-categories {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-}
-
-.chip-categorie {
-    padding: 0.5rem 1rem;
-    border-radius: 999px;
-    background: var(--surface, #1e1e2f);
-    color: var(--text, #e0e0e0);
-    border: 1px solid var(--border, #333);
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.9rem;
-}
-
-.chip-categorie.active {
-    background: var(--accent, #6c5ce7);
-    border-color: var(--accent, #6c5ce7);
-    color: white;
 }

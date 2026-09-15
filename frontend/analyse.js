@@ -178,7 +178,7 @@
     const offre = find("offre touristique autour");
     const capacite = find("les lieux sont-ils prêts");
     const mobilite = find("quel rôle joue");
-    const territoires = find("accessibilité des équipements par département");
+    const territoires = find("tableau de bord départemental");
     const filmographie = find("potentiel de valorisation ciné-touristique");
     const qualite = find("qualité et couverture");
     const potentiel = find("popularité cinématographique");
@@ -508,6 +508,7 @@
     // Synthèse de la section offre
     const synth = $("offre-synthese");
     if (synth) {
+      // Calculer des indicateurs globaux
       const categories = keys.map(k => {
         const stat = eq[k]?.nombre_rayon_standard_1km || eq[k]?.nombre_1km;
         return { key: k, mediane: stat?.mediane };
@@ -548,214 +549,137 @@
       return;
     }
 
-    // Définition des catégories disponibles
-    const CATEGORIES_ACCESS = [
-      { key: "hebergement", label: "Hébergement" },
-      { key: "restauration", label: "Restauration" },
-      { key: "arret_bus", label: "Arrêt de bus" },
-      { key: "gare", label: "Gare" },
-      { key: "parking", label: "Parking" },
-      { key: "aeroport", label: "Aéroport" },
-      { key: "aerodrome", label: "Aérodrome" },
-      { key: "hopital", label: "Hôpital" },
-      { key: "office_tourisme", label: "Office de tourisme" },
-      { key: "refuge", label: "Refuge" },
-      { key: "distributeur", label: "Distributeur" },
-      { key: "police", label: "Police" }
-    ];
+    // Catégories fournies par le backend pour la comparaison
+    // interdépartementale (repli sur celles du premier département si
+    // l'API n'expose pas encore le champ dédié).
+    const catKeys = Array.isArray(obs?.categories_comparaison_departementale) && obs.categories_comparaison_departementale.length
+      ? obs.categories_comparaison_departementale
+      : Object.keys(rows[0]?.categories || {});
 
-    // État de sélection (par défaut : hébergement)
-    let selectedCategories = new Set(["hebergement"]);
-
-    // Helper pour récupérer les stats d'une catégorie pour un département
-    function getCategoryStats(dep, catKey) {
-      // Nouvelle structure imbriquée
-      if (dep.categories && dep.categories[catKey]) {
-        return dep.categories[catKey];
-      }
-      // Rétrocompatibilité ancienne structure plate (uniquement hébergement)
-      if (catKey === "hebergement") {
-        return {
-          n_lieux: dep.n_lieux,
-          mediane: dep.mediane,
-          distance_mediane_m: dep.distance_mediane_m,
-          distance_p90_m: dep.distance_p90_m,
-          a_500m_pct: dep.a_500m_pct,
-          sans_equipement_n: dep.sans_equipement_n
-        };
-      }
-      return null;
+    if (!catKeys.length) {
+      container.innerHTML = `<div class="analyse-empty">Aucune catégorie d'équipement comparable entre départements.</div>`;
+      return;
     }
 
-    // Construit le HTML des chips de catégories
-    function renderCategoryChips() {
-      const filtres = $("filtres-categories");
-      if (!filtres) return;
-      filtres.innerHTML = CATEGORIES_ACCESS.map(cat => `
-        <button class="chip-categorie ${selectedCategories.has(cat.key) ? "active" : ""}" 
-                data-cat="${cat.key}">
-          ${cat.label}
-        </button>
-      `).join("");
+    const palette = ["#00ffcc","#ff007f","#ffd700","#5b8def","#ff8a3d","#8e6bff","#3ddc97","#f45b69"];
+    const labelOf = (cat) => CAT[cat] || cat;
 
-      filtres.querySelectorAll(".chip-categorie").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const key = btn.dataset.cat;
-          if (selectedCategories.has(key)) {
-            if (selectedCategories.size > 1) selectedCategories.delete(key);
-          } else {
-            selectedCategories.add(key);
-          }
-          renderCategoryChips();
-          renderChartsAndTable();
-        });
-      });
-    }
+    container.innerHTML = `
+      <div class="department-graphs dashboard-grid two">
+        <article class="panel">
+          <h3>Nombre médian d'équipements à moins d'1 km, par département</h3>
+          <div class="chart-wrap"><canvas id="graphe-dep-nombre1km"></canvas></div>
+          <p class="interpretation-graphe">Indicateur comparable entre catégories : nombre médian d'équipements présents dans un rayon fixe de 1 km autour des lieux de tournage du département, pour chaque type d'équipement.</p>
+        </article>
+        <article class="panel">
+          <h3>Distance médiane à l'équipement le plus proche, par département</h3>
+          <div class="chart-wrap"><canvas id="graphe-dep-distance"></canvas></div>
+          <p class="interpretation-graphe">Distance médiane (en km) séparant un lieu de tournage de l'équipement le plus proche de chaque catégorie. Les rayons de recherche DATAtourisme diffèrent selon les catégories : à comparer avec prudence entre elles.</p>
+        </article>
+      </div>
+      <div id="departements-interpretation" class="analyse-note"></div>
+      <div class="dept-cat-toggle" id="dept-cat-toggle"></div>
+      <div class="table-scroll"><table class="tableau-stats" id="tableau-departemental-v2"></table></div>
+    `;
 
-    // Construit les graphiques et le tableau
-    function renderChartsAndTable() {
-      const selectedArray = [...selectedCategories];
-      const labels = rows.map(r => r.departement);
-
-      // Prépare les datasets pour le graphique groupé (une barre par catégorie)
-      const datasets = selectedArray.map(catKey => {
-        const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-        return {
-          label: cat ? cat.label : catKey,
-          data: rows.map(r => {
-            const stats = getCategoryStats(r, catKey);
-            return stats && stats.distance_mediane_m ? Number(stats.distance_mediane_m) / 1000 : null;
+    chart("graphe-dep-nombre1km", {
+      type:"bar",
+      data:{
+        labels: rows.map(r=>r.departement),
+        datasets: catKeys.map((cat,i)=>({
+          label: labelOf(cat),
+          data: rows.map(r=>{
+            const v = r.categories?.[cat]?.nombre_1km_mediane;
+            return NUM(v) ? Number(v) : null;
           }),
-          backgroundColor: null // sera assigné par chart.js ou votre helper
-        };
-      });
+          backgroundColor: palette[i % palette.length]
+        }))
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:"bottom"}},scales:{y:{beginAtZero:true}}}
+    });
 
-      // Construction du contenu
-      container.innerHTML = `
-        <div class="department-graphs dashboard-grid two">
-          <article class="panel">
-            <h3>Distance médiane aux équipements sélectionnés</h3>
-            <div class="chart-wrap"><canvas id="graphe-dep-distances-categories"></canvas></div>
-            <p class="interpretation-graphe" id="interpretation-accessibilite"></p>
-          </article>
-          <article class="panel">
-            <h3>Part des lieux à moins de 500 m</h3>
-            <div class="chart-wrap"><canvas id="graphe-dep-part-500m"></canvas></div>
-          </article>
-        </div>
-        <div class="table-scroll">
-          <table class="tableau-stats" id="tableau-accessibilite"></table>
-        </div>
-      `;
+    chart("graphe-dep-distance", {
+      type:"bar",
+      data:{
+        labels: rows.map(r=>r.departement),
+        datasets: catKeys.map((cat,i)=>({
+          label: labelOf(cat),
+          data: rows.map(r=>{
+            const v = r.categories?.[cat]?.distance_mediane_m;
+            return NUM(v) ? Number(v)/1000 : null;
+          }),
+          backgroundColor: palette[i % palette.length]
+        }))
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:"bottom"}},scales:{y:{beginAtZero:true}}}
+    });
 
-      // Graphique 1 : distances médianes groupées
-      if (window.chart) {
-        chart("graphe-dep-distances-categories", {
-          type: "bar",
-          data: {
-            labels: labels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: "km" } } }
-          }
-        });
-
-        // Graphique 2 : part ≤ 500 m
-        chart("graphe-dep-part-500m", {
-          type: "bar",
-          data: {
-            labels: labels,
-            datasets: selectedArray.map(catKey => {
-              const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-              return {
-                label: cat ? cat.label : catKey,
-                data: rows.map(r => {
-                  const stats = getCategoryStats(r, catKey);
-                  return stats ? Number(stats.a_500m_pct) : null;
-                })
-              };
-            })
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: true } },
-            scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "%" } } }
-          }
-        });
-      }
-
-      // Tableau
-      const table = $("tableau-accessibilite");
-      if (table) {
-        const head = ["Département"];
-        selectedArray.forEach(catKey => {
-          const cat = CATEGORIES_ACCESS.find(c => c.key === catKey);
-          const label = cat ? cat.label : catKey;
-          head.push(`${label} – médiane (km)`, `${label} – P90 (km)`, `${label} – ≤500m (%)`, `${label} – sans équip.`);
-        });
-
-        const thead = `<thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead>`;
-        const tbody = rows.map(r => {
-          let cells = `<td>${ESC(r.departement)}</td>`;
-          selectedArray.forEach(catKey => {
-            const stats = getCategoryStats(r, catKey);
-            if (stats) {
-              cells += `
-                <td>${KM(stats.distance_mediane_m)}</td>
-                <td>${KM(stats.distance_p90_m)}</td>
-                <td>${P(stats.a_500m_pct)}</td>
-                <td>${N(stats.sans_equipement_n)}</td>
-              `;
-            } else {
-              cells += `<td colspan="4" class="na">—</td>`;
-            }
-          });
-          return `<tr>${cells}</tr>`;
-        }).join("");
-
-        table.innerHTML = `${thead}<tbody>${tbody}</tbody>`;
-      }
-
-      // Paragraphe d'interprétation automatique
-      const interp = $("interpretation-accessibilite");
-      if (interp) {
-        const selectedLabels = selectedArray.map(k => {
-          const cat = CATEGORIES_ACCESS.find(c => c.key === k);
-          return cat ? cat.label.toLowerCase() : k;
-        }).join(", ");
-
-        // Recherche des valeurs min/max pour la première catégorie sélectionnée
-        const firstCat = selectedArray[0];
-        const statsFirst = rows.map(r => getCategoryStats(r, firstCat)).filter(Boolean);
-        if (statsFirst.length) {
-          const medians = statsFirst.map(s => s.distance_mediane_m / 1000);
-          const minMed = Math.min(...medians);
-          const maxMed = Math.max(...medians);
-          const minDept = rows[medians.indexOf(minMed)].departement;
-          const maxDept = rows[medians.indexOf(maxMed)].departement;
-
-          interp.innerHTML = `
-            Pour les catégories sélectionnées (${selectedLabels}), la distance médiane varie de 
-            <strong>${minMed.toFixed(1)} km</strong> (${minDept}) à 
-            <strong>${maxMed.toFixed(1)} km</strong> (${maxDept}).
-            Les valeurs élevées indiquent une offre plus éloignée des lieux de tournage, 
-            donc une accessibilité moindre. La part des lieux à moins de 500 m renforce 
-            cette lecture : plus elle est faible, plus l’équipement est éloigné.
-          `;
-        } else {
-          interp.textContent = "Aucune donnée disponible pour les catégories sélectionnées.";
-        }
-      }
+    // ---- Interprétation générée à partir des résultats effectivement chargés ----
+    const interpHost = $("departements-interpretation");
+    if (interpHost) {
+      const phrases = catKeys.map(cat => {
+        const avecDistance = rows
+          .map(r => ({dep:r.departement, v:r.categories?.[cat]?.distance_mediane_m}))
+          .filter(x => NUM(x.v));
+        if (avecDistance.length < 2) return null;
+        const meilleur = avecDistance.reduce((a,b)=> b.v < a.v ? b : a);
+        const pire = avecDistance.reduce((a,b)=> b.v > a.v ? b : a);
+        if (meilleur.dep === pire.dep) return null;
+        return `Pour ${labelOf(cat).toLowerCase()}, ${meilleur.dep} est le département le mieux desservi (distance médiane ${KM(meilleur.v)}) contre ${KM(pire.v)} en ${pire.dep}.`;
+      }).filter(Boolean);
+      interpHost.innerHTML = phrases.length
+        ? `<strong>Lecture des écarts :</strong> ${phrases.join(" ")}`
+        : "";
     }
 
-    // Rendu initial
-    renderCategoryChips();
-    renderChartsAndTable();
+    // ---- Sélecteur de catégorie pour le tableau détaillé ----
+    let selectedCat = catKeys.includes("hebergement") ? "hebergement" : catKeys[0];
+
+    const toggleHost = $("dept-cat-toggle");
+    const table = $("tableau-departemental-v2");
+
+    function renderToggle() {
+      if (!toggleHost) return;
+      toggleHost.innerHTML = catKeys.map(cat =>
+        `<button type="button" class="btn-chip${cat===selectedCat?" active":""}" data-cat="${ESC(cat)}">${ESC(labelOf(cat))}</button>`
+      ).join("");
+      toggleHost.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", () => {
+          selectedCat = btn.dataset.cat;
+          renderToggle();
+          renderTable();
+        });
+      });
+    }
+
+    function renderTable() {
+      if (!table) return;
+      const head = [
+        ["Département","Territoire comparé"],
+        ["N lieux","Nombre de lieux servant de base au calcul pour cette catégorie"],
+        ["Médiane / 1 km","Nombre médian d'équipements dans un rayon de 1 km"],
+        ["CV / 1 km","Coefficient de variation du nombre d'équipements à 1 km"],
+        ["Distance médiane","P50 de la distance au plus proche"],
+        ["P90","90e percentile de la distance"],
+        ["≤500 m","Part des lieux à ≤500 m"],
+        ["≤1 km","Part des lieux à ≤1 km"],
+        ["Sans équipement","Nombre de lieux sans cet équipement à proximité"]
+      ];
+      table.innerHTML = `<thead><tr>${head.map(([a,b])=>`<th title="${ESC(b)}">${a}</th>`).join("")}</tr></thead><tbody>${
+        rows.map(r => {
+          const c = r.categories?.[selectedCat] || {};
+          return `<tr>
+            <td>${ESC(r.departement)}</td><td>${N(c.n_lieux)}</td>
+            <td>${N(c.nombre_1km_mediane,1)}</td><td>${P(c.nombre_1km_cv_pct)}</td>
+            <td>${KM(c.distance_mediane_m)}</td><td>${KM(c.distance_p90_m)}</td>
+            <td>${P(c.a_500m_pct)}</td><td>${P(c.a_1km_pct)}</td><td>${N(c.sans_equipement_n)}</td>
+          </tr>`;
+        }).join("")
+      }</tbody>`;
+    }
+
+    renderToggle();
+    renderTable();
   }
 
   // ===== NOUVELLE FONCTION POUR LE GRAPHIQUE À QUADRANTS =====

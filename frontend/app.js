@@ -610,6 +610,22 @@ function ouvrirPopupLieu(film, lieu) {
   document.getElementById("popup-adresse").textContent =
     [lieu.nom, lieu.commune, lieu.departement].filter(Boolean).join(", ");
 
+  // Itinéraire direct depuis la position actuelle de l'internaute vers
+  // CE lieu de tournage — sans passer par une commodité. On réassigne
+  // .onclick (plutôt que addEventListener) pour éviter d'empiler des
+  // écouteurs obsolètes (avec les anciennes coordonnées) à chaque
+  // réouverture du popup pour un autre lieu.
+  const lieuLat = Number(lieu.latitude ?? lieu.lat);
+  const lieuLon = Number(lieu.longitude ?? lieu.lon ?? lieu.lng);
+  const btnNavDirectePied = document.getElementById("btn-nav-directe-pied");
+  const btnNavDirecteVoiture = document.getElementById("btn-nav-directe-voiture");
+  if (btnNavDirectePied) {
+    btnNavDirectePied.onclick = () => demarrerNavigation(lieuLat, lieuLon, "pedestrian");
+  }
+  if (btnNavDirecteVoiture) {
+    btnNavDirecteVoiture.onclick = () => demarrerNavigation(lieuLat, lieuLon, "car");
+  }
+
   const motType = film.media_type === "movie" ? "ce film" : film.media_type === "tv" ? "cette série" : "cet animé";
   document.getElementById("btn-trace").querySelector("span").textContent = `Sur les traces de ${motType}…`;
   document.getElementById("popup-synopsis").textContent =
@@ -1076,6 +1092,13 @@ async function afficherItineraireVersCommodite(
     const dureeSecondes =
       Number(data.duree_secondes);
 
+    // Infobulle "distance/temps restants" au survol du tracé.
+    attacherSurvolItineraire(
+      coucheItineraireCommodite,
+      distanceMetres,
+      dureeSecondes
+    );
+
     const distance =
       Number.isFinite(distanceMetres)
         ? formatDistance(distanceMetres)
@@ -1206,10 +1229,24 @@ async function afficherItineraireVersCommodite(
           "click",
           () => {
 
-            // Ferme uniquement le grand popup.
-            // Le tracé reste sur la carte.
+            // Ce résultat peut s'afficher à deux endroits différents :
+            // 1. dans le petit popup Leaflet ouvert directement sur la
+            //    carte (marqueur de commodité) → il faut fermer CE
+            //    popup-là (map.closePopup()), pas le grand panneau du
+            //    lieu, sinon rien ne se passe visuellement.
+            // 2. dans la liste du grand panneau lieu (#popup-overlay)
+            //    → là on ferme bien le grand panneau pour révéler la
+            //    carte et le tracé.
+            // Dans les deux cas, le tracé lui-même n'est jamais touché.
 
-            if (
+            const dansPopupCarte =
+              btnVoirCarte.closest(
+                ".leaflet-popup-content"
+              );
+
+            if (dansPopupCarte) {
+              map.closePopup();
+            } else if (
               typeof fermerPopup ===
               "function"
             ) {
@@ -1601,13 +1638,22 @@ async function afficherTraceFilm() {
         const bouton = e.popup.getElement().querySelector(".btn-etape-suivante");
         if (!bouton) return;
         bouton.addEventListener("click", () => {
-          demarrerNavigation(parseFloat(bouton.dataset.lat), parseFloat(bouton.dataset.lon), "driving-car");
+          // "car", pas "driving-car" : c'est le format attendu par
+          // /api/itineraire (voir modes_acceptes côté backend).
+          demarrerNavigation(parseFloat(bouton.dataset.lat), parseFloat(bouton.dataset.lon), "car");
         });
       });
 
       marker.addTo(map);
       return marker;
     });
+
+    // Infobulle "distance/temps restants" au survol du tracé complet.
+    attacherSurvolItineraire(
+      state.traceLayer,
+      data.distance_metres,
+      data.duree_secondes
+    );
 
     const distanceKm = (data.distance_metres / 1000).toFixed(1);
     const dureeTxt = data.duree_secondes ? formatDuree(data.duree_secondes) : null;
@@ -1743,6 +1789,82 @@ function afficherSectionReservation() {
 
 
 
+// ── Infobulle "à la Google Maps" au survol d'un tracé : distance et
+// durée restantes jusqu'à l'arrivée, en fonction de la position du
+// curseur sur la ligne. S'appuie sur turf.js (déjà chargé) pour
+// projeter le curseur sur le tracé et mesurer la distance parcourue.
+
+function _ligneUnique(geojson) {
+  try {
+    const features =
+      geojson.type === "FeatureCollection"
+        ? geojson.features
+        : geojson.type === "Feature"
+        ? [geojson]
+        : [{ type: "Feature", properties: {}, geometry: geojson }];
+
+    const coords = [];
+
+    features.forEach((f) => {
+      const geom = f?.geometry;
+      if (!geom) return;
+      if (geom.type === "LineString") {
+        coords.push(...geom.coordinates);
+      } else if (geom.type === "MultiLineString") {
+        geom.coordinates.forEach((segment) => coords.push(...segment));
+      }
+    });
+
+    return coords.length >= 2 ? turf.lineString(coords) : null;
+  } catch (e) {
+    console.error("Erreur de fusion de la géométrie du tracé :", e);
+    return null;
+  }
+}
+
+function attacherSurvolItineraire(coucheGeoJSON, distanceTotaleMetres, dureeTotaleSecondes) {
+  if (!coucheGeoJSON || typeof turf === "undefined") return;
+  if (!Number.isFinite(Number(distanceTotaleMetres))) return;
+
+  const distanceTotale = Number(distanceTotaleMetres);
+  const dureeTotale = Number(dureeTotaleSecondes);
+  const ligne = _ligneUnique(coucheGeoJSON.toGeoJSON());
+  if (!ligne) return;
+
+  const infobulle = L.tooltip({
+    sticky: true,
+    direction: "top",
+    offset: [0, -8],
+    className: "tooltip-itineraire",
+  });
+
+  coucheGeoJSON.eachLayer((sousCouche) => {
+    if (typeof sousCouche.on !== "function") return;
+
+    sousCouche.on("mousemove", (e) => {
+      const curseur = turf.point([e.latlng.lng, e.latlng.lat]);
+      const surLaLigne = turf.nearestPointOnLine(ligne, curseur, { units: "kilometers" });
+      const parcourueMetres = (surLaLigne.properties.location || 0) * 1000;
+      const restantMetres = Math.max(0, distanceTotale - parcourueMetres);
+      const restantSecondes =
+        Number.isFinite(dureeTotale) && distanceTotale > 0
+          ? dureeTotale * (restantMetres / distanceTotale)
+          : null;
+
+      const texte =
+        `📍 ${formatDistance(restantMetres)} restants` +
+        (restantSecondes !== null ? ` · ⏱️ ${formatDuree(restantSecondes)}` : "");
+
+      infobulle.setLatLng(e.latlng).setContent(texte);
+      if (!map.hasLayer(infobulle)) infobulle.addTo(map);
+    });
+
+    sousCouche.on("mouseout", () => {
+      if (map.hasLayer(infobulle)) map.removeLayer(infobulle);
+    });
+  });
+}
+
 function formatDistance(m) {
     const valeur = Number(m);
 
@@ -1818,6 +1940,14 @@ indexEtapeCourante = 0;
     coucheItineraireCommodite = L.geoJSON(data.geometry, {
       style: { color: "#00ffcc", weight: 5, opacity: 0.9 },
     }).addTo(map);
+
+    // Infobulle "distance/temps restants" au survol du tracé de
+    // navigation guidée.
+    attacherSurvolItineraire(
+      coucheItineraireCommodite,
+      data.distance_metres,
+      data.duree_secondes
+    );
 
     // Marqueur du point de départ réel de l'utilisateur — distinct des
     // icônes de lieu de tournage et de commodité.

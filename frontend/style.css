@@ -801,6 +801,18 @@ body.page-film-ssr {
   margin-top: 4px;
 }
 
+/* ── Infobulle "distance/temps restants" au survol d'un tracé ── */
+.tooltip-itineraire {
+  background: var(--couleur-carte, #13131e);
+  border: 1px solid var(--couleur-accent, #ff007f);
+  color: var(--couleur-texte, #dde4f0);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 /* ── Panneau de navigation guidée ── */
 #panneau-navigation {
   position: absolute;

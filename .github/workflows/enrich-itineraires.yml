@@ -33,7 +33,7 @@ on:
     - cron: "0 4 * * 1"
 
 jobs:
-  precalcul:
+  precalcul-1:
     runs-on: ubuntu-latest
     timeout-minutes: 340
 
@@ -59,7 +59,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            python enrich_itineraires.py
+            python enrich_itineraires.py --auto-departement
 
           elif [ -n "${{ github.event.inputs.lieu_id }}" ]; then
             python enrich_itineraires.py \
@@ -72,3 +72,108 @@ jobs:
           else
             python enrich_itineraires.py
           fi
+
+  # ───────────────────────────────────────────────────────────
+  # Jobs de continuation — uniquement pour le run planifié.
+  #
+  # Un seul job GitHub Actions est plafonné à 340 min (limite
+  # dure de 360 min côté GitHub, impossible à dépasser). Si tous
+  # les départements ne sont pas finis en 340 min, ce job reprend
+  # exactement là où le précédent s'est arrêté (--auto-departement
+  # relit à chaque fois ce qu'il reste en base) — jusqu'à 4 x 340
+  # min ≈ 22h dans la même journée. Un département déjà terminé
+  # ressort du calcul en quelques secondes (aucun travail restant),
+  # donc chaîner ces jobs ne coûte quasiment rien une fois que tout
+  # est à jour.
+  #
+  # Le dispatch manuel (un lieu, un département précis, ou "tous")
+  # n'utilise que precalcul-1 : ces jobs de continuation ne se
+  # déclenchent pas dans ce cas.
+  # ───────────────────────────────────────────────────────────
+
+  precalcul-2:
+    needs: precalcul-1
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          pip install asyncpg httpx python-dotenv
+
+      - name: Précalculer les distances IGN (suite)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python enrich_itineraires.py --auto-departement
+
+  precalcul-3:
+    needs: precalcul-2
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          pip install asyncpg httpx python-dotenv
+
+      - name: Précalculer les distances IGN (suite)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python enrich_itineraires.py --auto-departement
+
+  precalcul-4:
+    needs: precalcul-3
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          pip install asyncpg httpx python-dotenv
+
+      - name: Précalculer les distances IGN (suite)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python enrich_itineraires.py --auto-departement

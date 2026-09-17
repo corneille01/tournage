@@ -2521,73 +2521,96 @@ async def api_generer_parcours(request: Request, response: Response):
     scénarios géographiquement cohérents. Le calcul IGN final intervient après
     sélection des lieux.
     """
-    body = await request.json()
-    lieu_ids = body.get("lieu_ids") or []
-    depart = body.get("depart")
-    mode = body.get("mode") or "driving-car"
-    temps = int(body.get("temps_disponible_minutes") or 240)
-    visite = int(body.get("temps_visite_minutes") or 45)
-    retour = bool(body.get("retour_depart", False))
-    max_etapes = max(2, min(int(body.get("max_etapes") or 8), 15))
-    if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
-        raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement des possibilités.")
+    try:
+        body = await request.json()
+        lieu_ids = body.get("lieu_ids") or []
+        depart = body.get("depart")
+        mode = body.get("mode") or "driving-car"
+        temps = int(body.get("temps_disponible_minutes") or 240)
+        visite = int(body.get("temps_visite_minutes") or 45)
+        retour = bool(body.get("retour_depart", False))
+        max_etapes = max(2, min(int(body.get("max_etapes") or 8), 15))
+        if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
+            raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement des possibilités.")
 
-    # Avec des lieux déjà choisis, on construit les scénarios sur ce vivier.
-    # Sans lieux, on cherche autour du point de départ.
-    if lieu_ids:
-        lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:40]
-    else:
-        lat, lon = float(depart["latitude"]), float(depart["longitude"])
-        delta = 0.20 if mode == "foot-walking" else 0.65
-        candidates = await fetch_all(
-            """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre,
-                      f.media_type, f.annee, f.poster_url
-               FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
-               WHERE l.latitude BETWEEN %s AND %s AND l.longitude BETWEEN %s AND %s
-                 AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL""",
-            (lat-delta, lat+delta, lon-delta, lon+delta),
+        # Avec des lieux déjà choisis, on construit les scénarios sur ce vivier.
+        # Sans lieux, on cherche autour du point de départ.
+        if lieu_ids:
+            lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:40]
+        else:
+            lat, lon = float(depart["latitude"]), float(depart["longitude"])
+            delta = 0.20 if mode == "foot-walking" else 0.65
+            candidates = await fetch_all(
+                """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre,
+                          f.media_type, f.annee, f.poster_url
+                   FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+                   WHERE l.latitude BETWEEN %s AND %s AND l.longitude BETWEEN %s AND %s
+                     AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL""",
+                (lat-delta, lat+delta, lon-delta, lon+delta),
+            )
+            candidates.sort(key=lambda x: haversine_metres(lat, lon, float(x["latitude"]), float(x["longitude"])))
+            lieu_ids = [int(x["id"]) for x in candidates[:60]]
+
+        if not lieu_ids:
+            raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
+
+        # Requête IN paramétrée, compatible asyncpg/psycopg selon le driver utilisé.
+        placeholders = ",".join([f"%s"] * len(lieu_ids))
+        candidats_lieux = await fetch_all(
+            f"""SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
+                       l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+                FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+                WHERE l.id IN ({placeholders})""",
+            tuple(lieu_ids),
         )
-        candidates.sort(key=lambda x: haversine_metres(lat, lon, float(x["latitude"]), float(x["longitude"])))
-        lieu_ids = [int(x["id"]) for x in candidates[:60]]
+        ordre = {int(v): i for i, v in enumerate(lieu_ids)}
+        candidats_lieux.sort(key=lambda x: ordre.get(int(x["id"]), 999999))
+        scenarios = _construire_scenarios(candidats_lieux, depart, mode, temps, visite, max_scenarios=4, max_etapes=min(6, max_etapes))
+        selection_recommandee = scenarios[0]["lieu_ids"] if scenarios else []
+        candidats_lieux_safe = _json_safe(candidats_lieux[:40])
+        return {
+            "candidats": lieu_ids,
+            "candidats_lieux": candidats_lieux_safe,
+            "scenarios": scenarios,
+            "selection_recommandee": selection_recommandee,
+            "selection_recommandee_lieux": _json_safe([x for x in candidats_lieux if int(x["id"]) in set(selection_recommandee)]),
+            "exclus_selection": [],
+            "payload": {
+                "mode": mode,
+                "temps_disponible_minutes": temps,
+                "temps_visite_minutes": visite,
+                "retour_depart": retour,
+                "categories_interet": body.get("categories_interet") or [],
+                "budget_level": body.get("budget_level") or "equilibre",
+                "budget_max_euros": body.get("budget_max_euros"),
+                "accessibilite": bool(body.get("accessibilite", False)),
+                "optimiser": bool(body.get("optimiser", True)),
+                "date_sortie": body.get("date_sortie"),
+                "heure_depart": body.get("heure_depart") or "09:00",
+            },
+        }
 
-    if not lieu_ids:
-        raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
+    except HTTPException:
+        # Déjà une erreur volontaire (400/404 ci-dessus) : FastAPI la
+        # sérialise déjà correctement en JSON, on la laisse remonter.
+        raise
 
-    # Requête IN paramétrée, compatible asyncpg/psycopg selon le driver utilisé.
-    placeholders = ",".join([f"%s"] * len(lieu_ids))
-    candidats_lieux = await fetch_all(
-        f"""SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
-                   l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
-            FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
-            WHERE l.id IN ({placeholders})""",
-        tuple(lieu_ids),
-    )
-    ordre = {int(v): i for i, v in enumerate(lieu_ids)}
-    candidats_lieux.sort(key=lambda x: ordre.get(int(x["id"]), 999999))
-    scenarios = _construire_scenarios(candidats_lieux, depart, mode, temps, visite, max_scenarios=4, max_etapes=min(6, max_etapes))
-    selection_recommandee = scenarios[0]["lieu_ids"] if scenarios else []
-    candidats_lieux_safe = _json_safe(candidats_lieux[:40])
-    return {
-        "candidats": lieu_ids,
-        "candidats_lieux": candidats_lieux_safe,
-        "scenarios": scenarios,
-        "selection_recommandee": selection_recommandee,
-        "selection_recommandee_lieux": _json_safe([x for x in candidats_lieux if int(x["id"]) in set(selection_recommandee)]),
-        "exclus_selection": [],
-        "payload": {
-            "mode": mode,
-            "temps_disponible_minutes": temps,
-            "temps_visite_minutes": visite,
-            "retour_depart": retour,
-            "categories_interet": body.get("categories_interet") or [],
-            "budget_level": body.get("budget_level") or "equilibre",
-            "budget_max_euros": body.get("budget_max_euros"),
-            "accessibilite": bool(body.get("accessibilite", False)),
-            "optimiser": bool(body.get("optimiser", True)),
-            "date_sortie": body.get("date_sortie"),
-            "heure_depart": body.get("heure_depart") or "09:00",
-        },
-    }
+    except Exception as exc:
+        # Toute autre exception non prévue plantait silencieusement et
+        # Starlette renvoyait "Internal Server Error" en texte brut —
+        # ce que le frontend ne peut pas parser en JSON (d'où l'erreur
+        # "Unexpected token 'I', 'Internal S'... is not valid JSON").
+        # On journalise la trace complète côté serveur (visible dans
+        # les logs de déploiement) et on renvoie une VRAIE erreur JSON,
+        # avec le message affiché tel quel côté app pour diagnostiquer
+        # précisément la cause au prochain essai.
+        logger.exception(
+            "Erreur inattendue dans /api/parcours/generer"
+        )
+        raise HTTPException(
+            500,
+            f"Erreur lors de la génération des possibilités : {exc}",
+        )
 
 # ══════════════════════════════════════════════════════════════
 # PAGES RENDUES CÔTÉ SERVEUR (SEO)

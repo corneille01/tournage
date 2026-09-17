@@ -179,20 +179,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CinéTour API", lifespan=lifespan)
 
-@app.exception_handler(Exception)
-async def _api_erreur_interne(request: Request, exc: Exception):
-    # Évite qu'un proxy/serveur renvoie simplement « Internal Server Error »
-    # et que le navigateur tente ensuite de parser cette chaîne comme du JSON.
-    # Les détails techniques restent dans les logs serveur.
-    import logging
-    logging.getLogger(__name__).exception("Erreur interne sur %s", request.url.path, exc_info=exc)
-    if request.url.path.startswith("/api/"):
-        return JSONResponse(
-            status_code=500,
-            content={"detail": "Erreur interne du serveur pendant le traitement de cette requête."},
-        )
-    return JSONResponse(status_code=500, content={"detail": "Erreur interne du serveur."})
-
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
@@ -2094,11 +2080,9 @@ async def parcours_enrichi(request: Request, response: Response):
     rows = await fetch_all(
         f"""
         SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
-               distance_metres, adresse, telephone, email, site_web,
+               distance_metres, adresse, telephone, site_web,
                horaires, photo_url, tarif_min, tarif_max, devise,
-               equipements, capacite, note_etoiles, labels_qualite,
-               lien_accessibilite, langues_parlees, description,
-               moyens_paiement, note_tarif,
+               capacite,
                distance_pied_metres, duree_pied_secondes,
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache

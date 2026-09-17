@@ -179,6 +179,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CinéTour API", lifespan=lifespan)
 
+@app.exception_handler(Exception)
+async def _api_erreur_interne(request: Request, exc: Exception):
+    # Évite qu'un proxy/serveur renvoie simplement « Internal Server Error »
+    # et que le navigateur tente ensuite de parser cette chaîne comme du JSON.
+    # Les détails techniques restent dans les logs serveur.
+    import logging
+    logging.getLogger(__name__).exception("Erreur interne sur %s", request.url.path, exc_info=exc)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Erreur interne du serveur pendant le traitement de cette requête."},
+        )
+    return JSONResponse(status_code=500, content={"detail": "Erreur interne du serveur."})
+
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,

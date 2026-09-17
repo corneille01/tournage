@@ -244,6 +244,16 @@ function afficherMonParcoursPanel(){
   document.getElementById("btn-calculer-mon-parcours")?.addEventListener("click",calculerMonParcoursGlobal);
   document.getElementById("btn-generer-parcours-ideal")?.addEventListener("click",genererParcoursIdeal);
 }
+async function lireReponseAPI(response){
+  const texte=await response.text();
+  if(!texte)return {};
+  try{return JSON.parse(texte);}
+  catch(_){
+    const extrait=texte.replace(/\s+/g," ").trim().slice(0,300);
+    return {message:`Le serveur a renvoyé une réponse non JSON (HTTP ${response.status})${extrait?` : ${extrait}`:"."}`};
+  }
+}
+
 async function genererParcoursIdeal(){
   const box=document.getElementById("mp-generation-resultat"); if(!box)return;
   const o=state.monParcoursOptions;
@@ -259,7 +269,7 @@ async function genererParcoursIdeal(){
   try{
     const payload={lieu_ids:state.monParcours.map(x=>Number(x.id)),depart,mode:o.mode,temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:o.accessibilite,categories_interet:o.categories,max_etapes:8};
     const r=await fetch(`${API_BASE}/api/parcours/generer`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
-    const d=await r.json(); if(!r.ok)throw new Error(d.detail||'Génération impossible');
+    const d=await lireReponseAPI(r); if(!r.ok)throw new Error(d.detail||d.message||`Erreur HTTP ${r.status} lors de la génération`);
     const candidats=Array.isArray(d.candidats_lieux)?d.candidats_lieux:[];
     if(!candidats.length){box.innerHTML='<small class="mon-parcours-note">Aucune possibilité n’a été trouvée autour de votre point de départ avec ces critères.</small>';return;}
     window._pelifyCandidatsGeneration=candidats;
@@ -326,7 +336,7 @@ async function calculerMonParcoursGlobal(){
   if(o.departType==='adresse'&&!o.depart){r.innerHTML='<p class="mon-parcours-erreur">Choisissez une adresse de départ avant de calculer.</p>';return;}
   r.innerHTML=`<p class="mon-parcours-loading">Calcul du trajet IGN et des offres touristiques…</p>`;
   try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:o.accessibilite,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",budget_max_euros:o.budgetMax||null};
-    const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.detail||"Impossible de calculer le parcours");state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
+    const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await lireReponseAPI(res);if(!res.ok)throw new Error(data.detail||data.message||`Erreur HTTP ${res.status} lors du calcul du parcours`);state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
   }catch(e){console.error(e);r.innerHTML=`<p class="mon-parcours-erreur">${escapeHtml(e.message||"Erreur lors du calcul du parcours.")}</p>`;}
 }
 function _minutesDepuisMinuit(hhmm){const [h,m]=String(hhmm||'00:00').split(':').map(Number);return (h||0)*60+(m||0);}

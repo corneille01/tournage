@@ -2177,10 +2177,6 @@ async def parcours_enrichi(request: Request, response: Response):
             "heure_debut": guide_planifie.get("heure_debut"), "heure_fin": guide_planifie.get("heure_fin")
         }
     duree_visites_guidees = sum(int(v["duree_minutes"]) for v in film_guides.values())
-    # Temps d'attente éventuellement nécessaire pour rejoindre un créneau publié.
-    attente_visites_guidees_minutes = sum(int(x.get("attente_minutes") or 0) for x in planning_horaire if x.get("type") == "visite_guidee")
-    duree_totale_estimee = (duree_trajet or 0) + duree_visite + duree_visites_guidees * 60 + attente_visites_guidees_minutes * 60
-    budget_respecte = None if temps_disponible_minutes is None else duree_totale_estimee <= temps_disponible_minutes * 60
 
     # Planning horaire indicatif : il utilise les durées IGN des tronçons et
     # le temps de visite choisi. Il s'agit d'un planning estimatif, pas d'une
@@ -2231,6 +2227,24 @@ async def parcours_enrichi(request: Request, response: Response):
                 "attente_minutes": attente, "creneau_respecte": guide_feasible,
                 "lien": guide.get("lien"),
             })
+
+    # Calcul final après construction du planning.
+    attente_visites_guidees_minutes = sum(
+        int(x.get("attente_minutes") or 0)
+        for x in planning_horaire
+        if x.get("type") == "visite_guidee"
+    )
+    duree_totale_estimee = (
+        (duree_trajet or 0)
+        + duree_visite
+        + duree_visites_guidees * 60
+        + attente_visites_guidees_minutes * 60
+    )
+    budget_respecte = (
+        None
+        if temps_disponible_minutes is None
+        else duree_totale_estimee <= temps_disponible_minutes * 60
+    )
 
     # Budget indicatif : uniquement les tarifs minimum renseignés par les
     # sources. Pelify ne transforme jamais une absence de tarif en prix inventé.

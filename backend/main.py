@@ -2541,7 +2541,7 @@ async def api_generer_parcours(request: Request, response: Response):
             lat, lon = float(depart["latitude"]), float(depart["longitude"])
             delta = 0.20 if mode == "foot-walking" else 0.65
             candidates = await fetch_all(
-                """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre,
+                """SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude, l.film_id, f.titre AS film_titre,
                           f.media_type, f.annee, f.poster_url
                    FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
                    WHERE l.latitude BETWEEN %s AND %s AND l.longitude BETWEEN %s AND %s

@@ -39,6 +39,7 @@ from contextlib import asynccontextmanager
 from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
+from visites_cinetouristiques import creneaux_pour_date
 
 templates = Jinja2Templates(directory="templates")
 BASE_URL = "https://tournage.pelify.app"  # à remplacer par le vrai domaine en prod
@@ -135,6 +136,12 @@ async def _enregistrer_parcours_historique(request: Request, response: Response,
             "budget_level": body.get("budget_level"),
             "accessibilite": body.get("accessibilite"),
             "optimiser": body.get("optimiser"),
+            "inclure_visites_guidees": body.get("inclure_visites_guidees", True),
+            "visites_guidees": body.get("visites_guidees") or [],
+            "heure_depart": body.get("heure_depart") or "09:00",
+            "date_sortie": body.get("date_sortie"),
+            "budget_max_euros": body.get("budget_max_euros"),
+            "depart": body.get("depart"),
         }
         resume_resultat = {
             "distance_metres": resultat.get("distance_metres"),
@@ -1871,7 +1878,10 @@ async def trace_film(film_id: int):
     _itineraire_multi_etapes pour le pourquoi).
     """
     lieux = await fetch_all(
-        "SELECT id, nom, commune, departement, latitude, longitude FROM lieux_tournage WHERE film_id = %s",
+        """SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
+                  l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+           FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+           WHERE l.film_id = %s""",
         (film_id,),
     )
     if len(lieux) < 2:
@@ -1924,7 +1934,10 @@ async def parcours_enrichi(request: Request, response: Response):
     budget_level = str(body.get("budget_level") or "equilibre")
     accessibilite = bool(body.get("accessibilite", False))
     optimiser = bool(body.get("optimiser", False))
+    inclure_visites_guidees = bool(body.get("inclure_visites_guidees", True))
+    visites_guidees = body.get("visites_guidees") or []
     heure_depart = str(body.get("heure_depart") or "09:00")
+    date_sortie = str(body.get("date_sortie") or "")
     budget_max_euros = body.get("budget_max_euros")
 
     if not isinstance(lieu_ids, list):
@@ -1958,6 +1971,18 @@ async def parcours_enrichi(request: Request, response: Response):
     categories_interet = [str(x) for x in categories_interet]
     if budget_level not in {"economique", "equilibre", "confort"}:
         budget_level = "equilibre"
+    if not isinstance(visites_guidees, list):
+        visites_guidees = []
+    visites_guidees_nettoyees = []
+    if inclure_visites_guidees:
+        for v in visites_guidees[:20]:
+            try:
+                film_id = int(v.get("film_id"))
+                duree = max(1, min(int(v.get("duree_minutes")), 600))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            visites_guidees_nettoyees.append({"film_id": film_id, "nom": str(v.get("nom") or "Visite guidée"), "duree_minutes": duree, "lien": v.get("lien"), "heure_debut": v.get("heure_debut"), "heure_fin": v.get("heure_fin")})
+    visites_guidees = visites_guidees_nettoyees
 
     try:
         limite = max(1, min(int(limite), 10))
@@ -1975,9 +2000,11 @@ async def parcours_enrichi(request: Request, response: Response):
     placeholders = ",".join(["%s"] * len(lieu_ids))
     lieux = await fetch_all(
         f"""
-        SELECT id, nom, commune, departement, latitude, longitude
-        FROM lieux_tournage
-        WHERE id IN ({placeholders})
+        SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
+               l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+        FROM lieux_tournage l
+        LEFT JOIN films f ON f.id = l.film_id
+        WHERE l.id IN ({placeholders})
         """,
         tuple(lieu_ids),
     )
@@ -1985,6 +2012,9 @@ async def parcours_enrichi(request: Request, response: Response):
     if len(par_id) != len(lieu_ids):
         manquants = [x for x in lieu_ids if x not in par_id]
         raise HTTPException(404, f"Lieu(x) introuvable(s) : {manquants}")
+
+    film_ids_parcours = list({int(x["film_id"]) for x in lieux if x.get("film_id") is not None})
+    visites_disponibles = creneaux_pour_date(date_sortie, film_ids_parcours) if date_sortie else []
 
     # On conserve exactement l'ordre choisi dans l'interface, sauf si
     # l'utilisateur demande explicitement une optimisation sous contrainte de temps.
@@ -1997,6 +2027,29 @@ async def parcours_enrichi(request: Request, response: Response):
         )
         if not etapes:
             raise HTTPException(400, "Aucune étape ne peut tenir dans les critères choisis.")
+
+    # Les visites datées sont traitées comme de vraies contraintes horaires.
+    # Si une visite est disponible à une heure précise et que l'optimisation est
+    # demandée, on peut faire passer l'étape concernée en priorité.
+    guide_planifie = None
+    if inclure_visites_guidees and visites_disponibles and optimiser:
+        for guide in visites_disponibles:
+            for etape in etapes:
+                if int(etape.get("film_id") or -1) in {int(x) for x in guide.get("film_ids", [])}:
+                    guide_planifie = {**guide, "film_id": int(etape.get("film_id")), "lieu_id": int(etape["id"]), "etape_nom": etape.get("nom")}
+                    break
+            if guide_planifie:
+                break
+        if guide_planifie:
+            cible = next((x for x in etapes if int(x["id"]) == guide_planifie["lieu_id"]), None)
+            if cible and etapes and int(etapes[0]["id"]) != guide_planifie["lieu_id"]:
+                autres = [x for x in etapes if int(x["id"]) != guide_planifie["lieu_id"]]
+                ordonnes = [cible]
+                courant = cible
+                while autres:
+                    suivant = min(autres, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
+                    ordonnes.append(suivant); autres.remove(suivant); courant = suivant
+                etapes = ordonnes
 
     resultat_route = None
     depart_effectif = None
@@ -2118,7 +2171,17 @@ async def parcours_enrichi(request: Request, response: Response):
 
     duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0
     duree_visite = len(etapes) * temps_visite_minutes * 60
-    duree_totale_estimee = (duree_trajet or 0) + duree_visite
+    film_guides = {int(v["film_id"]): v for v in visites_guidees}
+    if guide_planifie:
+        film_guides[int(guide_planifie["film_id"])] = {
+            "film_id": int(guide_planifie["film_id"]), "nom": guide_planifie["nom"],
+            "duree_minutes": int(guide_planifie["duree_minutes"]), "lien": guide_planifie.get("lien"),
+            "heure_debut": guide_planifie.get("heure_debut"), "heure_fin": guide_planifie.get("heure_fin")
+        }
+    duree_visites_guidees = sum(int(v["duree_minutes"]) for v in film_guides.values())
+    # Temps d'attente éventuellement nécessaire pour rejoindre un créneau publié.
+    attente_visites_guidees_minutes = sum(int(x.get("attente_minutes") or 0) for x in planning_horaire if x.get("type") == "visite_guidee")
+    duree_totale_estimee = (duree_trajet or 0) + duree_visite + duree_visites_guidees * 60 + attente_visites_guidees_minutes * 60
     budget_respecte = None if temps_disponible_minutes is None else duree_totale_estimee <= temps_disponible_minutes * 60
 
     # Planning horaire indicatif : il utilise les durées IGN des tronçons et
@@ -2141,10 +2204,35 @@ async def parcours_enrichi(request: Request, response: Response):
         depart_visite = minute_courante
         minute_courante += int(temps_visite_minutes)
         planning_horaire.append({
-            "ordre": i + 1, "lieu_id": int(etape["id"]), "nom": etape.get("nom"),
+            "ordre": i + 1, "type": "lieu", "lieu_id": int(etape["id"]), "nom": etape.get("nom"),
+            "film_id": etape.get("film_id"), "film_titre": etape.get("film_titre"),
+            "media_type": etape.get("media_type"), "annee": etape.get("annee"),
             "heure_arrivee": arrivee, "heure_fin_visite": _hhmm(minute_courante),
             "temps_visite_minutes": int(temps_visite_minutes),
         })
+        guide = film_guides.get(int(etape.get("film_id") or 0))
+        # Une visite guidée liée à une œuvre n'est ajoutée qu'une seule fois,
+        # sur la première étape de cette œuvre présente dans le parcours.
+        if guide and not any(x.get("type") == "visite_guidee" and x.get("film_id") == int(etape.get("film_id") or 0) for x in planning_horaire):
+            debut_guide = minute_courante
+            attente = 0
+            if guide.get("heure_debut"):
+                cible = _minutes_hhmm(guide["heure_debut"])
+                if minute_courante <= cible:
+                    attente = cible - minute_courante
+                    minute_courante = cible
+            fin_guide = minute_courante + int(guide["duree_minutes"])
+            guide_feasible = not guide.get("heure_fin") or fin_guide <= _minutes_hhmm(guide["heure_fin"])
+            minute_courante = fin_guide
+            planning_horaire.append({
+                "ordre": i + 1, "type": "visite_guidee", "lieu_id": int(etape["id"]),
+                "film_id": int(etape.get("film_id") or 0), "film_titre": etape.get("film_titre"),
+                "nom": guide["nom"], "heure_arrivee": _hhmm(debut_guide),
+                "heure_debut_guide": _hhmm(_minutes_hhmm(guide["heure_debut"])) if guide.get("heure_debut") else _hhmm(debut_guide),
+                "heure_fin_visite": _hhmm(fin_guide), "temps_visite_minutes": int(guide["duree_minutes"]),
+                "attente_minutes": attente, "creneau_respecte": guide_feasible,
+                "lien": guide.get("lien"),
+            })
 
     # Budget indicatif : uniquement les tarifs minimum renseignés par les
     # sources. Pelify ne transforme jamais une absence de tarif en prix inventé.
@@ -2169,12 +2257,22 @@ async def parcours_enrichi(request: Request, response: Response):
         "temps_disponible_minutes": temps_disponible_minutes,
         "temps_visite_minutes_par_etape": temps_visite_minutes,
         "duree_visite_estimee_secondes": duree_visite,
+        "duree_visites_guidees_secondes": duree_visites_guidees * 60,
         "duree_totale_estimee_secondes": duree_totale_estimee,
+        "visites_guidees": visites_guidees,
+        "visites_guidees_disponibles": visites_disponibles,
+        "visites_guidees_planifiees": [guide_planifie] if guide_planifie else [],
+        "date_sortie": date_sortie or None,
+        "scenario_recommande": {
+            "type": "visite_guidee" if guide_planifie else "parcours_personnalise",
+            "message": (f"Commencez par {guide_planifie['nom']} à {guide_planifie.get('heure_debut')} puis poursuivez avec les étapes optimisées." if guide_planifie and guide_planifie.get("heure_debut") else "Parcours calculé selon vos critères."),
+        },
         "budget_respecte": budget_respecte,
         "categories_interet": categories_interet,
         "budget_level": budget_level,
         "accessibilite": accessibilite,
         "optimiser": optimiser,
+        "inclure_visites_guidees": inclure_visites_guidees,
         "heure_depart": heure_depart,
         "planning_horaire": planning_horaire,
         "budget_max_euros": budget_max_euros,
@@ -2321,13 +2419,14 @@ async def api_generer_parcours(request: Request, response: Response):
             (lat-delta, lat+delta, lon-delta, lon+delta),
         )
         candidates.sort(key=lambda x: haversine_metres(lat, lon, float(x["latitude"]), float(x["longitude"])))
-        lieu_ids = [int(x["id"]) for x in candidates[:30]]
+        # On garde un vivier assez large puis on applique l'heuristique temps
+        # + proximité. Le calcul IGN final sera déclenché par le navigateur.
+        lieu_ids = [int(x["id"]) for x in candidates[:60]]
     lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:30]
     if not lieu_ids:
         raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
-    # On limite la présélection par distance ; l'endpoint enrichi réalise ensuite
-    # la vérification fine et sauvegarde le parcours dans l'historique.
-    lieu_ids = lieu_ids[:max(2, max_etapes * 2)]
+    # On prépare un vivier puis une sélection recommandée selon le temps.
+    lieu_ids = lieu_ids[:max(2, max_etapes * 4)]
     payload = {
         "lieu_ids": lieu_ids,
         "mode": mode,
@@ -2340,6 +2439,7 @@ async def api_generer_parcours(request: Request, response: Response):
         "budget_level": body.get("budget_level") or "equilibre",
         "accessibilite": bool(body.get("accessibilite", False)),
         "optimiser": True,
+        "date_sortie": body.get("date_sortie"),
     }
     # Reproduit le calcul de l'endpoint enrichi sans boucle HTTP interne.
     # Pour conserver une seule source de vérité, on fait le calcul via une
@@ -2351,7 +2451,20 @@ async def api_generer_parcours(request: Request, response: Response):
            WHERE l.id = ANY(%s::int[]) ORDER BY array_position(%s::int[], l.id)""",
         (lieu_ids, lieu_ids),
     )
-    return {"candidats": lieu_ids, "candidats_lieux": _json_safe(candidats_lieux), "payload": payload}
+    candidats_selection, exclus_selection = _optimiser_etapes_approx(
+        candidats_lieux, depart, mode, temps, visite, retour
+    )
+    # L'interface affiche les possibilités du vivier ; la sélection recommandée
+    # est fournie séparément pour permettre à l'utilisateur de choisir.
+    selection_ids = [int(x["id"]) for x in candidats_selection]
+    return {
+        "candidats": lieu_ids,
+        "candidats_lieux": _json_safe(candidats_lieux[:20]),
+        "selection_recommandee": selection_ids,
+        "selection_recommandee_lieux": _json_safe(candidats_selection),
+        "exclus_selection": _json_safe(exclus_selection),
+        "payload": payload
+    }
 
 # ══════════════════════════════════════════════════════════════
 # PAGES RENDUES CÔTÉ SERVEUR (SEO)

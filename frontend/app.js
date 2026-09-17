@@ -125,7 +125,7 @@ const state = {
   parcoursV4AmenityMarkers: [],
   monParcours: [],
   monParcoursDernierCalcul: null,
-  monParcoursOptions: { mode: "driving-car", temps: 240, visite: 45, departType: "premiere", depart: null, retour: false, categories: [], budget: "equilibre", accessibilite: false, optimiser: false, heureDepart: "09:00", budgetMax: null },
+  monParcoursOptions: { mode: "driving-car", temps: 240, visite: 45, departType: "premiere", depart: null, retour: false, categories: [], budget: "equilibre", accessibilite: false, optimiser: false, inclureVisitesGuidees: true, heureDepart: "09:00", dateSortie: new Date().toISOString().slice(0,10), budgetMax: null },
 };
 
 let map, clusterGroup, clusterActivites;
@@ -182,11 +182,12 @@ function fermerMonParcours(){const o=document.getElementById("mon-parcours-overl
 function afficherMonParcoursPanel(){
   const c=document.getElementById("mon-parcours-contenu");if(!c)return;
   mettreAJourCompteurMonParcours();
-  if(!state.monParcours.length){c.innerHTML=`<div class="mon-parcours-vide"><div class="mon-parcours-vide-icone">🎬</div><h3>Votre parcours est vide</h3><p>Ouvrez un lieu puis cliquez sur <b>« Ajouter à mon parcours »</b>.</p></div>`;return;}
   const o=state.monParcoursOptions;
+  const parcoursVideHtml=!state.monParcours.length?`<div class="mon-parcours-vide"><div class="mon-parcours-vide-icone">🎬</div><h3>Construisez votre sortie autrement</h3><p>Vous pouvez ajouter des lieux depuis la carte, <b>ou partir directement de vos critères</b> pour que Pelify vous propose des possibilités.</p></div>`:"";
   const liste=state.monParcours.map((l,i)=>`<article class="mon-parcours-etape"><div class="mon-parcours-numero">${i+1}</div><div class="mon-parcours-etape-info"><strong>${escapeHtml(l.nom)}</strong><small>${escapeHtml([l.commune,l.departement].filter(Boolean).join(", "))}</small>${l.film_titre?`<small>🎬 ${escapeHtml(l.film_titre)}</small>`:""}</div><div class="mon-parcours-etape-actions"><button type="button" data-action="up" data-index="${i}" title="Monter">↑</button><button type="button" data-action="down" data-index="${i}" title="Descendre">↓</button><button type="button" data-action="remove" data-index="${i}" title="Retirer">✕</button></div></article>`).join("");
   c.innerHTML=`
-    <div class="mon-parcours-resume-top"><b>${state.monParcours.length} étape${state.monParcours.length>1?"s":""}</b><button type="button" id="btn-effacer-mon-parcours" class="btn-texte-danger">Tout effacer</button></div>
+    ${parcoursVideHtml}
+    <div class="mon-parcours-resume-top"><b>${state.monParcours.length} étape${state.monParcours.length>1?"s":""}${state.monParcours.length?" sélectionnée"+(state.monParcours.length>1?"s":""):""}</b>${state.monParcours.length?'<button type="button" id="btn-effacer-mon-parcours" class="btn-texte-danger">Tout effacer</button>':''}</div>
     <div class="mon-parcours-liste">${liste}</div>
     <section class="mon-parcours-criteres">
       <h3>⚙️ Personnalisez votre sortie</h3>
@@ -200,25 +201,26 @@ function afficherMonParcoursPanel(){
         <div class="mp-adresse-ligne"><input id="mp-adresse-input" type="search" placeholder="Adresse, commune, lieu…" value="${escapeAttr(o.depart?.nom||'')}"><button id="mp-adresse-rechercher" type="button">Rechercher</button></div>
         <div id="mp-adresse-resultats"></div>
       </div>
-      <div id="mp-depart-selection" class="mp-selection-info">${o.depart?.nom&&o.departType!=='premiere'?`Départ : <b>${escapeHtml(o.depart.nom)}</b>`:`Départ : <b>${o.departType==='position'?'votre position':state.monParcours[0].nom}</b>`}</div>
+      <div id="mp-depart-selection" class="mp-selection-info">${o.depart?.nom&&o.departType!=='premiere'?`Départ : <b>${escapeHtml(o.depart.nom)}</b>`:`Départ : <b>${o.departType==='position'?'votre position':(state.monParcours[0]?.nom||'première étape')}</b>`}</div>
 
       <label class="mp-label">Temps disponible</label>
       <select id="mp-temps"><option value="60" ${o.temps===60?'selected':''}>1 heure</option><option value="120" ${o.temps===120?'selected':''}>2 heures</option><option value="180" ${o.temps===180?'selected':''}>3 heures</option><option value="240" ${o.temps===240?'selected':''}>4 heures</option><option value="360" ${o.temps===360?'selected':''}>6 heures</option><option value="480" ${o.temps===480?'selected':''}>8 heures</option><option value="720" ${o.temps===720?'selected':''}>12 heures</option><option value="1440" ${o.temps===1440?'selected':''}>Toute la journée</option></select>
       <label class="mp-label">Temps de visite moyen par lieu</label>
       <select id="mp-visite"><option value="15" ${o.visite===15?'selected':''}>15 min</option><option value="30" ${o.visite===30?'selected':''}>30 min</option><option value="45" ${o.visite===45?'selected':''}>45 min</option><option value="60" ${o.visite===60?'selected':''}>1 h</option><option value="90" ${o.visite===90?'selected':''}>1 h 30</option></select>
-      <label class="mp-label">Heure de départ</label><input id="mp-heure-depart" type="time" value="${escapeAttr(o.heureDepart||'09:00')}" class="mp-time-input"><label class="mp-label">Budget maximum indicatif</label><select id="mp-budget-max"><option value="" ${!o.budgetMax?'selected':''}>Sans plafond</option><option value="20" ${o.budgetMax===20?'selected':''}>20 €</option><option value="40" ${o.budgetMax===40?'selected':''}>40 €</option><option value="60" ${o.budgetMax===60?'selected':''}>60 €</option><option value="100" ${o.budgetMax===100?'selected':''}>100 €</option></select><label class="mp-label">Moyen de déplacement</label>
+      <label class="mp-label">Date de la sortie</label><input id="mp-date-sortie" type="date" value="${escapeAttr(o.dateSortie||new Date().toISOString().slice(0,10))}" class="mp-time-input"><small class="mp-aide">La date permet à Pelify de vérifier les créneaux publiés des visites guidées.</small><label class="mp-label">Heure de départ</label><input id="mp-heure-depart" type="time" value="${escapeAttr(o.heureDepart||'09:00')}" class="mp-time-input"><label class="mp-label">Budget maximum indicatif</label><select id="mp-budget-max"><option value="" ${!o.budgetMax?'selected':''}>Sans plafond</option><option value="20" ${o.budgetMax===20?'selected':''}>20 €</option><option value="40" ${o.budgetMax===40?'selected':''}>40 €</option><option value="60" ${o.budgetMax===60?'selected':''}>60 €</option><option value="100" ${o.budgetMax===100?'selected':''}>100 €</option></select><label class="mp-label">Moyen de déplacement</label>
       <div class="mp-depart-options"><label><input type="radio" name="mon-parcours-mode" value="driving-car" ${o.mode==='driving-car'?'checked':''}> 🚗 Voiture</label><label><input type="radio" name="mon-parcours-mode" value="foot-walking" ${o.mode==='foot-walking'?'checked':''}> 🚶 À pied</label></div>
       <label class="mp-check"><input id="mp-retour" type="checkbox" ${o.retour?'checked':''}> 🔁 Revenir au point de départ</label>
       <label class="mp-label">Budget souhaité</label>
       <select id="mp-budget"><option value="economique" ${o.budget==='economique'?'selected':''}>💶 Économique</option><option value="equilibre" ${o.budget==='equilibre'?'selected':''}>⚖️ Bon équilibre</option><option value="confort" ${o.budget==='confort'?'selected':''}>✨ Confort</option></select>
       <label class="mp-check"><input id="mp-accessibilite" type="checkbox" ${o.accessibilite?'checked':''}> ♿ Privilégier les offres avec accessibilité renseignée</label>
       <label class="mp-check"><input id="mp-optimiser" type="checkbox" ${o.optimiser?'checked':''}> ✨ Optimiser automatiquement si mon temps est trop court</label>
+      <label class="mp-check"><input id="mp-visites-guidees" type="checkbox" ${o.inclureVisitesGuidees!==false?'checked':''}> 🎟️ Intégrer une visite guidée lorsqu’elle est disponible</label>
       <label class="mp-label">Ce que vous souhaitez trouver autour du parcours</label>
       <div class="mp-interets">
         ${[["restaurant","🍽️ Restaurants"],["hebergement","🏨 Hébergements"],["activite","🎟️ Activités"],["office_tourisme","ℹ️ Offices de tourisme"],["parking","🅿️ Parkings"],["gare","🚆 Gares"]].map(([v,l])=>`<label><input class="mp-interet" type="checkbox" value="${v}" ${o.categories.includes(v)?'checked':''}> ${l}</label>`).join('')}
       </div>
     </section>
-    <button type="button" id="btn-calculer-mon-parcours" class="btn-calculer-mon-parcours">🗺️ Calculer mon parcours</button><button type="button" id="btn-generer-parcours-ideal" class="btn-generer-parcours-ideal">✨ Générer mon parcours idéal</button><div id="mp-generation-resultat"></div>
+    <button type="button" id="btn-calculer-mon-parcours" class="btn-calculer-mon-parcours">🗺️ Calculer mon parcours</button><button type="button" id="btn-generer-parcours-ideal" class="btn-generer-parcours-ideal">✨ Générer des possibilités avec mes critères</button><div id="mp-generation-resultat"></div>
     <p class="mon-parcours-note">Le trajet est calculé avec la Géoplateforme IGN. Le temps disponible sert à vérifier si les déplacements + le temps de visite estimé tiennent dans votre créneau.</p>
     <div id="mon-parcours-resultat" class="mon-parcours-resultat"></div>`;
 
@@ -228,12 +230,14 @@ function afficherMonParcoursPanel(){
   c.querySelectorAll('input[name="mon-parcours-mode"]').forEach(x=>x.addEventListener('change',()=>{o.mode=x.value;sauvegarderOptionsMonParcours();}));
   document.getElementById('mp-temps')?.addEventListener('change',e=>{o.temps=Number(e.target.value);sauvegarderOptionsMonParcours();});
   document.getElementById('mp-visite')?.addEventListener('change',e=>{o.visite=Number(e.target.value);sauvegarderOptionsMonParcours();});
+  document.getElementById('mp-date-sortie')?.addEventListener('change',e=>{o.dateSortie=e.target.value;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-heure-depart')?.addEventListener('change',e=>{o.heureDepart=e.target.value;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-budget-max')?.addEventListener('change',e=>{o.budgetMax=e.target.value?Number(e.target.value):null;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-retour')?.addEventListener('change',e=>{o.retour=e.target.checked;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-budget')?.addEventListener('change',e=>{o.budget=e.target.value;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-accessibilite')?.addEventListener('change',e=>{o.accessibilite=e.target.checked;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-optimiser')?.addEventListener('change',e=>{o.optimiser=e.target.checked;sauvegarderOptionsMonParcours();});
+  document.getElementById('mp-visites-guidees')?.addEventListener('change',e=>{o.inclureVisitesGuidees=e.target.checked;sauvegarderOptionsMonParcours();});
   c.querySelectorAll('.mp-interet').forEach(x=>x.addEventListener('change',()=>{o.categories=[...c.querySelectorAll('.mp-interet:checked')].map(x=>x.value);sauvegarderOptionsMonParcours();}));
   document.getElementById('mp-adresse-rechercher')?.addEventListener('click', rechercherAdressePourParcours);
   document.getElementById('mp-adresse-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')rechercherAdressePourParcours();});
@@ -243,31 +247,32 @@ function afficherMonParcoursPanel(){
 async function genererParcoursIdeal(){
   const box=document.getElementById("mp-generation-resultat"); if(!box)return;
   const o=state.monParcoursOptions;
-  let depart=construireDepartParcours();
+  const depart=construireDepartParcours();
   if(!depart){
     if(o.departType==='position'){ demanderPositionPourParcours(); return; }
-    box.innerHTML='<small class="mon-parcours-erreur">Pour générer automatiquement un parcours, choisissez « Ma position » ou une adresse de départ.</small>'; return;
+    if(o.departType==='premiere' && !state.monParcours.length){
+      box.innerHTML='<small class="mon-parcours-erreur">Pour générer des possibilités sans lieu sélectionné, choisissez « Ma position » ou « Une adresse » comme point de départ.</small>'; return;
+    }
+    box.innerHTML='<small class="mon-parcours-erreur">Choisissez un point de départ valide avant la génération automatique.</small>'; return;
   }
-  box.innerHTML='<small class="mon-parcours-loading">✨ Pelify recherche les lieux compatibles avec votre temps et votre mode de déplacement…</small>';
+  box.innerHTML='<small class="mon-parcours-loading">✨ Pelify recherche des possibilités adaptées à votre temps, votre budget et votre mode de déplacement…</small>';
   try{
-    const payload={lieu_ids:state.monParcours.map(x=>Number(x.id)),depart,mode:o.mode,temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,budget_level:o.budget,accessibilite:o.accessibilite,categories_interet:o.categories,max_etapes:8};
+    const payload={lieu_ids:state.monParcours.map(x=>Number(x.id)),depart,mode:o.mode,temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,budget_level:o.budget,accessibilite:o.accessibilite,categories_interet:o.categories,max_etapes:8};
     const r=await fetch(`${API_BASE}/api/parcours/generer`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
     const d=await r.json(); if(!r.ok)throw new Error(d.detail||'Génération impossible');
-    if(Array.isArray(d.candidats)&&d.candidats.length){
-      const candidats=d.candidats.map(Number);
-      if(Array.isArray(d.candidats_lieux) && d.candidats_lieux.length){
-        state.monParcours=d.candidats_lieux.map(x=>({id:Number(x.id),nom:x.nom||'Lieu de tournage',commune:x.commune||'',departement:x.departement||'',latitude:Number(x.latitude),longitude:Number(x.longitude),film_id:x.film_id?Number(x.film_id):null,film_titre:x.film_titre||'',media_type:x.media_type||'',annee:x.annee||null,poster_url:x.poster_url||''}));
-      } else {
-        state.monParcours=state.monParcours.filter(x=>candidats.includes(Number(x.id)));
-      }
-      sauvegarderMonParcours();
-      afficherMonParcoursPanel();
-      box=document.getElementById('mp-generation-resultat');
-      if(box)box.innerHTML='<small class="mon-parcours-note">✨ Une sélection compatible a été préparée. Lancez maintenant « Calculer mon parcours » pour obtenir le trajet IGN et les recommandations.</small>';
-    }
+    const candidats=Array.isArray(d.candidats_lieux)?d.candidats_lieux:[];
+    if(!candidats.length){box.innerHTML='<small class="mon-parcours-note">Aucune possibilité n’a été trouvée autour de votre point de départ avec ces critères.</small>';return;}
+    window._pelifyCandidatsGeneration=candidats;
+    const deja=new Set(state.monParcours.map(x=>Number(x.id)));
+    box.innerHTML=`<section class="mp-possibilites"><h4>✨ Possibilités pour vous</h4><p class="mp-generation-note">Pelify a trouvé ${candidats.length} possibilités. Sélectionnez celles qui vous intéressent ; vous pourrez encore les retirer ensuite.</p>${candidats.map((x,i)=>`<label class="mp-possibilite"><input type="checkbox" class="mp-candidat-check" data-index="${i}" ${deja.has(Number(x.id))?'checked':''}><span><b>${escapeHtml(x.nom||'Lieu de tournage')}</b><small>${escapeHtml([x.commune,x.departement].filter(Boolean).join(', '))}${x.film_titre?` · 🎬 ${escapeHtml(x.film_titre)}`:''}</small></span></label>`).join('')}<button type="button" id="mp-ajouter-candidats" class="btn-generer-parcours-ideal">＋ Ajouter les possibilités sélectionnées</button></section>`;
+    document.getElementById('mp-ajouter-candidats')?.addEventListener('click',()=>{
+      const indices=[...document.querySelectorAll('.mp-candidat-check:checked')].map(x=>Number(x.dataset.index));
+      indices.forEach(i=>{const x=window._pelifyCandidatsGeneration?.[i];if(!x)return;if(!state.monParcours.some(l=>Number(l.id)===Number(x.id)))state.monParcours.push({id:Number(x.id),nom:x.nom||'Lieu de tournage',commune:x.commune||'',departement:x.departement||'',latitude:Number(x.latitude),longitude:Number(x.longitude),film_id:x.film_id?Number(x.film_id):null,film_titre:x.film_titre||'',media_type:x.media_type||'',annee:x.annee||null,poster_url:x.poster_url||''});});
+      normaliserMonParcours();sauvegarderMonParcours();afficherMonParcoursPanel();
+      const b=document.getElementById('mp-generation-resultat');if(b)b.innerHTML='<small class="mon-parcours-note">✨ Les possibilités sélectionnées ont été ajoutées à votre parcours. Vous pouvez maintenant calculer votre journée cinéma.</small>';
+    });
   }catch(e){box.innerHTML=`<small class="mon-parcours-erreur">${escapeHtml(e.message||'Génération impossible')}</small>`;}
 }
-
 function demanderPositionPourParcours(){
   if(!navigator.geolocation){alert("La géolocalisation n'est pas disponible dans ce navigateur.");return;}
   navigator.geolocation.getCurrentPosition(pos=>{state.monParcoursOptions.depart={nom:'Ma position',latitude:pos.coords.latitude,longitude:pos.coords.longitude};afficherMonParcoursPanel();},()=>alert("Pelify n'a pas pu accéder à votre position. Vous pouvez choisir une adresse à la place."),{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
@@ -287,31 +292,120 @@ function construireDepartParcours(){
   return o.depart;
 }
 function nettoyerAffichageParcoursGlobal(){if(state.traceLayer){map.removeLayer(state.traceLayer);state.traceLayer=null;} (state.marqueursEtapes||[]).forEach(m=>map.removeLayer(m));state.marqueursEtapes=[];(state.parcoursV4AmenityMarkers||[]).forEach(m=>clusterActivites.removeLayer(m));state.parcoursV4AmenityMarkers=[];}
+function construireVisitesGuideesPourParcours(){
+  if(state.monParcoursOptions.inclureVisitesGuidees===false) return [];
+  const vus=new Set(); const sorties=[];
+  state.monParcours.forEach(l=>{
+    const filmId=Number(l.film_id); if(!filmId||vus.has(filmId))return;
+    const v=(VISITES_PARTENAIRES[filmId]||[]).find(x=>Number(x.duree_minutes)>0);
+    if(v){vus.add(filmId);sorties.push({film_id:filmId,nom:v.nom,duree_minutes:Number(v.duree_minutes),lien:v.lien||null});}
+  });
+  return sorties;
+}
+
 async function calculerMonParcoursGlobal(){
   const r=document.getElementById("mon-parcours-resultat");if(!r||!state.monParcours.length)return;
   const o=state.monParcoursOptions; o.mode=document.querySelector('input[name="mon-parcours-mode"]:checked')?.value||o.mode;
   if(o.departType==='position'&&!o.depart){demanderPositionPourParcours();return;}
   if(o.departType==='adresse'&&!o.depart){r.innerHTML='<p class="mon-parcours-erreur">Choisissez une adresse de départ avant de calculer.</p>';return;}
   r.innerHTML=`<p class="mon-parcours-loading">Calcul du trajet IGN et des offres touristiques…</p>`;
-  try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,categories_interet:o.categories,budget_level:o.budget,accessibilite:o.accessibilite,optimiser:o.optimiser,heure_depart:o.heureDepart||"09:00",budget_max_euros:o.budgetMax||null};
+  try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,accessibilite:o.accessibilite,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",budget_max_euros:o.budgetMax||null};
     const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.detail||"Impossible de calculer le parcours");state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
   }catch(e){console.error(e);r.innerHTML=`<p class="mon-parcours-erreur">${escapeHtml(e.message||"Erreur lors du calcul du parcours.")}</p>`;}
 }
+function _minutesDepuisMinuit(hhmm){const [h,m]=String(hhmm||'00:00').split(':').map(Number);return (h||0)*60+(m||0);}
+function _hhmmClient(minutes){minutes=Math.round(Number(minutes)||0);minutes=((minutes%(24*60))+24*60)%(24*60);return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;}
+function construireScenarioCinetouristique(data){
+  const planning=data.planning_horaire||[];
+  const guidesDisponibles=data.visites_guidees_disponibles||[];
+  const guidesPlanifies=data.visites_guidees_planifiees||[];
+  const tempsBase=Number(data.temps_disponible_minutes||0);
+  const tempsUtilise=Number(data.duree_totale_estimee_secondes||0)/60;
+  const scenario=[];
+  if(data.date_sortie) scenario.push(`📅 Sortie prévue le ${new Date(data.date_sortie+'T12:00:00').toLocaleDateString('fr-FR')}, à partir de ${data.heure_depart||'09:00'}.`);
+  if(data.scenario_recommande?.message) scenario.push(`🎯 ${data.scenario_recommande.message}`);
+  if(guidesPlanifies.length){
+    const g=guidesPlanifies[0];
+    scenario.push(`🎟️ ${g.nom} est le rendez-vous guidé le plus directement intégrable à vos critères pour cette date.`);
+    if(g.heure_debut) scenario.push(`Pelify vous conseille de viser le créneau ${g.heure_debut}–${g.heure_fin||''}. L'étape concernée est placée en priorité dans le scénario.`);
+    if(g.lien) scenario.push(`Réservation obligatoire ou recommandée : vérifiez le créneau sur la page officielle avant de partir.`);
+  } else if(guidesDisponibles.length){
+    scenario.push(`🎟️ ${guidesDisponibles.length} créneau(x) de visite guidée sont référencés pour cette date. Pelify peut les afficher, mais ne confirme jamais une disponibilité de réservation.`);
+  } else if(data.inclure_visites_guidees!==false){
+    scenario.push(`🎟️ Aucune disponibilité datée n'est connue dans le référentiel Pelify pour cette date ; les visites éventuellement proposées restent consultables via leurs pages officielles.`);
+  }
+  if(tempsBase){
+    const marge=Math.round(tempsBase-tempsUtilise);
+    scenario.push(marge>=0?`✅ Avec vos critères, il resterait environ ${marge} min de marge estimée.`:`⚠️ Votre sélection dépasse votre créneau d’environ ${Math.abs(marge)} min.`);
+  }
+  const reco=data.recommandations_par_etape||{};
+  for(const etape of (data.etapes||[])){
+    const r=(reco[String(etape.id)]||[])[0];
+    if(r){scenario.push(`💡 Pour « ${etape.nom||'votre étape'} », Pelify vous suggère ${r.nom||'une offre à proximité'} : ${r.raison||'elle correspond à vos critères'}.`);break;}
+  }
+  return {guides:guidesDisponibles,texte:scenario,tempsUtilise};
+}
 function afficherResultatMonParcours(data){
   const c=document.getElementById("mon-parcours-resultat");if(!c)return;
-  const distance=Number(data.distance_metres||0),duree=Number(data.duree_secondes||0),total=Number(data.duree_totale_estimee_secondes||0),budget=data.temps_disponible_minutes,visite=data.duree_visite_estimee_secondes||0,cats=data.amenities||{},labels=data.labels_categories||{},icones=data.icones_categories||{},nb=Object.values(cats).reduce((a,x)=>a+(x?.length||0),0);
+  const distance=Number(data.distance_metres||0);
+  const duree=Number(data.duree_secondes||0);
+  const total=Number(data.duree_totale_estimee_secondes||0);
+  const budget=data.temps_disponible_minutes;
+  const visite=data.duree_visite_estimee_secondes||0;
+  const cats=data.amenities||{};
+  const labels=data.labels_categories||{};
+  const icones=data.icones_categories||{};
+  const nb=Object.values(cats).reduce((a,x)=>a+(x?.length||0),0);
   const recs=data.recommandations_par_etape||{};
-  const budgetHtml=budget?`<div class="mp-budget ${data.budget_respecte?'ok':'alerte'}"><b>${data.budget_respecte?'✅ Votre parcours tient dans votre créneau':'⚠️ Votre parcours dépasse votre temps disponible'}</b><span>Déplacements : ${duree?formatDuree(duree):'—'} · Visites : ${formatDuree(visite)} · Total : ${formatDuree(total)} · Disponible : ${formatDuree(budget*60)}</span>${data.optimiser&&data.etapes_exclues_optimisation?.length?`<small>✨ ${data.etapes_exclues_optimisation.length} étape(s) ont été écartées automatiquement pour respecter vos contraintes.</small>`:''}</div>`:'';
+  const scenario=construireScenarioCinetouristique(data);
+
+  const budgetHtml=budget?`<div class="mp-budget ${data.budget_respecte?'ok':'alerte'}"><b>${data.budget_respecte?'✅ Votre parcours tient dans votre créneau':'⚠️ Votre parcours dépasse votre temps disponible'}</b><span>Déplacements : ${duree?formatDuree(duree):'—'} · Visites : ${formatDuree(visite)}${data.duree_visites_guidees_secondes?` · Visites guidées : ${formatDuree(data.duree_visites_guidees_secondes)}`:''}${data.attente_visites_guidees_minutes?` · Attente : ${data.attente_visites_guidees_minutes} min`:''} · Total : ${formatDuree(total)} · Disponible : ${formatDuree(budget*60)}</span>${data.optimiser&&data.etapes_exclues_optimisation?.length?`<small>✨ ${data.etapes_exclues_optimisation.length} étape(s) ont été écartées automatiquement pour respecter vos contraintes.</small>`:''}</div>`:'';
+
   const ordre=["activite","restaurant","hebergement","office_tourisme","parking","gare","aeroport","refuge","arret_bus"];
-  const blocs=ordre.filter(k=>cats[k]?.length).map(k=>{const info=icones[k]||ICONES_CATEGORIE[k]||{};return `<section class="mon-parcours-offres-cat"><h4>${escapeHtml(labels[k]||info.label||k)}</h4>${cats[k].map(x=>`<div class="mon-parcours-offre"><b>${escapeHtml(info.emoji||"📍")} ${escapeHtml(x.nom||"Offre touristique")}</b><small>${x.meilleure_distance_metres!=null?`${formatDistance(x.meilleure_distance_metres)} de l'étape la plus proche`:'À proximité'}${x.adresse?` · ${escapeHtml(x.adresse)}`:''}</small>${x.tarif_min!=null?`<small>À partir de ${escapeHtml(String(x.tarif_min))}${x.devise?' '+escapeHtml(x.devise):' €'}</small>`:''}${x.description?`<small>${escapeHtml(x.description)}</small>`:''}${x.site_web?`<a class="mp-action" href="${escapeAttr(x.site_web)}" target="_blank" rel="noopener noreferrer">Voir / réserver →</a>`:x.telephone?`<a class="mp-action" href="tel:${escapeAttr(x.telephone)}">Appeler →</a>`:''}</div>`).join('')}</section>`}).join('');
-  const etapeRecos=data.etapes.map((etape,i)=>{const items=(recs[String(etape.id)]||[]).slice(0,3);if(!items.length)return '';return `<section class="mp-reco-etape"><div class="mp-reco-etape-titre"><span class="mon-parcours-numero">${i+1}</span><div><b>${escapeHtml(etape.nom||'Étape')}</b><small>${escapeHtml([etape.commune,etape.departement].filter(Boolean).join(', '))}</small></div></div>${items.map(x=>{const info=icones[x.categorie]||ICONES_CATEGORIE[x.categorie]||{emoji:'📍'};return `<article class="mp-reco-card"><div><b>${escapeHtml(info.emoji||'📍')} ${escapeHtml(x.nom||'Suggestion')}</b><small>${escapeHtml(x.raison||'Suggestion personnalisée pour votre parcours.')}</small>${x.adresse?`<small>📍 ${escapeHtml(x.adresse)}</small>`:''}</div>${x.action_url?`<a class="mp-reco-action" href="${escapeAttr(x.action_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.action_label||'Voir')} ↗</a>`:x.telephone?`<a class="mp-reco-action" href="tel:${escapeAttr(x.telephone)}">Appeler ↗</a>`:''}</article>`}).join('')}</section>`}).join('');
-  const conseil=data.recommandations_par_etape?`<div class="mp-conseil"><b>💡 Pelify adapte les suggestions à votre sortie</b><span>${data.budget_level==='economique'?'Les offres proches et les tarifs renseignés sont davantage privilégiés.':data.budget_level==='confort'?'Les offres bien notées et les services disponibles sont davantage privilégiés.':'Pelify cherche un compromis entre proximité, informations disponibles, tarif et qualité renseignée.'}${data.accessibilite?' L’accessibilité renseignée est également privilégiée.':''}</span></div>`:'';
-  const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b>💶 Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>Calculé uniquement à partir des tarifs disponibles dans les données touristiques ; carburant et dépenses sans tarif renseigné ne sont pas inclus.</span></div>`:'';
-  const planning=(data.planning_horaire||[]).map(x=>`<div class="mp-planning-row"><b>${escapeHtml(x.heure_arrivee)}</b><span>${escapeHtml(x.nom||'Étape')} · fin estimée ${escapeHtml(x.heure_fin_visite)}</span></div>`).join('');
-  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'—'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'—'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${planning?`<section class="mp-planning"><h3>🕘 Votre journée cinéma</h3>${planning}</section>`:""}${conseil}${etapeRecos?`<div class="mp-recommandations"><h3>✨ Mes suggestions étape par étape</h3>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3>🎟️ Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
+  const blocs=ordre.filter(k=>cats[k]?.length).map(k=>{
+    const info=icones[k]||ICONES_CATEGORIE[k]||{};
+    const offres=(cats[k]||[]).map(x=>{
+      const distanceTxt=x.meilleure_distance_metres!=null?`${formatDistance(x.meilleure_distance_metres)} de l'étape la plus proche`:'À proximité';
+      const tarif=x.tarif_min!=null?`<small>À partir de ${escapeHtml(String(x.tarif_min))}${x.devise?' '+escapeHtml(x.devise):' €'}</small>`:'';
+      const action=x.site_web?`<a class="mp-action" href="${escapeAttr(x.site_web)}" target="_blank" rel="noopener noreferrer">Voir / réserver →</a>`:(x.telephone?`<a class="mp-action" href="tel:${escapeAttr(x.telephone)}">Appeler →</a>`:'');
+      return `<div class="mon-parcours-offre"><b>${escapeHtml(info.emoji||'📍')} ${escapeHtml(x.nom||'Offre touristique')}</b><small>${distanceTxt}${x.adresse?` · ${escapeHtml(x.adresse)}`:''}</small>${tarif}${x.description?`<small>${escapeHtml(x.description)}</small>`:''}${action}</div>`;
+    }).join('');
+    return `<section class="mon-parcours-offres-cat"><h4>${escapeHtml(labels[k]||info.label||k)}</h4>${offres}</section>`;
+  }).join('');
+
+  const etapeRecos=(data.etapes||[]).map((etape,i)=>{
+    const items=(recs[String(etape.id)]||[]).slice(0,3);
+    if(!items.length)return '';
+    const cards=items.map(x=>{
+      const info=icones[x.categorie]||ICONES_CATEGORIE[x.categorie]||{emoji:'📍'};
+      const action=x.action_url?`<a class="mp-reco-action" href="${escapeAttr(x.action_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.action_label||'Voir')} ↗</a>`:(x.telephone?`<a class="mp-reco-action" href="tel:${escapeAttr(x.telephone)}">Appeler ↗</a>`:'');
+      return `<article class="mp-reco-card"><div><b>${escapeHtml(info.emoji||'📍')} ${escapeHtml(x.nom||'Suggestion')}</b><small>${escapeHtml(x.raison||'Suggestion personnalisée pour votre parcours.')}</small>${x.adresse?`<small>📍 ${escapeHtml(x.adresse)}</small>`:''}</div>${action}</article>`;
+    }).join('');
+    return `<section class="mp-reco-etape"><div class="mp-reco-etape-titre"><span class="mon-parcours-numero">${i+1}</span><div><b>${escapeHtml(etape.nom||'Étape')}</b><small>${etape.film_titre?`🎬 ${escapeHtml(etape.film_titre)}${etape.annee?` · ${escapeHtml(etape.annee)}`:''}<br>`:''}${escapeHtml([etape.commune,etape.departement].filter(Boolean).join(', '))}</small></div></div>${cards}</section>`;
+  }).join('');
+
+  const visitesGuidees=[];
+  (data.visites_guidees_disponibles||[]).forEach(v=>{
+    const etape=(data.etapes||[]).find(e=>(v.film_ids||[]).map(Number).includes(Number(e.film_id)));
+    visitesGuidees.push({...v,film_titre:etape?.film_titre||'',ordre:etape?((data.etapes||[]).indexOf(etape)+1):null});
+  });
+  // Si aucune disponibilité datée n'est connue, on garde les visites éditoriales
+  // déjà présentes dans le projet afin que l'utilisateur puisse les consulter.
+  if(!visitesGuidees.length){
+    (data.etapes||[]).forEach((etape,i)=>{
+      const partenaires=VISITES_PARTENAIRES[Number(etape.film_id)]||[];
+      partenaires.forEach(v=>visitesGuidees.push({...v,film_titre:etape.film_titre||'',ordre:i+1}));
+    });
+  }
+  const visitesGuideesHtml=visitesGuidees.length?`<section class="mp-visites-guidees"><h3>🎟️ Visites guidées pertinentes</h3>${visitesGuidees.map(v=>`<article class="mp-visite-card"><div><b>${escapeHtml(v.nom)}</b><small>${v.ordre?`Étape ${v.ordre}`:''}${v.film_titre?` · ${escapeHtml(v.film_titre)}`:''}${v.duree_minutes?` · ⏱️ ${v.duree_minutes} min`:''}${v.heure_debut?` · 🕘 ${escapeHtml(v.heure_debut)}–${escapeHtml(v.heure_fin||'')}`:''}</small><small>${escapeHtml(v.description||'')}${v.date?` · 📅 ${escapeHtml(v.date)}`:''}</small>${v.heure_debut?`<small class="mp-creneau-confirme">✓ Créneau publié pour la date sélectionnée — réservation à confirmer sur le site officiel.</small>`:''}</div>${v.lien?`<a class="mp-reco-action" href="${escapeAttr(v.lienAffiliation||v.lien)}" target="_blank" rel="noopener noreferrer">📩 Réserver / voir la visite ↗</a>`:''}</article>`).join('')}</section>`:'';
+
+  const conseil=scenario.texte.length?`<section class="mp-scenario"><h3>🎬 Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</section>`:'';
+  const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b>💶 Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>Calculé uniquement à partir des tarifs disponibles ; carburant et dépenses sans tarif renseigné ne sont pas inclus.</span></div>`:'';
+  const planning=(data.planning_horaire||[]).map(x=>`<div class="mp-planning-row"><b>${escapeHtml(x.heure_arrivee)}</b><span>${escapeHtml(x.nom||'Étape')}${x.film_titre?` · 🎬 ${escapeHtml(x.film_titre)}`:''} · fin estimée ${escapeHtml(x.heure_fin_visite)}</span></div>`).join('');
+
+  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'—'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'—'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${planning?`<section class="mp-planning"><h3>🕘 Votre journée cinéma</h3>${planning}</section>`:''}${conseil}${visitesGuideesHtml}${etapeRecos?`<div class="mp-recommandations"><h3>✨ Mes suggestions étape par étape</h3>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3>🎟️ Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
   afficherAmenitiesParcoursV4(cats);
 }
-
 // ── Initialisation carte Leaflet + clustering ────────────────────
 function initCarte() {
   map = L.map("map", { zoomControl: false }).setView([43.9, 2.2], 7);
@@ -835,6 +929,9 @@ function ouvrirPopupLieu(film, lieu) {
   if (!memeLieu) document.getElementById("popup-resultats").innerHTML = "";
   document.getElementById("popup-overlay").dataset.lieuId = lieu.id;
   document.getElementById("popup-overlay").dataset.filmId = film.id;
+  // Restaurer systématiquement les visites guidées/leurs liens de réservation
+  // lorsqu'un lieu est ouvert. Cette fonction avait été conservée mais plus appelée.
+  afficherSectionReservation();
 
   // Galerie photos/vidéos du lieu (nouvelle table lieu_medias) — repli
   // sur la photo unique (photo_url) si aucun média n'a encore été migré.
@@ -1930,7 +2027,8 @@ function afficherGeometrieParcoursV4(data, parcoursInitial = false) {
       className: "", iconSize: [28, 28], iconAnchor: [14, 14],
     });
     const marker = L.marker([etape.latitude, etape.longitude], { icon: icone });
-    marker.bindPopup(`<b>Étape ${index + 1}</b><br>${escapeHtml(_adresseCompleteFrontend(etape))}`);
+    const mediaLabel = etape.media_type === "tv" ? "Série" : etape.media_type === "movie" ? "Film" : etape.media_type === "anime" ? "Animé" : "Œuvre";
+    marker.bindPopup(`<b>Étape ${index + 1}</b><br><strong>${escapeHtml(etape.film_titre || "Lieu de tournage")}</strong><br><small>${escapeHtml(mediaLabel)}${etape.annee ? ` · ${escapeHtml(etape.annee)}` : ""}</small><br>${escapeHtml(_adresseCompleteFrontend(etape))}`);
     marker.addTo(map);
     return marker;
   });
@@ -2055,44 +2153,44 @@ const AFFICHER_SECTION_RESERVATION = true;
 const VISITES_PARTENAIRES = {
   // Le Petit Baigneur — ciné-balade le jeudi
   15: [
-    { nom: "Office de tourisme de Collioure", description: "Ciné-balade sur les traces des films tournés à Collioure, dont Le Petit Baigneur — tous les jeudis.", lien: "https://boutique.tourisme-collioure.com/cine-balades/cine-balades", lienAffiliation: null },
+    { nom: "Office de tourisme de Collioure", description: "Ciné-balade sur les traces des films tournés à Collioure, dont Le Petit Baigneur — durée publiée : 180 min pour l’édition documentée.", duree_minutes: 180, lien: "https://boutique.tourisme-collioure.com/cine-balades/cine-balades", lienAffiliation: null },
   ],
   // Les Visiteurs — visite gratuite, réservation obligatoire par mail
   24: [
-    { nom: "Office de tourisme de Carcassonne", description: "Visite « sur les traces des films tournés dans la Cité », dont Les Visiteurs. Gratuit, réservation obligatoire.", lien: "https://www.tourisme-carcassonne.fr/preparer/visites/visites-guidees/", lienAffiliation: null },
+    { nom: "Office de tourisme de Carcassonne", description: "Visite « La Cité Star de Cinéma » sur les lieux de tournage, dont Les Visiteurs. Durée annoncée : 60 min. Réservation obligatoire.", duree_minutes: 60, lien: "https://www.tourisme-carcassonne.fr/preparer/visites/visites-guidees/", lienAffiliation: null },
   ],
   // Demain nous appartient — deux formules de Cinétour
   128: [
-    { nom: "Office de tourisme Archipel de Thau — Cinétour à pied", description: "Balade immersive depuis Le Spoon, le long des canaux jusqu'à la Pointe Courte — plus de 20 lieux emblématiques de la série.", lien: "https://billetterie.archipel-thau.com/loisirs/visites-guidees-a-pied/cinetour-pedestre-dna-aujourdhui-vous-appartient", lienAffiliation: null },
-    { nom: "Office de tourisme Archipel de Thau — Cinétour en bateau", description: "Balade en bateau (Canauxrama) commentée par une comédienne professionnelle, sur les traces des lieux de tournage vus à l'écran.", lien: "https://billetterie.archipel-thau.com/loisirs/excursions-et-promenades-en-bateau/cinetour-bateau-dna-lequipage-vous-appartient", lienAffiliation: null },
+    { nom: "Office de tourisme Archipel de Thau — Cinétour à pied", description: "Balade immersive depuis Le Spoon, le long des canaux jusqu'à la Pointe Courte — plus de 20 lieux emblématiques de la série. Durée annoncée : 120 min.", duree_minutes: 120, lien: "https://billetterie.archipel-thau.com/loisirs/visites-guidees-a-pied/cinetour-pedestre-dna-aujourdhui-vous-appartient", lienAffiliation: null },
+    { nom: "Office de tourisme Archipel de Thau — Cinétour en bateau", description: "Balade en bateau (Canauxrama) commentée par une comédienne professionnelle, sur les traces des lieux de tournage vus à l'écran. Durée à confirmer selon la formule/date.", duree_minutes: null, lien: "https://billetterie.archipel-thau.com/loisirs/excursions-et-promenades-en-bateau/cinetour-bateau-dna-lequipage-vous-appartient", lienAffiliation: null },
   ],
   // Un si grand soleil — visite Montpellier confirmée avec page dédiée ;
   // Palavas-les-Flots propose une visite cinéma plus générale (plusieurs
   // films/séries tournés sur place), pas un circuit dédié à cette seule
   // série — honnêteté avant tout, pas de lien inventé.
   131: [
-    { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Réservation obligatoire.", lien: "https://book.montpellier-tourisme.fr/fr/voir-faire/1999897/au-c%C5%93ur-de-la-s%C3%A9rie-un-si-grand-soleil-centre-historique/afficher-les-details", lienAffiliation: null },
-    { nom: "Office de tourisme de Palavas-les-Flots — Visite spéciale cinéma", description: "Partez à la découverte des icônes du 7ème art qui ont foulé le sol palavasien, dont Un si grand soleil. Rendez-vous au pied du Phare de la Méditerranée. Réservation en ligne.", lien: "https://billetterie.palavas-tourisme.com/fr/produit/le-cinema-a-palavas", lienAffiliation: null },
+    { nom: "Office de tourisme Montpellier — Au cœur de la série (centre historique)", description: "Visite guidée dans le centre historique, avec anecdotes de tournage issues directement des plateaux. Durée annoncée : 120 min. Réservation obligatoire.", duree_minutes: 120, lien: "https://book.montpellier-tourisme.fr/fr/voir-faire/1999897/au-c%C5%93ur-de-la-s%C3%A9rie-un-si-grand-soleil-centre-historique/afficher-les-details", lienAffiliation: null },
+    { nom: "Office de tourisme de Palavas-les-Flots — Visite spéciale cinéma", description: "Partez à la découverte des icônes du 7ème art qui ont foulé le sol palavasien, dont Un si grand soleil. Durée annoncée : 120 min. Rendez-vous au pied du Phare de la Méditerranée. Réservation en ligne.", duree_minutes: 120, lien: "https://billetterie.palavas-tourisme.com/fr/produit/le-cinema-a-palavas", lienAffiliation: null },
   ],
   // Killer Coaster (Palavas-les-Flots) — même visite que Un si grand
   // soleil, l'office de tourisme couvre les deux dans la même visite
   // thématique "Le cinéma à Palavas".
   136: [
-    { nom: "Office de tourisme de Palavas-les-Flots — Visite spéciale cinéma", description: "Partez à la découverte des icônes du 7ème art qui ont foulé le sol palavasien, dont Killer Coaster. Rendez-vous au pied du Phare de la Méditerranée. Réservation en ligne.", lien: "https://billetterie.palavas-tourisme.com/fr/produit/le-cinema-a-palavas", lienAffiliation: null },
+    { nom: "Office de tourisme de Palavas-les-Flots — Visite spéciale cinéma", description: "Partez à la découverte des icônes du 7ème art qui ont foulé le sol palavasien, dont Killer Coaster. Durée annoncée : 120 min. Rendez-vous au pied du Phare de la Méditerranée. Réservation en ligne.", duree_minutes: 120, lien: "https://billetterie.palavas-tourisme.com/fr/produit/le-cinema-a-palavas", lienAffiliation: null },
   ],
   // L'Homme qui a vu l'ours qui a vu l'homme — pas de réservation en
   // ligne directe trouvée pour "Filets Gourmands" (inscription à
   // l'office de tourisme uniquement), lien vers leur page qui décrit
   // précisément cette visite plutôt qu'un lien de billetterie inventé
   135: [
-    { nom: "Office de tourisme de Gruissan — Filets Gourmands", description: "Balade en petit train jusqu'aux cabanes de pêcheurs de l'Ayrolle, rencontre avec les pêcheurs et ostréiculteurs locaux, dégustation. Inscription à l'office de tourisme (le vendredi matin).", lien: "https://www.gruissan-mediterranee.com/top5-des-visites-guidees/", lienAffiliation: null },
+    { nom: "Office de tourisme de Gruissan — Filets Gourmands", description: "Balade en petit train jusqu'aux cabanes de pêcheurs de l'Ayrolle, rencontre avec les pêcheurs et ostréiculteurs locaux, dégustation. Durée annoncée : 210 min (9h–12h30). Inscription à l'office de tourisme.", duree_minutes: 210, lien: "https://www.gruissan-mediterranee.com/top5-des-visites-guidees/", lienAffiliation: null },
   ],
   // D'Artagnan (Auch) — 2 visites guidées + 1 escape game, signalés
   // par Séverine Teulières (chargée de mission tourisme) en commentaire
   // du post LinkedIn du 17/08/2026 — merci à elle !
   3: [
-    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan", description: "Sur les traces de d'Artagnan à Auch, lieux et anecdotes liés au tournage et à l'histoire du personnage.", lien: "https://www.mysportsession.com/activites/search/activity/3110/2112", lienAffiliation: null },
-    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan (2)", description: "Seconde formule de visite guidée autour de d'Artagnan à Auch.", lien: "https://www.mysportsession.com/activites/search/details/activity/3108/3272", lienAffiliation: null },
+    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan", description: "Sur les traces de d'Artagnan à Auch, lieux et anecdotes liés au tournage et à l'histoire du personnage. Durée annoncée : 90 min.", duree_minutes: 90, lien: "https://www.mysportsession.com/activites/search/activity/3110/2112", lienAffiliation: null },
+    { nom: "Office de tourisme du Grand Auch — Visite guidée d'Artagnan (2)", description: "Seconde formule de visite guidée autour de d'Artagnan à Auch. Durée à confirmer selon la formule/date.", duree_minutes: null, lien: "https://www.mysportsession.com/activites/search/details/activity/3108/3272", lienAffiliation: null },
     { nom: "Office de tourisme du Grand Auch — Escape game d'Artagnan", description: "Un escape game pour découvrir l'histoire de d'Artagnan à Auch, en famille ou entre amis.", lien: "https://www.mysportsession.com/activites/search/activity/3140/2129", lienAffiliation: null },
   ],
   // Candice Renoir (44) volontairement laissé vide — le Cinétour de
@@ -2120,6 +2218,7 @@ function afficherSectionReservation() {
           <p class="reservation-intro">
             <strong>${partenaire.nom}</strong> propose une visite guidée sur les lieux de tournage de "${titre}".
             ${partenaire.description || ""}
+            ${partenaire.duree_minutes ? `<br><strong>⏱️ Durée de la visite : ${partenaire.duree_minutes} min</strong>` : ""}
           </p>
           <a class="btn-reserver" href="${lien}" target="_blank" rel="noopener noreferrer" onclick="_trackerClic('visite_partenaire', {nom_partenaire: '${partenaire.nom.replace(/'/g, "")}'})">
             📩 Voir cette visite chez ${partenaire.nom}

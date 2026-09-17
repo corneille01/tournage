@@ -1376,3 +1376,23 @@ body.page-film-ssr {
 /* ═══ PELIFY V4.7 — Génération intelligente + espace personnel ═══ */
 #pelify-espace-link{display:block;margin:7px 0;padding:9px 10px;border:1px solid #343842;border-radius:9px;color:var(--couleur-texte);text-decoration:none;font-size:.78rem;text-align:center}#pelify-historique-compteur{display:inline-flex;min-width:19px;height:19px;align-items:center;justify-content:center;border-radius:99px;background:#2a9d8f;color:#fff;font-size:.65rem;margin-left:3px}.btn-generer-parcours-ideal{width:100%;margin-top:7px;padding:11px;border:1px solid #2a9d8f;border-radius:10px;background:rgba(42,157,143,.12);color:var(--couleur-texte);font-weight:800;cursor:pointer}.btn-generer-parcours-ideal:hover{background:rgba(42,157,143,.2)}#mp-generation-resultat{margin-top:6px}.mp-generation-note{font-size:.72rem;color:var(--couleur-texte-muted)}
 .mp-time-input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #363943;border-radius:8px;background:#17191e;color:var(--couleur-texte)}.mp-planning{margin:14px 0;padding:10px;border:1px solid #292c34;border-radius:10px}.mp-planning h3{font-size:.9rem;margin:0 0 7px}.mp-planning-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.73rem}.mp-planning-row b{min-width:45px;color:var(--couleur-accent)}.mp-planning-row span{color:var(--couleur-texte-muted)}
+
+/* V4.7.1 — visites guidées intégrées au parcours */
+.mp-visites-guidees{margin-top:14px;padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.035)}
+.mp-visites-guidees h3{margin:0 0 10px;font-size:1rem}
+.mp-visite-card{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.08)}
+.mp-visite-card:first-of-type{border-top:0}
+.mp-visite-card>div{display:flex;flex-direction:column;gap:4px}
+.mp-visite-card small{opacity:.78;line-height:1.35}
+.mp-visite-card .mp-reco-action{white-space:nowrap}
+@media(max-width:700px){.mp-visite-card{align-items:flex-start;flex-direction:column}.mp-visite-card .mp-reco-action{white-space:normal}}
+
+/* V4.8 — scénario et possibilités intelligentes */
+.mp-scenario{margin:14px 0;padding:14px;border:1px solid rgba(230,57,70,.35);border-radius:12px;background:rgba(230,57,70,.07)}
+.mp-scenario h3{margin:0 0 8px;font-size:.98rem}.mp-scenario p{margin:7px 0;font-size:.76rem;line-height:1.45}
+.mp-possibilites{margin-top:10px;padding:11px;border:1px solid rgba(42,157,143,.35);border-radius:11px;background:rgba(42,157,143,.06)}
+.mp-possibilites h4{margin:0 0 5px;font-size:.88rem}.mp-generation-note{margin:4px 0 8px}
+.mp-possibilite{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid rgba(255,255,255,.06);cursor:pointer}.mp-possibilite:first-of-type{border-top:0}.mp-possibilite span{min-width:0}.mp-possibilite b{display:block;font-size:.74rem}.mp-possibilite small{display:block;color:var(--couleur-texte-muted);font-size:.67rem;margin-top:2px}
+
+/* V4.9 — planification temporelle des visites guidées */
+.mp-aide{display:block;color:var(--couleur-texte-muted);font-size:.67rem;line-height:1.35;margin:4px 0 7px}.mp-creneau-confirme{color:#2a9d8f!important;font-weight:700}.mp-scenario{box-shadow:0 4px 18px rgba(0,0,0,.08)}

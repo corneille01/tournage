@@ -1303,3 +1303,76 @@ body.page-film-ssr {
   }
 
 }
+/* ═══════════════════════════════════════════════════════════════
+   PELIFY V4 — Parcours cinétouristique enrichi
+   ═══════════════════════════════════════════════════════════════ */
+#panel-parcours-v4 {
+  margin-top: 12px;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  border-radius: 14px;
+  padding: 12px;
+}
+#panel-parcours-v4 h3 { margin: 0 0 6px; font-size: 1rem; }
+.parcours-v4-intro { margin: 0 0 10px; color: var(--couleur-texte-muted); font-size: .8rem; line-height: 1.45; }
+.parcours-v4-options { display:flex; flex-wrap:wrap; gap:7px; margin: 8px 0; }
+.parcours-v4-options label { display:flex; align-items:center; gap:5px; font-size:.78rem; }
+.parcours-v4-etapes { display:flex; flex-direction:column; gap:7px; max-height:240px; overflow:auto; margin:10px 0; }
+.parcours-v4-etape { display:flex; align-items:flex-start; gap:8px; padding:8px; border-radius:9px; background:rgba(255,255,255,.035); }
+.parcours-v4-etape input { margin-top:3px; }
+.parcours-v4-etape .numero { min-width:22px; font-weight:700; color:var(--couleur-accent); }
+.parcours-v4-etape .texte { flex:1; font-size:.8rem; line-height:1.35; }
+.parcours-v4-etape .texte small { display:block; color:var(--couleur-texte-muted); margin-top:2px; }
+.parcours-v4-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.parcours-v4-actions button, .btn-parcours-v4 { border:1px solid var(--couleur-accent); background:rgba(230,57,70,.12); color:var(--couleur-texte); border-radius:9px; padding:9px 8px; cursor:pointer; font-size:.78rem; }
+.parcours-v4-actions button.secondaire { border-color:#3a3d46; background:transparent; }
+.parcours-v4-resultat { margin-top:12px; }
+.parcours-v4-resume { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+.parcours-v4-stat { padding:8px; border-radius:9px; background:rgba(255,255,255,.04); text-align:center; }
+.parcours-v4-stat b { display:block; font-size:.9rem; }
+.parcours-v4-stat span { color:var(--couleur-texte-muted); font-size:.68rem; }
+.parcours-v4-cats { display:flex; flex-direction:column; gap:9px; }
+.parcours-v4-cat { border-top:1px solid #2a2d35; padding-top:8px; }
+.parcours-v4-cat h4 { margin:0 0 6px; font-size:.84rem; }
+.parcours-v4-amenity { padding:7px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:.78rem; }
+.parcours-v4-amenity:last-child { border-bottom:0; }
+.parcours-v4-amenity small { display:block; color:var(--couleur-texte-muted); margin-top:2px; }
+.parcours-v4-amenity a { color:var(--couleur-accent); }
+.parcours-v4-loading { color:var(--couleur-texte-muted); font-size:.8rem; }
+@media (max-width:600px) {
+  .parcours-v4-resume { grid-template-columns:repeat(2,1fr); }
+  .parcours-v4-actions { grid-template-columns:1fr; }
+}
+
+/* ═══ PELIFY V4.1 — Mon parcours global ═══ */
+.btn-mon-parcours{width:100%;margin:9px 0 7px;padding:10px 12px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.12);color:var(--couleur-texte);font-weight:700;cursor:pointer}.btn-mon-parcours.ajoute{background:rgba(42,157,143,.15)}
+#mon-parcours-compteur{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;margin-left:4px;border-radius:999px;background:var(--couleur-accent);color:#fff;font-size:.72rem}
+.btn-ajouter-parcours{width:100%;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.10);color:var(--couleur-texte);font-weight:700;cursor:pointer}.btn-ajouter-parcours.ajoute{background:rgba(42,157,143,.16);border-color:#2a9d8f}
+#mon-parcours-overlay{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.58);display:flex;justify-content:flex-end}#mon-parcours-overlay.hidden{display:none}#mon-parcours-panel{width:min(520px,100vw);height:100%;overflow:auto;background:var(--couleur-fond,#0f1115);border-left:1px solid #2a2d35;box-shadow:-10px 0 35px rgba(0,0,0,.35);padding:18px}.mon-parcours-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid #2a2d35;padding-bottom:12px;margin-bottom:12px}.mon-parcours-header h2{margin:0 0 4px}.mon-parcours-header p{margin:0;color:var(--couleur-texte-muted);font-size:.82rem}#btn-fermer-mon-parcours{border:0;background:transparent;color:var(--couleur-texte);font-size:1.2rem;cursor:pointer}.mon-parcours-resume-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.btn-texte-danger{border:0;background:transparent;color:#e76f51;cursor:pointer}.mon-parcours-liste{display:flex;flex-direction:column;gap:7px}.mon-parcours-etape{display:flex;align-items:center;gap:9px;padding:9px;background:rgba(255,255,255,.04);border:1px solid #292c34;border-radius:10px}.mon-parcours-numero{min-width:27px;height:27px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(230,57,70,.15);color:var(--couleur-accent);font-weight:800}.mon-parcours-etape-info{flex:1;min-width:0}.mon-parcours-etape-info strong{display:block;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mon-parcours-etape-info small{display:block;color:var(--couleur-texte-muted);font-size:.7rem;margin-top:2px}.mon-parcours-etape-actions{display:flex;gap:3px}.mon-parcours-etape-actions button{width:28px;height:28px;border:1px solid #363943;border-radius:7px;background:transparent;color:var(--couleur-texte);cursor:pointer}.mon-parcours-etape-actions button:last-child{color:#e76f51}.mon-parcours-options{margin:12px 0;padding:10px;border:1px solid #292c34;border-radius:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.78rem}.mon-parcours-options>span{width:100%;font-weight:700}.mon-parcours-options label{display:flex;gap:5px;align-items:center}.btn-calculer-mon-parcours{width:100%;padding:11px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.14);color:var(--couleur-texte);font-weight:800;cursor:pointer}.mon-parcours-note,.mon-parcours-loading{color:var(--couleur-texte-muted);font-size:.75rem;line-height:1.45}.mon-parcours-erreur{color:#e76f51;font-size:.8rem}.mon-parcours-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}.mon-parcours-stats>div{padding:8px 5px;text-align:center;background:rgba(255,255,255,.04);border-radius:8px}.mon-parcours-stats b{display:block;font-size:.85rem}.mon-parcours-stats span{display:block;color:var(--couleur-texte-muted);font-size:.65rem}.mon-parcours-offres h3{font-size:.95rem;margin:14px 0 8px}.mon-parcours-offres-cat{border-top:1px solid #2a2d35;padding-top:9px;margin-top:9px}.mon-parcours-offres-cat h4{margin:0 0 5px;font-size:.82rem}.mon-parcours-offre{padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.77rem}.mon-parcours-offre small{display:block;color:var(--couleur-texte-muted);margin-top:2px;line-height:1.35}.mon-parcours-offre a{color:var(--couleur-accent)}.mon-parcours-vide{text-align:center;padding:40px 12px;color:var(--couleur-texte-muted)}.mon-parcours-vide-icone{font-size:2.2rem}.mon-parcours-vide h3{color:var(--couleur-texte)}.btn-parcours-v4-ajouter{min-width:30px;height:30px;border:1px solid var(--couleur-accent);border-radius:7px;background:transparent;color:var(--couleur-texte);cursor:pointer;font-weight:800}.btn-parcours-v4-ajouter.ajoute{border-color:#2a9d8f;background:rgba(42,157,143,.15)}
+@media(max-width:600px){#mon-parcours-panel{padding:14px}.mon-parcours-stats{grid-template-columns:repeat(2,1fr)}}
+
+/* ═══ Mon parcours V4.2 — critères de sortie ═══ */
+.mon-parcours-criteres{margin:14px 0;padding:13px;border:1px solid #292c34;border-radius:12px;background:rgba(255,255,255,.025)}
+.mon-parcours-criteres h3{margin:0 0 12px;font-size:.95rem}
+.mp-label{display:block;margin:11px 0 6px;font-weight:700;font-size:.76rem}
+.mp-depart-options{display:flex;flex-wrap:wrap;gap:7px}
+.mp-depart-options label,.mp-check,.mp-interets label{display:flex;align-items:center;gap:5px;padding:7px 8px;border:1px solid #363943;border-radius:8px;font-size:.73rem;cursor:pointer}
+.mp-depart-options input,.mp-check input,.mp-interets input{accent-color:var(--couleur-accent)}
+.mp-adresse-bloc{margin-top:8px}.mp-adresse-ligne{display:flex;gap:6px}.mp-adresse-ligne input,.mon-parcours-criteres select{width:100%;box-sizing:border-box;padding:9px;border:1px solid #363943;border-radius:8px;background:#17191e;color:var(--couleur-texte)}
+.mp-adresse-ligne button{padding:9px 10px;border:1px solid var(--couleur-accent);border-radius:8px;background:rgba(230,57,70,.12);color:var(--couleur-texte);cursor:pointer;font-weight:700}
+.mp-adresse-resultat{display:block;width:100%;margin-top:5px;padding:8px;text-align:left;border:1px solid #292c34;border-radius:7px;background:#17191e;color:var(--couleur-texte);cursor:pointer;font-size:.72rem}
+.mp-selection-info{margin-top:7px;padding:7px 8px;border-radius:7px;background:rgba(42,157,143,.08);font-size:.7rem;color:var(--couleur-texte-muted)}
+.mp-interets{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mp-check{margin-top:10px}
+.mp-budget{display:flex;flex-direction:column;gap:4px;margin:10px 0;padding:10px;border-radius:9px;font-size:.72rem}.mp-budget.ok{border:1px solid rgba(42,157,143,.55);background:rgba(42,157,143,.09)}.mp-budget.alerte{border:1px solid rgba(231,111,81,.65);background:rgba(231,111,81,.09)}
+@media(max-width:600px){.mp-interets{grid-template-columns:1fr}.mp-depart-options{flex-direction:column}.mp-adresse-ligne{flex-direction:column}}
+
+/* ═══ Mon parcours V4.3 — recommandations personnalisées ═══ */
+.mp-conseil{margin:12px 0;padding:11px 12px;border-radius:10px;border:1px solid rgba(42,157,143,.35);background:rgba(42,157,143,.08);display:flex;flex-direction:column;gap:4px;font-size:.74rem;line-height:1.4}.mp-conseil span{color:var(--couleur-texte-muted)}
+.mp-recommandations h3{font-size:.95rem;margin:15px 0 8px}.mp-reco-etape{margin:8px 0;padding:9px;border:1px solid #292c34;border-radius:10px;background:rgba(255,255,255,.025)}
+.mp-reco-etape-titre{display:flex;gap:8px;align-items:center;margin-bottom:7px}.mp-reco-etape-titre .mon-parcours-numero{min-width:25px;height:25px}.mp-reco-etape-titre small{display:block;color:var(--couleur-texte-muted);font-size:.68rem;margin-top:2px}
+.mp-reco-card{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}.mp-reco-card>div{min-width:0}.mp-reco-card b{display:block;font-size:.76rem}.mp-reco-card small{display:block;color:var(--couleur-texte-muted);font-size:.67rem;line-height:1.35;margin-top:2px}.mp-reco-action,.mp-action{display:inline-block;white-space:nowrap;color:var(--couleur-accent);font-weight:700;font-size:.68rem;text-decoration:none;margin-top:4px}.mp-reco-action{border:1px solid var(--couleur-accent);padding:6px 8px;border-radius:7px}.mp-reco-action:hover,.mp-action:hover{text-decoration:underline}
+@media(max-width:600px){.mp-reco-card{align-items:flex-start;flex-direction:column}.mp-reco-action{align-self:flex-end}}
+
+/* ═══ PELIFY V4.7 — Génération intelligente + espace personnel ═══ */
+#pelify-espace-link{display:block;margin:7px 0;padding:9px 10px;border:1px solid #343842;border-radius:9px;color:var(--couleur-texte);text-decoration:none;font-size:.78rem;text-align:center}#pelify-historique-compteur{display:inline-flex;min-width:19px;height:19px;align-items:center;justify-content:center;border-radius:99px;background:#2a9d8f;color:#fff;font-size:.65rem;margin-left:3px}.btn-generer-parcours-ideal{width:100%;margin-top:7px;padding:11px;border:1px solid #2a9d8f;border-radius:10px;background:rgba(42,157,143,.12);color:var(--couleur-texte);font-weight:800;cursor:pointer}.btn-generer-parcours-ideal:hover{background:rgba(42,157,143,.2)}#mp-generation-resultat{margin-top:6px}.mp-generation-note{font-size:.72rem;color:var(--couleur-texte-muted)}
+.mp-time-input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #363943;border-radius:8px;background:#17191e;color:var(--couleur-texte)}.mp-planning{margin:14px 0;padding:10px;border:1px solid #292c34;border-radius:10px}.mp-planning h3{font-size:.9rem;margin:0 0 7px}.mp-planning-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.73rem}.mp-planning-row b{min-width:45px;color:var(--couleur-accent)}.mp-planning-row span{color:var(--couleur-texte-muted)}

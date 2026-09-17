@@ -20,11 +20,15 @@ from navigation_cache import navigation_cache
 import os
 import json
 import asyncio
+import hashlib
+import secrets
+import uuid
+from decimal import Decimal
 
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, JSONResponse
@@ -56,6 +60,109 @@ _LABELS_CATEGORIE = {
 }
 
 
+
+PELIFY_USER_COOKIE = "pelify_user"
+PELIFY_USER_SECRET = os.getenv("PELIFY_USER_SECRET", "pelify-dev-secret-change-me")
+
+
+def _hash_user_token(token: str) -> str:
+    return hashlib.sha256((PELIFY_USER_SECRET + ":" + token).encode("utf-8")).hexdigest()
+
+
+async def _ensure_profile(request: Request, response: Response) -> dict:
+    """Identifie un visiteur de façon pseudonyme pour sauvegarder ses parcours.
+
+    Aucun nom, email ou position GPS n'est exigé. Le cookie contient un jeton
+    aléatoire et la base ne conserve que son hash. Cela permet d'avoir un
+    historique par navigateur sans transformer Pelify en système de compte.
+    """
+    token = request.cookies.get(PELIFY_USER_COOKIE)
+    created = False
+    if not token or len(token) < 32:
+        token = secrets.token_urlsafe(48)
+        created = True
+    token_hash = _hash_user_token(token)
+    user = await fetch_one(
+        "SELECT id, created_at, last_seen_at FROM pelify_users WHERE visitor_token_hash = %s",
+        (token_hash,),
+    )
+    if not user:
+        user_id = str(uuid.uuid4())
+        await execute(
+            "INSERT INTO pelify_users (id, visitor_token_hash) VALUES (%s, %s)",
+            (user_id, token_hash),
+        )
+        user = {"id": user_id}
+        created = True
+    else:
+        await execute("UPDATE pelify_users SET last_seen_at = NOW() WHERE id = %s", (user["id"],))
+    if created:
+        response.set_cookie(
+            PELIFY_USER_COOKIE,
+            token,
+            max_age=60 * 60 * 24 * 365,
+            httponly=True,
+            samesite="lax",
+            secure=os.getenv("COOKIE_SECURE", "1") != "0",
+            path="/",
+        )
+    return user
+
+
+def _json_safe(value):
+    if isinstance(value, (datetime,)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+async def _enregistrer_parcours_historique(request: Request, response: Response, body: dict, resultat: dict):
+    try:
+        user = await _ensure_profile(request, response)
+        options = {
+            "mode": body.get("mode"),
+            "temps_disponible_minutes": body.get("temps_disponible_minutes"),
+            "temps_visite_minutes": body.get("temps_visite_minutes"),
+            "retour_depart": body.get("retour_depart"),
+            "categories_interet": body.get("categories_interet") or [],
+            "budget_level": body.get("budget_level"),
+            "accessibilite": body.get("accessibilite"),
+            "optimiser": body.get("optimiser"),
+        }
+        resume_resultat = {
+            "distance_metres": resultat.get("distance_metres"),
+            "duree_secondes": resultat.get("duree_secondes"),
+            "duree_totale_estimee_secondes": resultat.get("duree_totale_estimee_secondes"),
+            "budget_respecte": resultat.get("budget_respecte"),
+            "depart": resultat.get("depart"),
+            "recommandations_par_etape": resultat.get("recommandations_par_etape", {}),
+            "amenities": {k: v[:3] for k, v in (resultat.get("amenities") or {}).items()},
+        }
+        lieux = [{k: x.get(k) for k in ("id", "nom", "commune", "departement", "latitude", "longitude", "film_id", "film_titre")} for x in resultat.get("etapes", [])]
+        titre = " → ".join(str(x.get("nom") or "Lieu") for x in resultat.get("etapes", [])[:3])
+        if len(resultat.get("etapes", [])) > 3:
+            titre += "…"
+        await execute(
+            """INSERT INTO pelify_parcours_history
+               (user_id, titre, options_json, lieux_json, resultat_json, nb_etapes, distance_metres, duree_secondes, duree_totale_estimee_secondes, budget_level)
+               VALUES (%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)""",
+            (
+                user["id"], titre or "Mon parcours cinéma", json.dumps(_json_safe(options)),
+                json.dumps(_json_safe(lieux)), json.dumps(_json_safe(resume_resultat)),
+                len(lieux), resultat.get("distance_metres"), resultat.get("duree_secondes"),
+                resultat.get("duree_totale_estimee_secondes"), body.get("budget_level") or "equilibre",
+            ),
+        )
+    except Exception:
+        logger.exception("Impossible d'enregistrer l'historique Pelify")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db_pool()
@@ -69,7 +176,7 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # à restreindre au domaine réel en prod
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
 )
 
 @app.get("/api/analyse/indicateurs")
@@ -1328,6 +1435,120 @@ def _adresse_complete(lieu: dict) -> str:
     return ", ".join(p for p in (lieu["nom"], lieu.get("commune"), lieu.get("departement")) if p)
 
 
+
+def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite=False):
+    """Score déterministe d'une commodité pour une personnalisation légère.
+
+    Le score ne prétend pas être une note de qualité universelle : il sert à
+    ordonner les offres en fonction des préférences choisies par l'utilisateur.
+    """
+    score = 0.0
+    distance = float(item.get("meilleure_distance_metres") or item.get("distance_metres") or 999999)
+    # Proximité : elle pèse davantage pour un parcours à pied.
+    score += max(0.0, 38.0 - distance / 180.0)
+
+    note = item.get("note_etoiles")
+    try:
+        note = float(note) if note is not None else None
+    except (TypeError, ValueError):
+        note = None
+    if note is not None:
+        score += min(25.0, max(0.0, note * 5.0))
+
+    tarif = item.get("tarif_min")
+    try:
+        tarif = float(tarif) if tarif is not None else None
+    except (TypeError, ValueError):
+        tarif = None
+    if tarif is not None:
+        if budget_level == "economique":
+            score += max(0.0, 28.0 - min(tarif, 100.0) * 0.35)
+        elif budget_level == "confort":
+            score += min(18.0, tarif * 0.18)
+        else:
+            score += max(0.0, 16.0 - min(tarif, 100.0) * 0.12)
+
+    texte_access = " ".join(str(item.get(k) or "") for k in ("equipements", "labels_qualite", "description", "lien_accessibilite")).lower()
+    accessible = bool(item.get("lien_accessibilite")) or any(x in texte_access for x in ("pmr", "accessible", "accessibilité", "handicap"))
+    if accessibilite:
+        score += 28.0 if accessible else -28.0
+    elif accessible:
+        score += 3.0
+
+    # Petit bonus si une fiche web exploitable est disponible.
+    if item.get("site_web"):
+        score += 4.0
+    if item.get("telephone"):
+        score += 2.0
+    return round(score, 2)
+
+
+def _phrase_recommandation_offre(item, categorie, profil, etape_nom):
+    nom = item.get("nom") or "cet établissement"
+    distance = item.get("meilleure_distance_metres")
+    distance_txt = f"à {round(float(distance))} m" if distance is not None and float(distance) < 1000 else (f"à {float(distance)/1000:.1f} km" if distance is not None else "à proximité")
+    raisons = [distance_txt]
+    if profil == "economique" and item.get("tarif_min") is not None:
+        raisons.append("un positionnement tarifaire intéressant")
+    if profil == "confort" and item.get("note_etoiles") is not None:
+        raisons.append("un niveau de confort renseigné")
+    if item.get("note_etoiles") is not None:
+        raisons.append(f"{item['note_etoiles']} étoile(s) renseignée(s)")
+    return f"Pour l’étape « {etape_nom} », {nom} est une suggestion pertinente pour votre parcours : {', '.join(raisons)}."
+
+
+def _optimiser_etapes_approx(etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart):
+    """Pré-sélection rapide avant les appels IGN.
+
+    On évite une explosion du nombre d'appels réseau : l'heuristique utilise
+    les distances géographiques puis l'itinéraire IGN est recalculé ensuite.
+    """
+    if not temps_disponible_minutes or len(etapes) <= 1:
+        return list(etapes), []
+    vitesse_kmh = 45.0 if mode == "driving-car" else 4.5
+    facteur_route = 1.30 if mode == "driving-car" else 1.15
+    budget_h = max(0.25, float(temps_disponible_minutes) / 60.0)
+    temps_visites_h = len(etapes) * float(temps_visite_minutes) / 60.0
+    temps_deplacement_h = max(0.0, budget_h - temps_visites_h)
+    if temps_deplacement_h <= 0:
+        return ([etapes[0]] if etapes else []), [x for x in etapes[1:]]
+
+    points = []
+    if depart:
+        points.append(depart)
+    else:
+        points.append(etapes[0])
+    restants = list(etapes)
+    # Si le départ est déjà une étape, elle doit rester la première.
+    if not depart and restants:
+        choisi = [restants.pop(0)]
+    else:
+        choisi = []
+
+    distance_estimee = 0.0
+    courant = points[0]
+    while restants:
+        candidat = min(restants, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
+        d = haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(candidat["latitude"]), float(candidat["longitude"]))
+        prochaine_distance = distance_estimee + d * facteur_route
+        retour = 0.0
+        if retour_depart:
+            base = depart if depart else (choisi[0] if choisi else etapes[0])
+            retour = haversine_metres(float(candidat["latitude"]), float(candidat["longitude"]), float(base["latitude"]), float(base["longitude"])) * facteur_route
+        heures = (prochaine_distance + retour) / 1000.0 / vitesse_kmh
+        visites = (len(choisi) + 1) * float(temps_visite_minutes) / 60.0
+        if heures + visites > budget_h and choisi:
+            break
+        choisi.append(candidat)
+        restants.remove(candidat)
+        distance_estimee = prochaine_distance
+        courant = candidat
+
+    ids_choisis = {int(x["id"]) for x in choisi if x.get("id") is not None}
+    exclus = [x for x in etapes if x.get("id") is not None and int(x["id"]) not in ids_choisis]
+    return choisi, exclus
+
+
 async def _itineraire_multi_etapes(lieux_ordonnes, mode):
     """
     Calcule un itinéraire réel entre plusieurs lieux avec
@@ -1530,6 +1751,116 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
     }
 
 
+
+@app.get("/api/geocodage")
+async def api_geocodage(q: str = Query(..., min_length=3, max_length=200)):
+    """Recherche d'adresse via le service de géocodage IGN.
+
+    Le navigateur ne contacte pas directement le service IGN : le backend
+    joue le rôle de proxy afin de garder une intégration homogène avec Pelify.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                "https://data.geopf.fr/geocodage/search",
+                params={"q": q, "limit": 5, "autocomplete": "true"},
+                headers={"Accept": "application/json"},
+            )
+        response.raise_for_status()
+        data = response.json()
+    except Exception as exc:
+        logger.warning("Géocodage IGN indisponible: %s", exc)
+        raise HTTPException(502, "Le service de recherche d'adresse IGN est momentanément indisponible.") from exc
+
+    features = data.get("features", []) if isinstance(data, dict) else []
+    resultats = []
+    for feature in features[:5]:
+        props = feature.get("properties") or {}
+        geometry = feature.get("geometry") or {}
+        coords = geometry.get("coordinates") or []
+        if len(coords) < 2:
+            continue
+        resultats.append({
+            "label": props.get("label") or props.get("name") or "Adresse",
+            "latitude": float(coords[1]),
+            "longitude": float(coords[0]),
+            "type": props.get("type"),
+            "idban": props.get("idban") or props.get("id"),
+            "source": "BAN via Géoplateforme",
+        })
+    return {"resultats": resultats}
+
+
+async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=False):
+    """Construit un parcours IGN depuis un point arbitraire puis les étapes.
+
+    lieu_depart doit contenir latitude/longitude et peut avoir id=None.
+    """
+    if not etapes:
+        raise GeoplateformeError("Aucune étape sélectionnée.")
+
+    segments = []
+    distance_totale = 0
+    duree_totale = 0
+    duree_disponible = True
+
+    points = [lieu_depart] + list(etapes)
+    if retour_depart and len(etapes) >= 1:
+        points.append(lieu_depart)
+
+    for i in range(len(points) - 1):
+        depart = points[i]
+        arrivee = points[i + 1]
+        resultat = await calculer_itineraire_geoplateforme(
+            depart_lat=float(depart["latitude"]),
+            depart_lon=float(depart["longitude"]),
+            arrivee_lat=float(arrivee["latitude"]),
+            arrivee_lon=float(arrivee["longitude"]),
+            mode=mode,
+            avec_etapes=False,
+        )
+        if not resultat or not resultat.get("geometry"):
+            raise GeoplateformeError(f"Aucune géométrie IGN pour le tronçon {i + 1}.")
+        distance = float(resultat.get("distance_metres") or 0)
+        duree = resultat.get("duree_secondes")
+        if duree is None:
+            duree_disponible = False
+        else:
+            duree_totale += float(duree)
+        distance_totale += distance
+        segments.append({
+            "depart": {"id": depart.get("id"), "nom": depart.get("nom") or "Point de départ", "latitude": float(depart["latitude"]), "longitude": float(depart["longitude"])},
+            "arrivee": {"id": arrivee.get("id"), "nom": arrivee.get("nom") or "Étape", "latitude": float(arrivee["latitude"]), "longitude": float(arrivee["longitude"])},
+            "distance_metres": round(distance),
+            "duree_secondes": round(float(duree)) if duree is not None else None,
+            "geometry": resultat["geometry"],
+        })
+
+    coords=[]
+    for segment in segments:
+        g=segment["geometry"]
+        lines = g.get("coordinates", []) if g.get("type") == "LineString" else [x for x in g.get("coordinates", [])]
+        if g.get("type") == "LineString":
+            lines=[lines]
+        for line in lines:
+            if not line: continue
+            if not coords: coords.extend(line)
+            elif coords[-1] == line[0]: coords.extend(line[1:])
+            else: coords.extend(line)
+
+    return {
+        "type":"route_reelle",
+        "provider":"geoplateforme",
+        "resource":RESOURCE_ITINERAIRE,
+        "mode":mode,
+        "distance_metres":round(distance_totale),
+        "duree_secondes":round(duree_totale) if duree_disponible else None,
+        "geometry":{"type":"LineString","coordinates":coords},
+        "trajets":segments,
+        "retour_depart":bool(retour_depart),
+    }
+
+
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):
     """
@@ -1552,6 +1883,475 @@ async def trace_film(film_id: int):
     resultat["adresses"] = [_adresse_complete(l) for l in lieux_ordonnes]
     return resultat
 
+
+@app.post("/api/parcours/enrichi")
+async def parcours_enrichi(request: Request, response: Response):
+    """
+    V4 — construit un parcours cinétouristique personnalisé à partir
+    d'une sélection de lieux de tournage et renvoie les offres
+    touristiques déjà présentes dans amenity_cache autour de chaque
+    étape.
+
+    Le calcul est volontairement basé sur les données déjà en cache :
+    aucune requête Overpass/DATAtourisme en direct depuis une requête
+    visiteur.
+
+    Body JSON :
+      {
+        "lieu_ids": [1, 2, 3],
+        "mode": "driving-car",
+        "limite_par_categorie": 4
+      }
+
+    L'ordre reçu est conservé : c'est le choix de l'utilisateur.
+    L'endpoint recalcule ensuite les tronçons routiers avec la
+    Géoplateforme IGN et agrège hébergements, restaurants, activités,
+    offices de tourisme et autres catégories disponibles dans le cache.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+
+    lieu_ids = body.get("lieu_ids")
+    mode = body.get("mode", "driving-car")
+    limite = body.get("limite_par_categorie", 4)
+    depart = body.get("depart") or None
+    retour_depart = bool(body.get("retour_depart", False))
+    temps_disponible_minutes = body.get("temps_disponible_minutes")
+    temps_visite_minutes = body.get("temps_visite_minutes", 45)
+    categories_interet = body.get("categories_interet") or []
+    budget_level = str(body.get("budget_level") or "equilibre")
+    accessibilite = bool(body.get("accessibilite", False))
+    optimiser = bool(body.get("optimiser", False))
+    heure_depart = str(body.get("heure_depart") or "09:00")
+    budget_max_euros = body.get("budget_max_euros")
+
+    if not isinstance(lieu_ids, list):
+        raise HTTPException(400, "lieu_ids doit être une liste")
+
+    try:
+        lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Les identifiants de lieux doivent être numériques")
+
+    if not lieu_ids:
+        raise HTTPException(400, "Sélectionnez au moins un lieu")
+    if len(lieu_ids) > 30:
+        raise HTTPException(400, "Un parcours ne peut pas contenir plus de 30 étapes")
+    if mode not in {"driving-car", "foot-walking"}:
+        raise HTTPException(400, "Mode invalide")
+
+    try:
+        temps_visite_minutes = max(0, min(int(temps_visite_minutes), 240))
+    except (TypeError, ValueError):
+        temps_visite_minutes = 45
+    if temps_disponible_minutes not in (None, ""):
+        try:
+            temps_disponible_minutes = max(15, min(int(temps_disponible_minutes), 1440))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "temps_disponible_minutes invalide")
+    else:
+        temps_disponible_minutes = None
+    if not isinstance(categories_interet, list):
+        categories_interet = []
+    categories_interet = [str(x) for x in categories_interet]
+    if budget_level not in {"economique", "equilibre", "confort"}:
+        budget_level = "equilibre"
+
+    try:
+        limite = max(1, min(int(limite), 10))
+    except (TypeError, ValueError):
+        limite = 4
+
+    import re as _re
+    if not _re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", heure_depart):
+        heure_depart = "09:00"
+    if budget_max_euros not in (None, ""):
+        try: budget_max_euros = max(0, float(budget_max_euros))
+        except (TypeError, ValueError): budget_max_euros = None
+    else: budget_max_euros = None
+
+    placeholders = ",".join(["%s"] * len(lieu_ids))
+    lieux = await fetch_all(
+        f"""
+        SELECT id, nom, commune, departement, latitude, longitude
+        FROM lieux_tournage
+        WHERE id IN ({placeholders})
+        """,
+        tuple(lieu_ids),
+    )
+    par_id = {int(l["id"]): l for l in lieux}
+    if len(par_id) != len(lieu_ids):
+        manquants = [x for x in lieu_ids if x not in par_id]
+        raise HTTPException(404, f"Lieu(x) introuvable(s) : {manquants}")
+
+    # On conserve exactement l'ordre choisi dans l'interface, sauf si
+    # l'utilisateur demande explicitement une optimisation sous contrainte de temps.
+    etapes = [par_id[x] for x in lieu_ids]
+    etapes_originales = list(etapes)
+    etapes_exclues_optimisation = []
+    if optimiser:
+        etapes, etapes_exclues_optimisation = _optimiser_etapes_approx(
+            etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart
+        )
+        if not etapes:
+            raise HTTPException(400, "Aucune étape ne peut tenir dans les critères choisis.")
+
+    resultat_route = None
+    depart_effectif = None
+    if depart:
+        try:
+            depart_lat = float(depart.get("latitude"))
+            depart_lon = float(depart.get("longitude"))
+            if not (-90 <= depart_lat <= 90 and -180 <= depart_lon <= 180):
+                raise ValueError
+            depart_effectif = {"id": None, "nom": depart.get("nom") or "Point de départ", "latitude": depart_lat, "longitude": depart_lon}
+        except (TypeError, ValueError, AttributeError):
+            raise HTTPException(400, "Point de départ invalide")
+
+    if depart_effectif:
+        try:
+            resultat_route = await _itineraire_depuis_point(depart_effectif, etapes, mode, retour_depart)
+        except GeoplateformeError as exc:
+            raise HTTPException(502, f"Itinéraire IGN indisponible : {exc}") from exc
+    elif len(etapes) >= 2:
+        try:
+            resultat_route = await _itineraire_multi_etapes(etapes, mode)
+        except GeoplateformeError as exc:
+            raise HTTPException(502, f"Itinéraire IGN indisponible : {exc}") from exc
+
+    # Les catégories sont celles réellement présentes dans amenity_cache.
+    # Cela permet à V4 d'évoluer sans changer cet endpoint lorsque de
+    # nouvelles catégories sont importées.
+    rows = await fetch_all(
+        f"""
+        SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
+               distance_metres, adresse, telephone, email, site_web,
+               horaires, photo_url, tarif_min, tarif_max, devise,
+               equipements, capacite, note_etoiles, labels_qualite,
+               lien_accessibilite, langues_parlees, description,
+               moyens_paiement, note_tarif,
+               distance_pied_metres, duree_pied_secondes,
+               distance_voiture_metres, duree_voiture_secondes
+        FROM amenity_cache
+        WHERE lieu_tournage_id IN ({placeholders})
+        ORDER BY lieu_tournage_id, categorie, distance_metres ASC
+        """,
+        tuple(lieu_ids),
+    )
+
+    # Agrégation globale sans doublons. Un même établissement peut être
+    # proche de plusieurs étapes ; on le garde une seule fois dans la
+    # synthèse globale et on conserve ses étapes de proximité.
+    categories = {}
+    vus = {}
+    par_etape = {str(x): [] for x in lieu_ids}
+
+    for row in rows:
+        categorie = row["categorie"]
+        item = dict(row)
+        item["lieu_tournage_id"] = int(row["lieu_tournage_id"])
+        par_etape[str(item["lieu_tournage_id"])].append(item)
+
+        # Clé stable : osm_id n'est pas toujours disponible, donc on
+        # utilise catégorie + coordonnées + nom normalisé.
+        cle = (
+            categorie,
+            round(float(row["latitude"]), 5),
+            round(float(row["longitude"]), 5),
+            (row["nom"] or "").strip().lower(),
+        )
+        if cle not in vus:
+            vus[cle] = {
+                "item": item,
+                "proche_de": [item["lieu_tournage_id"]],
+                "meilleure_distance_metres": row["distance_metres"],
+            }
+        else:
+            vus[cle]["proche_de"].append(item["lieu_tournage_id"])
+            d = row["distance_metres"]
+            if d is not None and (
+                vus[cle]["meilleure_distance_metres"] is None
+                or d < vus[cle]["meilleure_distance_metres"]
+            ):
+                vus[cle]["meilleure_distance_metres"] = d
+
+    for valeur in vus.values():
+        item = dict(valeur["item"])
+        item["proche_de"] = valeur["proche_de"]
+        item["meilleure_distance_metres"] = valeur["meilleure_distance_metres"]
+        categories.setdefault(item["categorie"], []).append(item)
+
+    if categories_interet:
+        categories = {k: v for k, v in categories.items() if k in categories_interet}
+
+    recommandations_par_etape = {}
+    for categorie, items in categories.items():
+        for item in items:
+            item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite)
+        items.sort(key=lambda x: (x.get("score_personnalise", 0), -(x.get("meilleure_distance_metres") or 10**9)), reverse=True)
+        categories[categorie] = items[:limite]
+
+    # Recommandations individualisées : une proposition par étape et catégorie
+    # utile, sans inventer de lien de réservation.
+    for etape in etapes:
+        eid = int(etape["id"])
+        recommandations_par_etape[str(eid)] = []
+        for categorie, items in categories.items():
+            candidats = [x for x in par_etape.get(str(eid), []) if x.get("categorie") == categorie]
+            if not candidats:
+                continue
+            for item in candidats:
+                item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite)
+            meilleur = max(candidats, key=lambda x: x.get("score_personnalise", 0))
+            rec = dict(meilleur)
+            rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom") or "cette étape")
+            rec["action_url"] = rec.get("site_web") or None
+            rec["action_label"] = "Voir / réserver" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
+            recommandations_par_etape[str(eid)].append(rec)
+
+    # Réduire également le détail par étape afin de ne pas envoyer une
+    # réponse inutilement volumineuse au navigateur.
+    for cle, items in par_etape.items():
+        par_etape[cle] = items[:limite]
+
+    duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0
+    duree_visite = len(etapes) * temps_visite_minutes * 60
+    duree_totale_estimee = (duree_trajet or 0) + duree_visite
+    budget_respecte = None if temps_disponible_minutes is None else duree_totale_estimee <= temps_disponible_minutes * 60
+
+    # Planning horaire indicatif : il utilise les durées IGN des tronçons et
+    # le temps de visite choisi. Il s'agit d'un planning estimatif, pas d'une
+    # promesse d'horaires d'ouverture.
+    def _minutes_hhmm(hhmm):
+        h, m = [int(x) for x in hhmm.split(":")]
+        return h * 60 + m
+    def _hhmm(minutes):
+        minutes = int(minutes) % (24 * 60)
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
+    planning_horaire = []
+    minute_courante = _minutes_hhmm(heure_depart)
+    troncons = (resultat_route or {}).get("trajets") or []
+    for i, etape in enumerate(etapes):
+        trajet = troncons[i] if i < len(troncons) else None
+        if trajet and trajet.get("duree_secondes") is not None:
+            minute_courante += round(float(trajet["duree_secondes"]) / 60)
+        arrivee = _hhmm(minute_courante)
+        depart_visite = minute_courante
+        minute_courante += int(temps_visite_minutes)
+        planning_horaire.append({
+            "ordre": i + 1, "lieu_id": int(etape["id"]), "nom": etape.get("nom"),
+            "heure_arrivee": arrivee, "heure_fin_visite": _hhmm(minute_courante),
+            "temps_visite_minutes": int(temps_visite_minutes),
+        })
+
+    # Budget indicatif : uniquement les tarifs minimum renseignés par les
+    # sources. Pelify ne transforme jamais une absence de tarif en prix inventé.
+    budget_items = []
+    for categorie in ("restaurant", "activite", "hebergement"):
+        items = categories.get(categorie) or []
+        if items:
+            item = min(items, key=lambda x: float(x.get("tarif_min")) if x.get("tarif_min") is not None else 10**9)
+            if item.get("tarif_min") is not None:
+                try:
+                    budget_items.append({"categorie": categorie, "nom": item.get("nom"), "tarif_min": float(item.get("tarif_min")), "devise": item.get("devise") or "EUR"})
+                except (TypeError, ValueError): pass
+    budget_estime_euros = round(sum(x["tarif_min"] for x in budget_items), 2) if budget_items else None
+    budget_max_respecte = None if budget_max_euros is None or budget_estime_euros is None else budget_estime_euros <= budget_max_euros
+
+    reponse = {
+        "etapes": etapes,
+        "nb_etapes": len(etapes),
+        "mode": mode,
+        "depart": depart_effectif,
+        "retour_depart": retour_depart,
+        "temps_disponible_minutes": temps_disponible_minutes,
+        "temps_visite_minutes_par_etape": temps_visite_minutes,
+        "duree_visite_estimee_secondes": duree_visite,
+        "duree_totale_estimee_secondes": duree_totale_estimee,
+        "budget_respecte": budget_respecte,
+        "categories_interet": categories_interet,
+        "budget_level": budget_level,
+        "accessibilite": accessibilite,
+        "optimiser": optimiser,
+        "heure_depart": heure_depart,
+        "planning_horaire": planning_horaire,
+        "budget_max_euros": budget_max_euros,
+        "budget_estime_euros": budget_estime_euros,
+        "budget_items": budget_items,
+        "budget_max_respecte": budget_max_respecte,
+        "etapes_originales": etapes_originales,
+        "etapes_exclues_optimisation": etapes_exclues_optimisation,
+        "amenities": categories,
+        "amenities_par_etape": par_etape,
+        "recommandations_par_etape": recommandations_par_etape,
+        "labels_categories": _LABELS_CATEGORIE,
+        "icones_categories": ICONES_CATEGORIE,
+    }
+
+    if resultat_route:
+        reponse.update(resultat_route)
+
+    # Chaque calcul devient un parcours de l'historique du visiteur.
+    await _enregistrer_parcours_historique(request, response, body, reponse)
+    return reponse
+
+
+
+# ══════════════════════════════════════════════════════════════
+# V4.7 — HISTORIQUE, TABLEAU DE BORD ET GÉNÉRATEUR DE PARCOURS
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/api/me")
+async def api_me(request: Request, response: Response):
+    user = await _ensure_profile(request, response)
+    count = await fetch_one("SELECT COUNT(*) AS n FROM pelify_parcours_history WHERE user_id = %s", (user["id"],))
+    return {"profil_id": str(user["id"]), "historique_parcours": int(count["n"] or 0), "type": "profil_visiteur"}
+
+
+@app.get("/api/parcours/historique")
+async def api_historique(request: Request, response: Response, limite: int = Query(20, ge=1, le=100)):
+    user = await _ensure_profile(request, response)
+    rows = await fetch_all(
+        """SELECT id, titre, created_at, options_json, lieux_json, resultat_json,
+                  nb_etapes, distance_metres, duree_secondes, duree_totale_estimee_secondes, budget_level
+           FROM pelify_parcours_history WHERE user_id = %s ORDER BY created_at DESC LIMIT %s""",
+        (user["id"], limite),
+    )
+    return {"parcours": _json_safe(rows)}
+
+
+@app.get("/api/parcours/dashboard")
+async def api_dashboard(request: Request, response: Response):
+    user = await _ensure_profile(request, response)
+    resume = await fetch_one(
+        """SELECT COUNT(*) AS parcours,
+                  COALESCE(SUM(nb_etapes),0) AS etapes,
+                  COALESCE(SUM(distance_metres),0) AS distance_metres,
+                  COALESCE(SUM(duree_secondes),0) AS duree_secondes
+           FROM pelify_parcours_history WHERE user_id = %s""",
+        (user["id"],),
+    )
+    films = await fetch_all(
+        """SELECT x->>'film_titre' AS film, COUNT(*) AS occurrences
+           FROM pelify_parcours_history h, jsonb_array_elements(h.lieux_json) x
+           WHERE h.user_id = %s AND COALESCE(x->>'film_titre','') <> ''
+           GROUP BY x->>'film_titre' ORDER BY occurrences DESC, film LIMIT 10""",
+        (user["id"],),
+    )
+    communes = await fetch_all(
+        """SELECT x->>'commune' AS commune, COUNT(*) AS occurrences
+           FROM pelify_parcours_history h, jsonb_array_elements(h.lieux_json) x
+           WHERE h.user_id = %s AND COALESCE(x->>'commune','') <> ''
+           GROUP BY x->>'commune' ORDER BY occurrences DESC, commune LIMIT 10""",
+        (user["id"],),
+    )
+    modes = await fetch_all(
+        """SELECT options_json->>'mode' AS mode, COUNT(*) AS occurrences
+           FROM pelify_parcours_history WHERE user_id = %s GROUP BY options_json->>'mode'""",
+        (user["id"],),
+    )
+    budgets = await fetch_all(
+        """SELECT budget_level, COUNT(*) AS occurrences
+           FROM pelify_parcours_history WHERE user_id = %s GROUP BY budget_level""",
+        (user["id"],),
+    )
+    categories = await fetch_all(
+        """SELECT cat, COUNT(*) AS occurrences
+           FROM pelify_parcours_history h
+           CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(h.options_json->'categories_interet','[]'::jsonb)) cat
+           WHERE h.user_id = %s GROUP BY cat ORDER BY occurrences DESC LIMIT 10""",
+        (user["id"],),
+    )
+    recent = await fetch_all(
+        """SELECT id, titre, created_at, nb_etapes, distance_metres, duree_totale_estimee_secondes, budget_level
+           FROM pelify_parcours_history WHERE user_id = %s ORDER BY created_at DESC LIMIT 8""",
+        (user["id"],),
+    )
+    return {"resume": _json_safe(resume or {}), "films": _json_safe(films), "communes": _json_safe(communes), "modes": _json_safe(modes), "budgets": _json_safe(budgets), "categories": _json_safe(categories), "recent": _json_safe(recent)}
+
+
+@app.get("/api/parcours/historique/{parcours_id}")
+async def api_historique_detail(parcours_id: int, request: Request, response: Response):
+    user = await _ensure_profile(request, response)
+    row = await fetch_one("SELECT * FROM pelify_parcours_history WHERE id = %s AND user_id = %s", (parcours_id, user["id"]))
+    if not row:
+        raise HTTPException(404, "Parcours introuvable")
+    return _json_safe(row)
+
+
+@app.delete("/api/parcours/historique")
+async def api_historique_effacer(request: Request, response: Response):
+    user = await _ensure_profile(request, response)
+    await execute("DELETE FROM pelify_parcours_history WHERE user_id = %s", (user["id"],))
+    return {"ok": True}
+
+
+@app.delete("/api/parcours/historique/{parcours_id}")
+async def api_historique_supprimer(parcours_id: int, request: Request, response: Response):
+    user = await _ensure_profile(request, response)
+    result = await execute("DELETE FROM pelify_parcours_history WHERE id = %s AND user_id = %s", (parcours_id, user["id"]))
+    return {"ok": True}
+
+
+@app.post("/api/parcours/generer")
+async def api_generer_parcours(request: Request, response: Response):
+    """Génère un parcours à partir des lieux sélectionnés ou des lieux proches du départ.
+
+    La sélection initiale est géographique et légère ; le contrôle final du temps
+    et le trajet réel restent calculés par l'IGN via /api/parcours/enrichi.
+    """
+    body = await request.json()
+    lieu_ids = body.get("lieu_ids") or []
+    depart = body.get("depart")
+    mode = body.get("mode") or "driving-car"
+    temps = body.get("temps_disponible_minutes") or 240
+    visite = body.get("temps_visite_minutes") or 45
+    retour = bool(body.get("retour_depart", False))
+    max_etapes = max(2, min(int(body.get("max_etapes") or 8), 15))
+    if not lieu_ids:
+        if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
+            raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement un parcours.")
+        lat, lon = float(depart["latitude"]), float(depart["longitude"])
+        delta = 0.55 if mode == "driving-car" else 0.15
+        candidates = await fetch_all(
+            """SELECT id, nom, commune, departement, latitude, longitude FROM lieux_tournage
+               WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s""",
+            (lat-delta, lat+delta, lon-delta, lon+delta),
+        )
+        candidates.sort(key=lambda x: haversine_metres(lat, lon, float(x["latitude"]), float(x["longitude"])))
+        lieu_ids = [int(x["id"]) for x in candidates[:30]]
+    lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:30]
+    if not lieu_ids:
+        raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
+    # On limite la présélection par distance ; l'endpoint enrichi réalise ensuite
+    # la vérification fine et sauvegarde le parcours dans l'historique.
+    lieu_ids = lieu_ids[:max(2, max_etapes * 2)]
+    payload = {
+        "lieu_ids": lieu_ids,
+        "mode": mode,
+        "limite_par_categorie": 5,
+        "depart": depart,
+        "temps_disponible_minutes": temps,
+        "temps_visite_minutes": visite,
+        "retour_depart": retour,
+        "categories_interet": body.get("categories_interet") or ["restaurant", "activite", "hebergement"],
+        "budget_level": body.get("budget_level") or "equilibre",
+        "accessibilite": bool(body.get("accessibilite", False)),
+        "optimiser": True,
+    }
+    # Reproduit le calcul de l'endpoint enrichi sans boucle HTTP interne.
+    # Pour conserver une seule source de vérité, on fait le calcul via une
+    # fonction interne dédiée dans une future évolution ; ici on renvoie les
+    # candidats afin que le frontend déclenche /api/parcours/enrichi.
+    candidats_lieux = await fetch_all(
+        """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+           FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+           WHERE l.id = ANY(%s::int[]) ORDER BY array_position(%s::int[], l.id)""",
+        (lieu_ids, lieu_ids),
+    )
+    return {"candidats": lieu_ids, "candidats_lieux": _json_safe(candidats_lieux), "payload": payload}
 
 # ══════════════════════════════════════════════════════════════
 # PAGES RENDUES CÔTÉ SERVEUR (SEO)

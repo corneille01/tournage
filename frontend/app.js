@@ -244,17 +244,6 @@ function afficherMonParcoursPanel(){
   document.getElementById("btn-calculer-mon-parcours")?.addEventListener("click",calculerMonParcoursGlobal);
   document.getElementById("btn-generer-parcours-ideal")?.addEventListener("click",genererParcoursIdeal);
 }
-async function lireReponseJSONPelify(res){
-  const texte=await res.text();
-  let data=null;
-  try{ data=texte ? JSON.parse(texte) : {}; }catch(_){
-    const extrait=texte.replace(/\s+/g,' ').trim().slice(0,220);
-    throw new Error(res.ok ? 'Réponse serveur invalide.' : `Erreur serveur (${res.status})${extrait?` : ${extrait}`:''}`);
-  }
-  if(!res.ok) throw new Error(data?.detail||data?.message||`Erreur serveur (${res.status})`);
-  return data;
-}
-
 async function genererParcoursIdeal(){
   const box=document.getElementById("mp-generation-resultat"); if(!box)return;
   const o=state.monParcoursOptions;
@@ -268,19 +257,35 @@ async function genererParcoursIdeal(){
   }
   box.innerHTML='<small class="mon-parcours-loading">✨ Pelify recherche des possibilités adaptées à votre temps, votre budget et votre mode de déplacement…</small>';
   try{
-    const payload={lieu_ids:state.monParcours.map(x=>Number(x.id)),depart,mode:o.mode,temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,budget_level:o.budget,accessibilite:o.accessibilite,categories_interet:o.categories,max_etapes:8};
+    const payload={lieu_ids:state.monParcours.map(x=>Number(x.id)),depart,mode:o.mode,temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:o.accessibilite,categories_interet:o.categories,max_etapes:8};
     const r=await fetch(`${API_BASE}/api/parcours/generer`,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify(payload)});
-    const d=await lireReponseJSONPelify(r);
+    const d=await r.json(); if(!r.ok)throw new Error(d.detail||'Génération impossible');
     const candidats=Array.isArray(d.candidats_lieux)?d.candidats_lieux:[];
     if(!candidats.length){box.innerHTML='<small class="mon-parcours-note">Aucune possibilité n’a été trouvée autour de votre point de départ avec ces critères.</small>';return;}
     window._pelifyCandidatsGeneration=candidats;
+    window._pelifyScenariosGeneration=Array.isArray(d.scenarios)?d.scenarios:[];
     const deja=new Set(state.monParcours.map(x=>Number(x.id)));
-    box.innerHTML=`<section class="mp-possibilites"><h4>✨ Possibilités pour vous</h4><p class="mp-generation-note">Pelify a trouvé ${candidats.length} possibilités. Sélectionnez celles qui vous intéressent ; vous pourrez encore les retirer ensuite.</p>${candidats.map((x,i)=>`<label class="mp-possibilite"><input type="checkbox" class="mp-candidat-check" data-index="${i}" ${deja.has(Number(x.id))?'checked':''}><span><b>${escapeHtml(x.nom||'Lieu de tournage')}</b><small>${escapeHtml([x.commune,x.departement].filter(Boolean).join(', '))}${x.film_titre?` · 🎬 ${escapeHtml(x.film_titre)}`:''}</small></span></label>`).join('')}<button type="button" id="mp-ajouter-candidats" class="btn-generer-parcours-ideal">＋ Ajouter les possibilités sélectionnées</button></section>`;
+    const ajouterLieux=(liste)=>{
+      (liste||[]).forEach(x=>{
+        if(!x || !x.id || state.monParcours.some(l=>Number(l.id)===Number(x.id))) return;
+        state.monParcours.push({id:Number(x.id),nom:x.nom||'Lieu de tournage',commune:x.commune||'',departement:x.departement||'',latitude:Number(x.latitude),longitude:Number(x.longitude),film_id:x.film_id?Number(x.film_id):null,film_titre:x.film_titre||'',media_type:x.media_type||'',annee:x.annee||null,poster_url:x.poster_url||''});
+      });
+      normaliserMonParcours(); sauvegarderMonParcours(); afficherMonParcoursPanel();
+      const b=document.getElementById('mp-generation-resultat'); if(b)b.innerHTML='<small class="mon-parcours-note">✨ Sélection ajoutée. Vous pouvez encore modifier les étapes avant le calcul IGN.</small>';
+    };
+    const scenarioCards=(d.scenarios||[]).map((sc,i)=>{
+      const compat=sc.compatible_temps?'compatible':'depasse';
+      const films=(sc.films||[]).slice(0,4).map(f=>`<span class="mp-scenario-film">🎬 ${escapeHtml(f)}</span>`).join('');
+      const lieux=(sc.lieux||[]).map(x=>`<span class="mp-scenario-lieu">${escapeHtml(x.nom||'Lieu')}${x.commune?` · ${escapeHtml(x.commune)}`:''}</span>`).join('');
+      return `<article class="mp-scenario ${compat}"><div class="mp-scenario-head"><div><span class="mp-scenario-badge">Scénario ${i+1}</span><h5>${escapeHtml(sc.titre||'Parcours proposé')}</h5></div><strong>${sc.nb_etapes||0} lieux</strong></div><p class="mp-scenario-stats">📏 ${formatDistance(sc.distance_approx_metres||0)} · ⏱️ ${formatDuree((sc.temps_approx_minutes||0)*60)} · 📍 ${escapeHtml(String(sc.distance_depuis_depart_km??0))} km du départ</p><div class="mp-scenario-lieux">${lieux}</div><div class="mp-scenario-films">${films}</div><small>${escapeHtml(sc.note||'')}</small><button type="button" class="mp-scenario-choisir" data-scenario-index="${i}">✨ Choisir ce scénario</button></article>`;
+    }).join('');
+    const dejaTxt=deja.size?` ${deja.size} lieu${deja.size>1?'x':''} déjà dans votre parcours.`:'';
+    const candidatsHtml=candidats.map((x,i)=>`<label class="mp-possibilite"><input type="checkbox" class="mp-candidat-check" data-index="${i}" ${deja.has(Number(x.id))?'checked':''}><span><b>${escapeHtml(x.nom||'Lieu de tournage')}</b><small>${escapeHtml([x.commune,x.departement].filter(Boolean).join(', '))}${x.film_titre?` · 🎬 ${escapeHtml(x.film_titre)}`:''}</small></span></label>`).join('');
+    box.innerHTML=`<section class="mp-possibilites"><h4>✨ Scénarios compatibles avec vos critères</h4><p class="mp-generation-note">Pelify a trouvé ${candidats.length} lieux candidats.${dejaTxt} Les estimations ci-dessous sont indicatives ; le trajet réel sera recalculé par l'IGN après votre choix.</p><div class="mp-scenarios">${scenarioCards||'<p class="mon-parcours-note">Aucun scénario cohérent n’a pu être constitué avec ces critères.</p>'}</div><details class="mp-tous-candidats"><summary>Voir les ${candidats.length} lieux candidats</summary><div class="mp-candidats-liste">${candidatsHtml}</div><button type="button" id="mp-ajouter-candidats" class="btn-generer-parcours-ideal">＋ Ajouter les possibilités sélectionnées</button></details></section>`;
+    box.querySelectorAll('.mp-scenario-choisir').forEach(btn=>btn.addEventListener('click',()=>{const sc=window._pelifyScenariosGeneration?.[Number(btn.dataset.scenarioIndex)];if(sc)ajouterLieux(sc.lieux);}));
     document.getElementById('mp-ajouter-candidats')?.addEventListener('click',()=>{
       const indices=[...document.querySelectorAll('.mp-candidat-check:checked')].map(x=>Number(x.dataset.index));
-      indices.forEach(i=>{const x=window._pelifyCandidatsGeneration?.[i];if(!x)return;if(!state.monParcours.some(l=>Number(l.id)===Number(x.id)))state.monParcours.push({id:Number(x.id),nom:x.nom||'Lieu de tournage',commune:x.commune||'',departement:x.departement||'',latitude:Number(x.latitude),longitude:Number(x.longitude),film_id:x.film_id?Number(x.film_id):null,film_titre:x.film_titre||'',media_type:x.media_type||'',annee:x.annee||null,poster_url:x.poster_url||''});});
-      normaliserMonParcours();sauvegarderMonParcours();afficherMonParcoursPanel();
-      const b=document.getElementById('mp-generation-resultat');if(b)b.innerHTML='<small class="mon-parcours-note">✨ Les possibilités sélectionnées ont été ajoutées à votre parcours. Vous pouvez maintenant calculer votre journée cinéma.</small>';
+      ajouterLieux(indices.map(i=>window._pelifyCandidatsGeneration?.[i]).filter(Boolean));
     });
   }catch(e){box.innerHTML=`<small class="mon-parcours-erreur">${escapeHtml(e.message||'Génération impossible')}</small>`;}
 }
@@ -292,7 +297,7 @@ async function rechercherAdressePourParcours(){
   const input=document.getElementById('mp-adresse-input'), box=document.getElementById('mp-adresse-resultats'); if(!input||!box)return;
   const q=input.value.trim(); if(q.length<3){box.innerHTML='<small>Entrez au moins 3 caractères.</small>';return;}
   box.innerHTML='<small>Recherche de l’adresse…</small>';
-  try{const res=await fetch(`${API_BASE}/api/geocodage?q=${encodeURIComponent(q)}`);const data=await lireReponseJSONPelify(res);
+  try{const res=await fetch(`${API_BASE}/api/geocodage?q=${encodeURIComponent(q)}`);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Recherche impossible');
     box.innerHTML=(data.resultats||[]).map((x,i)=>`<button type="button" class="mp-adresse-resultat" data-index="${i}">${escapeHtml(x.label)}</button>`).join('')||'<small>Aucune adresse trouvée.</small>';
     box.querySelectorAll('.mp-adresse-resultat').forEach(b=>b.addEventListener('click',()=>{const x=data.resultats[Number(b.dataset.index)];state.monParcoursOptions.depart={nom:x.label,latitude:x.latitude,longitude:x.longitude};afficherMonParcoursPanel();}));
   }catch(e){box.innerHTML=`<small class="mon-parcours-erreur">${escapeHtml(e.message)}</small>`;}
@@ -320,8 +325,8 @@ async function calculerMonParcoursGlobal(){
   if(o.departType==='position'&&!o.depart){demanderPositionPourParcours();return;}
   if(o.departType==='adresse'&&!o.depart){r.innerHTML='<p class="mon-parcours-erreur">Choisissez une adresse de départ avant de calculer.</p>';return;}
   r.innerHTML=`<p class="mon-parcours-loading">Calcul du trajet IGN et des offres touristiques…</p>`;
-  try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,accessibilite:o.accessibilite,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",budget_max_euros:o.budgetMax||null};
-    const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await lireReponseJSONPelify(res);state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
+  try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:o.accessibilite,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",budget_max_euros:o.budgetMax||null};
+    const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();if(!res.ok)throw new Error(data.detail||"Impossible de calculer le parcours");state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
   }catch(e){console.error(e);r.innerHTML=`<p class="mon-parcours-erreur">${escapeHtml(e.message||"Erreur lors du calcul du parcours.")}</p>`;}
 }
 function _minutesDepuisMinuit(hhmm){const [h,m]=String(hhmm||'00:00').split(':').map(Number);return (h||0)*60+(m||0);}

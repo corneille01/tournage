@@ -2393,83 +2393,188 @@ async def api_historique_supprimer(parcours_id: int, request: Request, response:
     return {"ok": True}
 
 
+def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_minutes, max_scenarios=4, max_etapes=5):
+    """Construit des scénarios géographiques lisibles, sans prétendre optimiser l'itinéraire IGN.
+
+    Le but est de proposer des familles de lieux cohérentes avant le calcul IGN final.
+    On regroupe les candidats autour de plusieurs noyaux géographiques et on dédoublonne
+    les coordonnées quasi identiques (un même lieu peut être associé à plusieurs œuvres).
+    """
+    if not candidats:
+        return []
+    dlat = float(depart.get("latitude")); dlon = float(depart.get("longitude"))
+    mode = mode or "driving-car"
+    # Rayon de cohérence du scénario. Plus serré à pied.
+    rayon = 18000 if mode == "foot-walking" else 55000
+    temps_h = max(0.5, float(temps_minutes or 240) / 60.0)
+    # Le nombre de lieux qu'un scénario peut raisonnablement contenir avant IGN.
+    max_places_temps = max(2, min(max_etapes, int((temps_minutes or 240) / max(15, int(temps_visite_minutes or 45)))))
+    max_places_temps = min(max_places_temps, 6)
+
+    # Dédoublonnage géographique : un même point de tournage lié à plusieurs œuvres
+    # ne doit pas consommer deux étapes dans un scénario.
+    uniques = []
+    vus = set()
+    for x in candidats:
+        try:
+            lat, lon = float(x["latitude"]), float(x["longitude"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        cle = (round(lat, 4), round(lon, 4), (str(x.get("nom") or "").strip().lower()))
+        if cle in vus:
+            continue
+        vus.add(cle)
+        x = dict(x)
+        x["distance_depart_metres"] = int(haversine_metres(dlat, dlon, lat, lon))
+        uniques.append(x)
+
+    uniques.sort(key=lambda x: x["distance_depart_metres"])
+    # On garde un vivier raisonnable : assez large pour proposer plusieurs scénarios.
+    vivier = uniques[:40]
+    if not vivier:
+        return []
+
+    # Noyaux : le départ + les candidats espacés. Cela produit des scénarios
+    # géographiques différents plutôt qu'une simple liste triée par distance.
+    noyaux = []
+    for x in vivier:
+        if all(haversine_metres(float(x["latitude"]), float(x["longitude"]), float(n["latitude"]), float(n["longitude"])) > rayon * 0.55 for n in noyaux):
+            noyaux.append(x)
+            if len(noyaux) >= max_scenarios:
+                break
+    if not noyaux:
+        noyaux = [vivier[0]]
+
+    scenarios = []
+    for idx, noyau in enumerate(noyaux, 1):
+        proches = []
+        for x in vivier:
+            dist_noyau = haversine_metres(float(noyau["latitude"]), float(noyau["longitude"]), float(x["latitude"]), float(x["longitude"]))
+            if dist_noyau <= rayon:
+                proches.append((dist_noyau, x))
+        proches.sort(key=lambda t: (t[0], t[1].get("distance_depart_metres", 0)))
+        lieux = []
+        for _, x in proches:
+            if any(haversine_metres(float(x["latitude"]), float(x["longitude"]), float(y["latitude"]), float(y["longitude"])) < 80 for y in lieux):
+                continue
+            lieux.append(x)
+            if len(lieux) >= max_places_temps:
+                break
+        if not lieux:
+            continue
+        # Estimation prudente et explicite : visites + une approximation géographique.
+        distance_approx = 0.0
+        prev = (dlat, dlon)
+        for x in lieux:
+            distance_approx += haversine_metres(prev[0], prev[1], float(x["latitude"]), float(x["longitude"]))
+            prev = (float(x["latitude"]), float(x["longitude"]))
+        if retour := False:
+            distance_approx += haversine_metres(prev[0], prev[1], dlat, dlon)
+        # Coefficient de prudence : on ne présente jamais ceci comme le temps IGN réel.
+        vitesse_kmh = 35 if mode == "driving-car" else 4.2
+        deplacement_min = int((distance_approx / 1000) / vitesse_kmh * 60 * 1.25)
+        visite_min = len(lieux) * int(temps_visite_minutes or 45)
+        total_min = deplacement_min + visite_min
+        films = []
+        for x in lieux:
+            ft = x.get("film_titre")
+            if ft and ft not in films:
+                films.append(ft)
+        depart_km = round((haversine_metres(dlat, dlon, float(noyau["latitude"]), float(noyau["longitude"])) / 1000), 1)
+        scenarios.append({
+            "id": f"scenario-{idx}",
+            "titre": f"{noyau.get('commune') or noyau.get('nom') or 'Secteur'} & environs",
+            "lieux": _json_safe(lieux),
+            "lieu_ids": [int(x["id"]) for x in lieux],
+            "nb_etapes": len(lieux),
+            "films": films,
+            "distance_approx_metres": int(distance_approx),
+            "temps_approx_minutes": total_min,
+            "temps_deplacement_approx_minutes": deplacement_min,
+            "temps_visite_minutes": visite_min,
+            "distance_depuis_depart_metres": int(haversine_metres(dlat, dlon, float(noyau["latitude"]), float(noyau["longitude"]))),
+            "distance_depuis_depart_km": depart_km,
+            "compatible_temps": total_min <= int(temps_minutes or 240),
+            "note": "Estimation indicative avant calcul IGN ; le trajet réel sera recalculé après votre sélection.",
+        })
+    scenarios.sort(key=lambda s: (not s["compatible_temps"], s["temps_approx_minutes"], s["distance_depuis_depart_metres"]))
+    return scenarios[:max_scenarios]
+
+
 @app.post("/api/parcours/generer")
 async def api_generer_parcours(request: Request, response: Response):
-    """Génère un parcours à partir des lieux sélectionnés ou des lieux proches du départ.
+    """Génère des possibilités/scénarios à partir des critères utilisateur.
 
-    La sélection initiale est géographique et légère ; le contrôle final du temps
-    et le trajet réel restent calculés par l'IGN via /api/parcours/enrichi.
+    Cette étape ne remplace pas le calcul IGN : elle construit un vivier et des
+    scénarios géographiquement cohérents. Le calcul IGN final intervient après
+    sélection des lieux.
     """
     body = await request.json()
     lieu_ids = body.get("lieu_ids") or []
     depart = body.get("depart")
     mode = body.get("mode") or "driving-car"
-    temps = body.get("temps_disponible_minutes") or 240
-    visite = body.get("temps_visite_minutes") or 45
+    temps = int(body.get("temps_disponible_minutes") or 240)
+    visite = int(body.get("temps_visite_minutes") or 45)
     retour = bool(body.get("retour_depart", False))
     max_etapes = max(2, min(int(body.get("max_etapes") or 8), 15))
-    if not lieu_ids:
-        if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
-            raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement un parcours.")
+    if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
+        raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement des possibilités.")
+
+    # Avec des lieux déjà choisis, on construit les scénarios sur ce vivier.
+    # Sans lieux, on cherche autour du point de départ.
+    if lieu_ids:
+        lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:40]
+    else:
         lat, lon = float(depart["latitude"]), float(depart["longitude"])
-        delta = 0.55 if mode == "driving-car" else 0.15
+        delta = 0.20 if mode == "foot-walking" else 0.65
         candidates = await fetch_all(
-            """SELECT id, nom, commune, departement, latitude, longitude FROM lieux_tournage
-               WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s""",
+            """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre,
+                      f.media_type, f.annee, f.poster_url
+               FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+               WHERE l.latitude BETWEEN %s AND %s AND l.longitude BETWEEN %s AND %s
+                 AND l.latitude IS NOT NULL AND l.longitude IS NOT NULL""",
             (lat-delta, lat+delta, lon-delta, lon+delta),
         )
         candidates.sort(key=lambda x: haversine_metres(lat, lon, float(x["latitude"]), float(x["longitude"])))
-        # On garde un vivier assez large puis on applique l'heuristique temps
-        # + proximité. Le calcul IGN final sera déclenché par le navigateur.
         lieu_ids = [int(x["id"]) for x in candidates[:60]]
-    lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:30]
+
     if not lieu_ids:
         raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
-    # On prépare un vivier puis une sélection recommandée selon le temps.
-    lieu_ids = lieu_ids[:max(2, max_etapes * 4)]
-    payload = {
-        "lieu_ids": lieu_ids,
-        "mode": mode,
-        "limite_par_categorie": 5,
-        "depart": depart,
-        "temps_disponible_minutes": temps,
-        "temps_visite_minutes": visite,
-        "retour_depart": retour,
-        "categories_interet": body.get("categories_interet") or ["restaurant", "activite", "hebergement"],
-        "budget_level": body.get("budget_level") or "equilibre",
-        "accessibilite": bool(body.get("accessibilite", False)),
-        "optimiser": True,
-        "date_sortie": body.get("date_sortie"),
-    }
-    # Reproduit le calcul de l'endpoint enrichi sans boucle HTTP interne.
-    # Pour conserver une seule source de vérité, on fait le calcul via une
-    # fonction interne dédiée dans une future évolution ; ici on renvoie les
-    # candidats afin que le frontend déclenche /api/parcours/enrichi.
-    # asyncpg gère plus sûrement une liste de paramètres avec IN ($1,$2,...)
-    # qu'un tableau passé à ANY()/array_position() dans cette route.
-    placeholders = ",".join(["%s"] * len(lieu_ids))
+
+    # Requête IN paramétrée, compatible asyncpg/psycopg selon le driver utilisé.
+    placeholders = ",".join([f"%s"] * len(lieu_ids))
     candidats_lieux = await fetch_all(
         f"""SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
-                  l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
-           FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
-           WHERE l.id IN ({placeholders})""",
+                   l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+            FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
+            WHERE l.id IN ({placeholders})""",
         tuple(lieu_ids),
     )
     ordre = {int(v): i for i, v in enumerate(lieu_ids)}
-    candidats_lieux.sort(key=lambda x: ordre.get(int(x["id"]), 10**9))
-    candidats_selection, exclus_selection = _optimiser_etapes_approx(
-        candidats_lieux, depart, mode, temps, visite, retour
-    )
-    # L'interface affiche les possibilités du vivier ; la sélection recommandée
-    # est fournie séparément pour permettre à l'utilisateur de choisir.
-    selection_ids = [int(x["id"]) for x in candidats_selection]
+    candidats_lieux.sort(key=lambda x: ordre.get(int(x["id"]), 999999))
+    scenarios = _construire_scenarios(candidats_lieux, depart, mode, temps, visite, max_scenarios=4, max_etapes=min(6, max_etapes))
+    selection_recommandee = scenarios[0]["lieu_ids"] if scenarios else []
+    candidats_lieux_safe = _json_safe(candidats_lieux[:40])
     return {
         "candidats": lieu_ids,
-        "candidats_lieux": _json_safe(candidats_lieux[:20]),
-        "selection_recommandee": selection_ids,
-        "selection_recommandee_lieux": _json_safe(candidats_selection),
-        "exclus_selection": _json_safe(exclus_selection),
-        "payload": payload
+        "candidats_lieux": candidats_lieux_safe,
+        "scenarios": scenarios,
+        "selection_recommandee": selection_recommandee,
+        "selection_recommandee_lieux": _json_safe([x for x in candidats_lieux if int(x["id"]) in set(selection_recommandee)]),
+        "exclus_selection": [],
+        "payload": {
+            "mode": mode,
+            "temps_disponible_minutes": temps,
+            "temps_visite_minutes": visite,
+            "retour_depart": retour,
+            "categories_interet": body.get("categories_interet") or [],
+            "budget_level": body.get("budget_level") or "equilibre",
+            "budget_max_euros": body.get("budget_max_euros"),
+            "accessibilite": bool(body.get("accessibilite", False)),
+            "optimiser": bool(body.get("optimiser", True)),
+            "date_sortie": body.get("date_sortie"),
+            "heure_depart": body.get("heure_depart") or "09:00",
+        },
     }
 
 # ══════════════════════════════════════════════════════════════

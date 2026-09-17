@@ -2445,12 +2445,18 @@ async def api_generer_parcours(request: Request, response: Response):
     # Pour conserver une seule source de vérité, on fait le calcul via une
     # fonction interne dédiée dans une future évolution ; ici on renvoie les
     # candidats afin que le frontend déclenche /api/parcours/enrichi.
+    # asyncpg gère plus sûrement une liste de paramètres avec IN ($1,$2,...)
+    # qu'un tableau passé à ANY()/array_position() dans cette route.
+    placeholders = ",".join(["%s"] * len(lieu_ids))
     candidats_lieux = await fetch_all(
-        """SELECT id, nom, commune, departement, latitude, longitude, film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
+        f"""SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
+                  l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
            FROM lieux_tournage l LEFT JOIN films f ON f.id = l.film_id
-           WHERE l.id = ANY(%s::int[]) ORDER BY array_position(%s::int[], l.id)""",
-        (lieu_ids, lieu_ids),
+           WHERE l.id IN ({placeholders})""",
+        tuple(lieu_ids),
     )
+    ordre = {int(v): i for i, v in enumerate(lieu_ids)}
+    candidats_lieux.sort(key=lambda x: ordre.get(int(x["id"]), 10**9))
     candidats_selection, exclus_selection = _optimiser_etapes_approx(
         candidats_lieux, depart, mode, temps, visite, retour
     )

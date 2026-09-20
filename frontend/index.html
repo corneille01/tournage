@@ -69,8 +69,12 @@
             </button>
           </div>
 
-          <button id="btn-mon-parcours" class="btn-mon-parcours" type="button">🗺️ Mon parcours <span id="mon-parcours-compteur">0</span></button>
-          <a href="/dashboard.html" id="pelify-espace-link">👤 Mon espace <span id="pelify-historique-compteur">0</span></a>
+          <button id="btn-mon-parcours" class="btn-mon-parcours" type="button">
+            🗺️ Personnaliser ma visite <span id="mon-parcours-compteur">0</span>
+          </button>
+          <a href="/dashboard.html" id="pelify-espace-link"
+            >👤 Mon espace <span id="pelify-historique-compteur">0</span></a
+          >
 
           <a href="/analyse.html" id="stats-toggle"
             >📊
@@ -148,10 +152,26 @@
 
     <!-- ═══ MON PARCOURS V4.1 ═══ -->
     <section id="mon-parcours-overlay" class="hidden" aria-hidden="true">
-      <aside id="mon-parcours-panel" role="dialog" aria-modal="true" aria-labelledby="mon-parcours-titre">
+      <aside
+        id="mon-parcours-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mon-parcours-titre"
+      >
         <div class="mon-parcours-header">
-          <div><h2 id="mon-parcours-titre">🗺️ Mon parcours</h2><p>Construisez votre visite à partir des lieux que vous choisissez.</p></div>
-          <button id="btn-fermer-mon-parcours" type="button" aria-label="Fermer">✕</button>
+          <div>
+            <h2 id="mon-parcours-titre">🗺️ Mon parcours</h2>
+            <p>
+              Construisez votre visite à partir des lieux que vous choisissez.
+            </p>
+          </div>
+          <button
+            id="btn-fermer-mon-parcours"
+            type="button"
+            aria-label="Fermer"
+          >
+            ✕
+          </button>
         </div>
         <div id="mon-parcours-contenu"></div>
       </aside>
@@ -166,7 +186,13 @@
           <h2 id="popup-titre"></h2>
           <p id="popup-meta"></p>
           <p id="popup-adresse"></p>
-          <button id="btn-ajouter-parcours" class="btn-ajouter-parcours" type="button">＋ Ajouter à mon parcours</button>
+          <button
+            id="btn-ajouter-parcours"
+            class="btn-ajouter-parcours"
+            type="button"
+          >
+            ＋ Ajouter à mon parcours
+          </button>
 
           <div id="popup-navigation-directe" class="boutons-itineraire">
             <button

@@ -40,6 +40,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
+from paysages import router as paysages_router
 
 templates = Jinja2Templates(directory="templates")
 BASE_URL = "https://tournage.pelify.app"  # à remplacer par le vrai domaine en prod
@@ -185,6 +186,8 @@ app.add_middleware(
     allow_origins=["*"],  # à restreindre au domaine réel en prod
     allow_methods=["GET", "POST"],
 )
+
+app.include_router(paysages_router)
 
 @app.get("/api/analyse/indicateurs")
 async def api_analyse_indicateurs(

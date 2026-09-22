@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pelify — Landscape Studio</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/paysages.css" />
+  </head>
+  <body>
+    <main class="ls-app">
+      <header class="ls-top">
+        <div class="ls-title">
+          <h1>🎬 Landscape Studio</h1>
+          <p>Repérage et gestion de paysages pour vos projets audiovisuels.</p>
+        </div>
+        <a class="ls-back" href="/">← Retour à la carte</a>
+      </header>
+
+      <nav class="ls-tabs">
+        <button class="ls-tab active" data-tab="projets">📁 Mes projets</button>
+        <button class="ls-tab" data-tab="bibliotheque">
+          🖼️ Bibliothèque de paysages
+        </button>
+      </nav>
+
+      <!-- ═══════════ ONGLET PROJETS ═══════════ -->
+      <section id="tab-projets" class="ls-panel">
+        <div id="vue-liste-projets">
+          <div class="ls-section-head">
+            <h2>Vos projets</h2>
+            <button class="ls-btn ls-btn-accent" id="btn-nouveau-projet">
+              + Nouveau projet
+            </button>
+          </div>
+          <div id="form-nouveau-projet" class="ls-form hidden">
+            <input
+              type="text"
+              id="np-nom"
+              placeholder="Nom du projet"
+              maxlength="255"
+            />
+            <textarea
+              id="np-description"
+              placeholder="Description (optionnel)"
+              rows="2"
+            ></textarea>
+            <div class="ls-form-actions">
+              <button class="ls-btn ls-btn-accent" id="np-valider">
+                Créer
+              </button>
+              <button class="ls-btn" id="np-annuler">Annuler</button>
+            </div>
+          </div>
+          <div id="liste-projets" class="ls-grid">
+            <p class="ls-loading">Chargement…</p>
+          </div>
+        </div>
+
+        <div id="vue-projet-detail" class="hidden">
+          <button class="ls-back-inline" id="btn-retour-projets">
+            ← Tous les projets
+          </button>
+          <div id="projet-detail-head"></div>
+
+          <div class="ls-section-head">
+            <h3>Scènes</h3>
+            <button class="ls-btn ls-btn-accent" id="btn-nouvelle-scene">
+              + Nouvelle scène
+            </button>
+          </div>
+
+          <div id="form-nouvelle-scene" class="ls-form hidden">
+            <div class="ls-form-row">
+              <input
+                type="text"
+                id="sc-titre"
+                placeholder="Titre de la scène"
+              />
+              <input
+                type="number"
+                id="sc-numero"
+                placeholder="N°"
+                style="max-width: 80px"
+              />
+            </div>
+            <textarea
+              id="sc-description"
+              placeholder="Description"
+              rows="2"
+            ></textarea>
+            <div class="ls-form-row">
+              <input
+                type="text"
+                id="sc-ambiance"
+                placeholder="Ambiance (ex: crépusculaire, austère...)"
+              />
+              <input
+                type="text"
+                id="sc-environnement"
+                placeholder="Environnement (ex: montagne, urbain...)"
+              />
+            </div>
+            <div class="ls-form-row">
+              <input type="text" id="sc-epoque" placeholder="Époque" />
+              <input type="text" id="sc-region" placeholder="Région" />
+            </div>
+            <div class="ls-form-row">
+              <input
+                type="text"
+                id="sc-ville"
+                placeholder="Ville de référence"
+              />
+              <input
+                type="number"
+                id="sc-distance"
+                placeholder="Distance max (km)"
+              />
+            </div>
+            <textarea
+              id="sc-intention"
+              placeholder="Intention artistique"
+              rows="2"
+            ></textarea>
+            <select id="sc-format">
+              <option value="peu_importe">Format souhaité : peu importe</option>
+              <option value="photo">Photo</option>
+              <option value="panorama">Panorama</option>
+              <option value="360">360°</option>
+              <option value="video_360">Vidéo 360°</option>
+            </select>
+            <div class="ls-form-actions">
+              <button class="ls-btn ls-btn-accent" id="sc-valider">
+                Créer la scène
+              </button>
+              <button class="ls-btn" id="sc-annuler">Annuler</button>
+            </div>
+          </div>
+
+          <div id="liste-scenes" class="ls-grid"></div>
+        </div>
+
+        <div id="vue-scene-detail" class="hidden">
+          <button class="ls-back-inline" id="btn-retour-scenes">
+            ← Retour aux scènes
+          </button>
+          <div id="scene-detail-head"></div>
+
+          <h3>Paysages liés</h3>
+          <div id="liste-liens" class="ls-grid"></div>
+
+          <h3>Lier un paysage de la bibliothèque</h3>
+          <div class="ls-form-row">
+            <input
+              type="text"
+              id="lier-recherche"
+              placeholder="Rechercher un paysage (ambiance, type...)"
+            />
+            <button class="ls-btn" id="lier-rechercher-btn">Rechercher</button>
+          </div>
+          <div id="lier-resultats" class="ls-grid"></div>
+        </div>
+      </section>
+
+      <!-- ═══════════ ONGLET BIBLIOTHÈQUE ═══════════ -->
+      <section id="tab-bibliotheque" class="ls-panel hidden">
+        <div class="ls-subtabs">
+          <button class="ls-subtab active" data-subtab="recherche">
+            🔎 Rechercher
+          </button>
+          <button class="ls-subtab" data-subtab="carte">🗺️ Carte</button>
+          <button class="ls-subtab" data-subtab="openverse">
+            🌐 Importer depuis Openverse
+          </button>
+          <button class="ls-subtab" data-subtab="manuel">
+            + Ajouter un paysage
+          </button>
+        </div>
+
+        <div id="sub-recherche" class="ls-sub">
+          <div class="ls-filtres">
+            <input type="text" id="f-type" placeholder="Type" />
+            <input
+              type="text"
+              id="f-environnement"
+              placeholder="Environnement"
+            />
+            <input type="text" id="f-ambiance" placeholder="Ambiance" />
+            <input
+              type="text"
+              id="f-elements"
+              placeholder="Éléments (séparés par virgules)"
+            />
+            <select id="f-media-type">
+              <option value="">Tout média</option>
+              <option value="photo">Photo</option>
+              <option value="panorama">Panorama</option>
+              <option value="360">360°</option>
+              <option value="video_360">Vidéo 360°</option>
+              <option value="a_capturer">À capturer</option>
+            </select>
+            <select id="f-statut-droits">
+              <option value="">Tout statut de droits</option>
+              <option value="utilisable">Utilisable</option>
+              <option value="a_negocier">À négocier</option>
+              <option value="libre_licence">Libre de licence</option>
+              <option value="a_capturer">À capturer</option>
+              <option value="a_verifier">À vérifier</option>
+            </select>
+            <button class="ls-btn ls-btn-accent" id="btn-filtrer">
+              Filtrer
+            </button>
+          </div>
+          <div id="resultats-recherche" class="ls-grid"></div>
+        </div>
+
+        <div id="sub-carte" class="ls-sub hidden">
+          <div
+            id="carte-paysages"
+            style="height: 520px; border-radius: 12px"
+          ></div>
+        </div>
+
+        <div id="sub-openverse" class="ls-sub hidden">
+          <div class="ls-form-row">
+            <input
+              type="text"
+              id="ov-q"
+              placeholder="Rechercher une image (ex: forêt brumeuse)"
+            />
+            <button class="ls-btn ls-btn-accent" id="ov-rechercher">
+              Rechercher
+            </button>
+          </div>
+          <div id="ov-resultats" class="ls-grid"></div>
+        </div>
+
+        <div id="sub-manuel" class="ls-sub hidden">
+          <div class="ls-form">
+            <input
+              type="text"
+              id="m-nom"
+              placeholder="Nom du paysage"
+              maxlength="255"
+            />
+            <textarea
+              id="m-description"
+              placeholder="Description"
+              rows="2"
+            ></textarea>
+            <div class="ls-form-row">
+              <input type="text" id="m-type" placeholder="Type" />
+              <input
+                type="text"
+                id="m-environnement"
+                placeholder="Environnement"
+              />
+            </div>
+            <div class="ls-form-row">
+              <input type="text" id="m-ambiance" placeholder="Ambiance" />
+              <input
+                type="text"
+                id="m-elements"
+                placeholder="Éléments (séparés par virgules)"
+              />
+            </div>
+            <div class="ls-form-row">
+              <input
+                type="number"
+                step="any"
+                id="m-lat"
+                placeholder="Latitude"
+              />
+              <input
+                type="number"
+                step="any"
+                id="m-lon"
+                placeholder="Longitude"
+              />
+            </div>
+            <input type="text" id="m-image-url" placeholder="URL de l'image" />
+            <input
+              type="text"
+              id="m-thumbnail-url"
+              placeholder="URL de la vignette (optionnel)"
+            />
+            <div class="ls-form-row">
+              <input type="text" id="m-auteur" placeholder="Auteur" />
+              <input type="text" id="m-licence" placeholder="Licence" />
+            </div>
+            <div class="ls-form-row">
+              <select id="m-media-type">
+                <option value="photo">Photo</option>
+                <option value="panorama">Panorama</option>
+                <option value="360">360°</option>
+                <option value="video_360">Vidéo 360°</option>
+                <option value="a_capturer">À capturer</option>
+              </select>
+              <select id="m-type-reference">
+                <option value="personnelle">Référence personnelle</option>
+                <option value="artiste">Œuvre d'artiste</option>
+                <option value="open_source" selected>Open source</option>
+                <option value="panorama_360">Panorama 360</option>
+              </select>
+            </div>
+            <div class="ls-form-actions">
+              <button class="ls-btn ls-btn-accent" id="m-valider">
+                Ajouter le paysage
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/vendor/leaflet/leaflet.js"></script>
+    <script src="/paysages.js"></script>
+  </body>
+</html>

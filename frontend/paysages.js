@@ -15,7 +15,20 @@ async function api(path, options = {}) {
   });
   let data = null;
   try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error((data && data.detail) || `Erreur ${res.status}`);
+  if (!res.ok) {
+    // data.detail est une simple chaîne pour une HTTPException classique,
+    // mais FastAPI renvoie une LISTE d'objets {loc, msg, type} pour une
+    // erreur de validation (ex. un id qui ne correspond pas au type
+    // attendu par la route) — sans ce cas, ça affichait "[object Object]".
+    let message = `Erreur ${res.status}`;
+    if (data && typeof data.detail === "string") message = data.detail;
+    else if (data && Array.isArray(data.detail)) {
+      message = data.detail.map(d => d.msg || JSON.stringify(d)).join(" · ");
+    } else if (data && data.detail) {
+      message = JSON.stringify(data.detail);
+    }
+    throw new Error(message);
+  }
   return data;
 }
 

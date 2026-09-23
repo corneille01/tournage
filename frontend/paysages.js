@@ -92,11 +92,18 @@ function afficherVueListeProjets() {
   chargerProjets();
 }
 
+let _projetsRequeteId = 0;
 async function chargerProjets() {
   const el = $("liste-projets");
+  const requeteId = ++_projetsRequeteId; // incrémenté à CHAQUE appel, y compris ceux lancés sans attendre
   el.innerHTML = `<p class="ls-loading">Chargement…</p>`;
   try {
     const projets = await api("/api/paysages/projets");
+    // Si un appel plus récent (ex. déclenché entre-temps par une autre
+    // suppression) a déjà démarré, sa réponse a le dernier mot — on
+    // abandonne ici pour ne jamais écraser un état plus frais avec une
+    // réponse arrivée en désordre.
+    if (requeteId !== _projetsRequeteId) return;
     if (!projets.length) { el.innerHTML = `<p class="ls-empty">Aucun projet pour l'instant. Créez-en un pour commencer.</p>`; return; }
     el.innerHTML = projets.map(p => `
       <div class="ls-card" data-id="${p.id}">
@@ -132,6 +139,7 @@ async function chargerProjets() {
       });
     });
   } catch (e) {
+    if (requeteId !== _projetsRequeteId) return;
     el.innerHTML = `<p class="ls-empty">Impossible de charger vos projets : ${esc(e.message)}</p>`;
   }
 }
@@ -503,6 +511,11 @@ $("ov-rechercher").addEventListener("click", async () => {
 
 async function ouvrirImportOpenverse(r) {
   if (!r) return;
+  // btn peut être absent si ouvrirImportOpenverse est appelée autrement
+  // qu'au clic (pas le cas ici, mais on reste défensif).
+  const carte = $("ov-resultats").querySelector(`.ls-card[data-id="${CSS.escape(String(r.id_openverse))}"]`);
+  const btn = carte ? carte.querySelector("[data-importer]") : null;
+  if (btn) { btn.disabled = true; btn.textContent = "Import…"; }
   try {
     const cree = await api("/api/paysages/depuis-openverse", {
       method: "POST",
@@ -521,15 +534,31 @@ async function ouvrirImportOpenverse(r) {
         media_type: "photo",
       }),
     });
-    // Import minimal réussi (pas de géoloc/critères — Openverse ne les
-    // fournit pas) : on rouvre immédiatement la fiche complète pour que
-    // ce soit fait tout de suite, plutôt que de renvoyer vers une
-    // bibliothèque où rien ne permettait jusqu'ici de la retrouver.
+    // BUG corrigé : l'ancien code rafraîchissait uniquement la liste de
+    // l'onglet "Rechercher" (#resultats-recherche), qui est masquée tant
+    // qu'on est sur le sous-onglet "Importer depuis Openverse" — la carte
+    // sous les yeux de l'utilisateur (#ov-resultats) n'était donc jamais
+    // touchée et rien ne semblait se passer avant un rechargement complet
+    // de la page (qui, lui, repart avec une liste "Rechercher" vide de
+    // filtres et donc à jour). On marque maintenant la carte elle-même
+    // comme importée, immédiatement, en plus du rafraîchissement en fond
+    // de la bibliothèque pour quand l'utilisateur y retournera.
+    if (btn) {
+      btn.textContent = "✅ Importé";
+      btn.classList.remove("ls-btn-accent");
+    } else if (carte) {
+      carte.querySelector(".ls-card-body")?.insertAdjacentHTML(
+        "beforeend", `<span class="ls-badge ok">✅ Importé</span>`,
+      );
+    }
     toast("Paysage importé depuis Openverse — complétez sa fiche.");
     lancerRechercheBibliotheque();
     const paysage = await api(`/api/paysages/${cree.id}`);
     ouvrirModalPaysage(paysage);
-  } catch (e) { toast("Erreur : " + e.message, "error"); }
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "Importer"; }
+    toast("Erreur : " + e.message, "error");
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

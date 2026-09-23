@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pelify — Demande de droits</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/paysages.css">
+</head>
+<body>
+<main class="ls-app">
+  <header class="ls-top">
+    <div class="ls-title">
+      <h1>🔐 Pelify — Demande de droits</h1>
+      <p>Échange sécurisé entre un porteur de projet et un photographe.</p>
+    </div>
+    <a class="ls-back" href="/paysages.html">← Retour à Landscape Studio</a>
+  </header>
+
+  <section class="ls-panel">
+    <div id="droits-page">
+      <p class="ls-loading">Chargement…</p>
+    </div>
+  </section>
+</main>
+
+<script>
+const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const root = document.getElementById("droits-page");
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    credentials: "include",
+    headers: options.body ? {"Content-Type":"application/json"} : {},
+    ...options
+  });
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (!res.ok) throw new Error(data?.detail || `Erreur ${res.status}`);
+  return data;
+}
+
+function messageHtml(m) {
+  const auteur = m.expediteur_type === "photographe"
+    ? (m.expediteur_nom || "Photographe")
+    : "Pelify";
+  return `
+    <article class="ls-card">
+      <div class="ls-card-body">
+        <b>${esc(auteur)}</b>
+        <small>${m.created_at ? new Date(m.created_at).toLocaleString("fr-FR") : ""}</small>
+        <p>${esc(m.contenu)}</p>
+        ${m.reponse_type && m.reponse_type !== "message" ? `<span class="ls-badge">${esc(m.reponse_type)}</span>` : ""}
+      </div>
+    </article>`;
+}
+
+function afficherConversation(data, mode) {
+  const d = data.demande;
+  root.innerHTML = `
+    <div class="ls-detail-head">
+      <h2>${esc(d.objet || "Demande de droits")}</h2>
+      <p><strong>Paysage :</strong> ${esc(d.paysage_nom || "")}</p>
+      ${d.projet_nom ? `<p><strong>Projet :</strong> ${esc(d.projet_nom)}</p>` : ""}
+      ${d.scene_titre ? `<p><strong>Scène :</strong> ${esc(d.scene_titre)}</p>` : ""}
+      <p><strong>Statut :</strong> ${esc(d.statut || "")}</p>
+      ${d.image_url ? `<img src="${esc(d.image_url)}" alt="${esc(d.paysage_nom || "")}" style="max-width:100%;max-height:360px;border-radius:12px;margin-top:12px">` : ""}
+    </div>
+
+    <h3>Conversation</h3>
+    <div class="ls-grid">${(data.messages || []).map(messageHtml).join("") || '<p class="ls-empty">Aucun message.</p>'}</div>
+
+    ${mode === "photographe" ? `
+      <div class="ls-form" style="max-width:none">
+        <h3>Votre réponse</h3>
+        <textarea id="rep-contenu" rows="7" placeholder="Écrivez votre réponse…"></textarea>
+        <div class="ls-form-row">
+          <button class="ls-btn ls-btn-accent" data-type="acceptee">✓ J'accepte</button>
+          <button class="ls-btn" data-type="a_discuter">💬 Je souhaite discuter</button>
+          <button class="ls-btn" data-type="refusee">✕ Je refuse</button>
+        </div>
+        <button class="ls-btn" data-type="message">Envoyer un message</button>
+        <p class="ls-modal-note">Votre réponse sera transmise au demandeur. Elle ne constitue pas, à elle seule, une validation juridique automatique dans Pelify.</p>
+      </div>
+    ` : `
+      <p class="ls-modal-note">Cette conversation est rattachée à votre profil Pelify. Si vous avez renseigné votre email, vous recevrez une notification lorsqu'une réponse est envoyée.</p>
+    `}
+  `;
+
+  root.querySelectorAll("[data-type]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const contenu = document.getElementById("rep-contenu")?.value.trim();
+      if (!contenu) return alert("Écrivez votre réponse avant de l'envoyer.");
+      btn.disabled = true;
+      try {
+        await api(`/api/droits/public/${encodeURIComponent(window.token)}/messages`, {
+          method:"POST",
+          body:JSON.stringify({contenu, reponse_type:btn.dataset.type})
+        });
+        await chargerPhotographe();
+      } catch(e) {
+        btn.disabled = false;
+        alert("Erreur : " + e.message);
+      }
+    });
+  });
+}
+
+async function chargerPhotographe() {
+  try {
+    const data = await api(`/api/droits/public/${encodeURIComponent(window.token)}`);
+    afficherConversation(data, "photographe");
+  } catch(e) {
+    root.innerHTML = `<p class="ls-empty">${esc(e.message)}</p>`;
+  }
+}
+
+async function chargerDemandeur(id) {
+  try {
+    const data = await api(`/api/droits/${encodeURIComponent(id)}`);
+    afficherConversation(data, "demandeur");
+  } catch(e) {
+    root.innerHTML = `<p class="ls-empty">${esc(e.message)}</p>`;
+  }
+}
+
+(async () => {
+  const params = new URLSearchParams(location.search);
+  window.token = params.get("token");
+
+  if (window.token) {
+    await chargerPhotographe();
+    return;
+  }
+
+  const id = params.get("demande");
+  if (id) {
+    await chargerDemandeur(id);
+    return;
+  }
+
+  root.innerHTML = '<p class="ls-empty">Aucune demande à afficher.</p>';
+})();
+</script>
+</body>
+</html>

@@ -746,3 +746,104 @@ $("m-valider").addEventListener("click", async () => {
 // Démarrage
 // ─────────────────────────────────────────────────────────────
 chargerProjets();
+
+// ─────────────────────────────────────────────────────────────
+// DROITS — création d'une demande depuis un paysage
+// ─────────────────────────────────────────────────────────────
+async function ouvrirDemandeDroits(paysageId) {
+  let p;
+  try {
+    p = await api(`/api/paysages/${paysageId}`);
+  } catch (e) {
+    return alert("Impossible de charger le paysage : " + e.message);
+  }
+
+  const auteur = p.auteur || "";
+  const objet = `Demande d'autorisation d'utilisation — ${p.nom || "paysage"}`;
+  const message = `Bonjour,
+
+Je vous contacte via Pelify Landscape au sujet de votre photographie « ${p.nom || "ce paysage"} ».
+
+Nous souhaiterions étudier la possibilité de l'utiliser comme référence / décor pour un projet audiovisuel.
+
+Pourriez-vous nous indiquer si vous autorisez cet usage, notamment dans un contexte professionnel et commercial, et sous quelles conditions (crédit, rémunération, durée, territoire, supports) ?
+
+Merci par avance pour votre retour.
+
+Cordialement,
+L'équipe du projet via Pelify`;
+
+  ouvrirModal(`
+    <h3>🔐 Demander les droits</h3>
+    <p class="ls-modal-note">Cette demande sera enregistrée dans Pelify et un lien sécurisé permettra au photographe de répondre sans créer de compte.</p>
+    <div class="ls-form" style="max-width:none;border:none;padding:0;margin:0">
+      <input type="text" id="dd-nom" placeholder="Nom du photographe" value="${esc(auteur)}">
+      <input type="email" id="dd-email" placeholder="Email du photographe *" autocomplete="email">
+      <input type="email" id="dd-demandeur-email" placeholder="Votre email (pour recevoir la réponse)" autocomplete="email">
+      <input type="text" id="dd-objet" placeholder="Objet" value="${esc(objet)}">
+      <textarea id="dd-message" rows="10" placeholder="Votre message">${esc(message)}</textarea>
+      <div class="ls-form-actions">
+        <button class="ls-btn ls-btn-accent" id="dd-envoyer">Envoyer la demande</button>
+        <button class="ls-btn" id="dd-annuler">Annuler</button>
+      </div>
+      <p class="ls-modal-note">Pelify ne confirme pas automatiquement les droits : la réponse du photographe reste une étape distincte de la validation des droits.</p>
+    </div>
+  `);
+
+  $("dd-annuler").addEventListener("click", fermerModal);
+  $("dd-envoyer").addEventListener("click", async () => {
+    const email = $("dd-email").value.trim();
+    const demandeurEmail = $("dd-demandeur-email").value.trim();
+    const objetValue = $("dd-objet").value.trim();
+    const messageValue = $("dd-message").value.trim();
+
+    if (!email || !objetValue || messageValue.length < 10) {
+      return alert("Renseignez l'email du photographe, l'objet et un message suffisamment précis.");
+    }
+
+    const btn = $("dd-envoyer");
+    btn.disabled = true;
+    btn.textContent = "Envoi…";
+
+    try {
+      const demande = await api("/api/droits", {
+        method: "POST",
+        body: JSON.stringify({
+          paysage_id: Number(paysageId),
+          projet_id: typeof projetCourantId !== "undefined" ? projetCourantId : null,
+          scene_id: typeof sceneCouranteId !== "undefined" ? sceneCouranteId : null,
+          destinataire_nom: $("dd-nom").value.trim() || null,
+          destinataire_email: email,
+          demandeur_email: demandeurEmail || null,
+          objet: objetValue,
+          message: messageValue,
+        }),
+      });
+
+      fermerModal();
+
+      const detail = demande.email_statut === "envoye"
+        ? "L'email a été envoyé."
+        : demande.email_statut === "non_configure"
+          ? "La demande est enregistrée, mais l'email automatique n'est pas encore configuré sur le serveur."
+          : "La demande est enregistrée et l'envoi de l'email est en cours.";
+
+      alert(`Demande #${demande.id} enregistrée. ${detail}`);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = "Envoyer la demande";
+      alert("Erreur : " + e.message);
+    }
+  });
+}
+
+// Les cartes de la bibliothèque sont générées dynamiquement :
+// on utilise la délégation d'événement pour ne pas perdre les boutons
+// après chaque recherche ou filtre.
+document.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-demander-droits]");
+  if (!btn) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  ouvrirDemandeDroits(btn.dataset.demanderDroits);
+});

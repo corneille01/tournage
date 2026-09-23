@@ -7,28 +7,6 @@ const API_BASE = "";
 const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const $ = id => document.getElementById(id);
 
-// ─────────────────────────────────────────────────────────────
-// Notifications (succès / erreur) — remplace les alert() muets
-// ─────────────────────────────────────────────────────────────
-function toast(message, type = "ok") {
-  let hote = $("ls-toasts");
-  if (!hote) {
-    hote = document.createElement("div");
-    hote.id = "ls-toasts";
-    hote.className = "ls-toasts";
-    document.body.appendChild(hote);
-  }
-  const el = document.createElement("div");
-  el.className = `ls-toast ls-toast-${type}`;
-  el.textContent = message;
-  hote.appendChild(el);
-  requestAnimationFrame(() => el.classList.add("show"));
-  setTimeout(() => {
-    el.classList.remove("show");
-    setTimeout(() => el.remove(), 300);
-  }, 3500);
-}
-
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -37,20 +15,7 @@ async function api(path, options = {}) {
   });
   let data = null;
   try { data = await res.json(); } catch {}
-  if (!res.ok) {
-    // data.detail est une simple chaîne pour une HTTPException classique,
-    // mais FastAPI renvoie une LISTE d'objets {loc, msg, type} pour une
-    // erreur de validation (ex. un id qui ne correspond pas au type
-    // attendu par la route) — sans ce cas, ça affichait "[object Object]".
-    let message = `Erreur ${res.status}`;
-    if (data && typeof data.detail === "string") message = data.detail;
-    else if (data && Array.isArray(data.detail)) {
-      message = data.detail.map(d => d.msg || JSON.stringify(d)).join(" · ");
-    } else if (data && data.detail) {
-      message = JSON.stringify(data.detail);
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error((data && data.detail) || `Erreur ${res.status}`);
   return data;
 }
 
@@ -68,7 +33,7 @@ document.querySelectorAll(".ls-tab").forEach(btn => {
     btn.classList.add("active");
     document.querySelectorAll(".ls-panel").forEach(p => p.classList.add("hidden"));
     $(`tab-${btn.dataset.tab}`).classList.remove("hidden");
-    if (btn.dataset.tab === "bibliotheque") lancerRechercheBibliotheque();
+    if (btn.dataset.tab === "bibliotheque") chargerRechercheBibliotheque();
   });
 });
 
@@ -83,6 +48,86 @@ document.querySelectorAll(".ls-subtab").forEach(btn => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// MODALE — édition d'un paysage existant (PATCH /api/paysages/{id})
+// ─────────────────────────────────────────────────────────────
+function fermerModal() {
+  const m = $("ls-modal");
+  if (m) m.remove();
+}
+
+function ouvrirModal(html) {
+  fermerModal();
+  const overlay = document.createElement("div");
+  overlay.id = "ls-modal";
+  overlay.className = "ls-modal-overlay";
+  overlay.innerHTML = `<div class="ls-modal">${html}</div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) fermerModal(); });
+  return overlay;
+}
+
+async function ouvrirEditionPaysage(paysageId, onSauvegarde) {
+  let p;
+  try {
+    p = await api(`/api/paysages/${paysageId}`);
+  } catch (e) { return alert("Erreur : " + e.message); }
+
+  ouvrirModal(`
+    <h3>✏️ Modifier « ${esc(p.nom)} »</h3>
+    <div class="ls-form" style="max-width:none;border:none;padding:0;margin:0">
+      <input type="text" id="e-nom" placeholder="Nom" value="${esc(p.nom || "")}">
+      <div class="ls-form-row">
+        <input type="text" id="e-type" placeholder="Type" value="${esc(p.type || "")}">
+        <input type="text" id="e-environnement" placeholder="Environnement" value="${esc(p.environnement || "")}">
+      </div>
+      <div class="ls-form-row">
+        <input type="text" id="e-ambiance" placeholder="Ambiance" value="${esc(p.ambiance || "")}">
+        <input type="text" id="e-elements" placeholder="Éléments (virgules)" value="${esc((p.elements || []).join(", "))}">
+      </div>
+      <div class="ls-form-row">
+        <input type="number" step="any" id="e-lat" placeholder="Latitude" value="${p.latitude ?? ""}">
+        <input type="number" step="any" id="e-lon" placeholder="Longitude" value="${p.longitude ?? ""}">
+      </div>
+      <div class="ls-form-row">
+        <select id="e-media-type">
+          ${Object.entries(MEDIA_LABELS).map(([v, l]) => `<option value="${v}" ${v === p.media_type ? "selected" : ""}>${l}</option>`).join("")}
+        </select>
+        <select id="e-statut-droits">
+          ${Object.entries(DROITS_LABELS).map(([v, l]) => `<option value="${v}" ${v === p.statut_droits ? "selected" : ""}>${l}</option>`).join("")}
+        </select>
+      </div>
+      <p class="ls-modal-note">Sans latitude/longitude, ce paysage n'apparaît pas sur la carte.</p>
+      <div class="ls-form-actions">
+        <button class="ls-btn ls-btn-accent" id="e-valider">Enregistrer</button>
+        <button class="ls-btn" id="e-annuler">Annuler</button>
+      </div>
+    </div>
+  `);
+
+  $("e-annuler").addEventListener("click", fermerModal);
+  $("e-valider").addEventListener("click", async () => {
+    const nom = $("e-nom").value.trim();
+    if (!nom) return alert("Le nom est requis.");
+    const payload = {
+      nom,
+      type: $("e-type").value.trim() || null,
+      environnement: $("e-environnement").value.trim() || null,
+      ambiance: $("e-ambiance").value.trim() || null,
+      elements: $("e-elements").value.trim().split(",").map(s => s.trim()).filter(Boolean),
+      latitude: $("e-lat").value ? Number($("e-lat").value) : null,
+      longitude: $("e-lon").value ? Number($("e-lon").value) : null,
+      media_type: $("e-media-type").value,
+      statut_droits: $("e-statut-droits").value,
+    };
+    try {
+      await api(`/api/paysages/${paysageId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      fermerModal();
+      if (onSauvegarde) onSauvegarde();
+    } catch (e) { alert("Erreur : " + e.message); }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
 // PROJETS — liste
 // ─────────────────────────────────────────────────────────────
 function afficherVueListeProjets() {
@@ -92,18 +137,11 @@ function afficherVueListeProjets() {
   chargerProjets();
 }
 
-let _projetsRequeteId = 0;
 async function chargerProjets() {
   const el = $("liste-projets");
-  const requeteId = ++_projetsRequeteId; // incrémenté à CHAQUE appel, y compris ceux lancés sans attendre
   el.innerHTML = `<p class="ls-loading">Chargement…</p>`;
   try {
     const projets = await api("/api/paysages/projets");
-    // Si un appel plus récent (ex. déclenché entre-temps par une autre
-    // suppression) a déjà démarré, sa réponse a le dernier mot — on
-    // abandonne ici pour ne jamais écraser un état plus frais avec une
-    // réponse arrivée en désordre.
-    if (requeteId !== _projetsRequeteId) return;
     if (!projets.length) { el.innerHTML = `<p class="ls-empty">Aucun projet pour l'instant. Créez-en un pour commencer.</p>`; return; }
     el.innerHTML = projets.map(p => `
       <div class="ls-card" data-id="${p.id}">
@@ -112,34 +150,10 @@ async function chargerProjets() {
           <b>${esc(p.nom)}</b>
           <span>${esc(p.description || "Pas de description")}</span>
           <span>${new Date(p.created_at).toLocaleDateString("fr-FR")}</span>
-          <button class="ls-btn ls-btn-danger" data-supprimer="${p.id}">🗑️ Supprimer</button>
         </div>
       </div>`).join("");
-    el.querySelectorAll(".ls-card").forEach(c => {
-      c.addEventListener("click", e => {
-        if (e.target.closest("[data-supprimer]")) return;
-        ouvrirProjet(c.dataset.id);
-      });
-    });
-    el.querySelectorAll("[data-supprimer]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("Supprimer ce projet et toutes ses scènes ? Les paysages de la bibliothèque ne sont pas touchés.")) return;
-        const carte = btn.closest(".ls-card");
-        btn.disabled = true;
-        try {
-          await api(`/api/paysages/projets/${btn.dataset.supprimer}`, { method: "DELETE" });
-          if (carte) carte.remove(); // retrait immédiat, sans attendre le rechargement
-          if (!el.querySelector(".ls-card")) el.innerHTML = `<p class="ls-empty">Aucun projet pour l'instant. Créez-en un pour commencer.</p>`;
-          toast("Projet supprimé.");
-          chargerProjets(); // resynchronise avec le serveur (ex. si un autre onglet a aussi modifié la liste)
-        } catch (e) {
-          btn.disabled = false;
-          toast("Erreur : " + e.message, "error");
-        }
-      });
-    });
+    el.querySelectorAll(".ls-card").forEach(c => c.addEventListener("click", () => ouvrirProjet(c.dataset.id)));
   } catch (e) {
-    if (requeteId !== _projetsRequeteId) return;
     el.innerHTML = `<p class="ls-empty">Impossible de charger vos projets : ${esc(e.message)}</p>`;
   }
 }
@@ -153,9 +167,8 @@ $("np-valider").addEventListener("click", async () => {
     await api("/api/paysages/projets", { method: "POST", body: JSON.stringify({ nom, description: $("np-description").value.trim() || null }) });
     $("np-nom").value = ""; $("np-description").value = "";
     $("form-nouveau-projet").classList.add("hidden");
-    toast("Projet créé.");
     chargerProjets();
-  } catch (e) { toast("Erreur : " + e.message, "error"); }
+  } catch (e) { alert("Erreur : " + e.message); }
 });
 
 $("btn-retour-projets").addEventListener("click", afficherVueListeProjets);
@@ -225,9 +238,8 @@ $("sc-valider").addEventListener("click", async () => {
     ["sc-titre","sc-numero","sc-description","sc-ambiance","sc-environnement","sc-epoque","sc-region","sc-ville","sc-distance","sc-intention"]
       .forEach(id => $(id).value = "");
     $("form-nouvelle-scene").classList.add("hidden");
-    toast("Scène ajoutée.");
     chargerProjetDetail();
-  } catch (e) { toast("Erreur : " + e.message, "error"); }
+  } catch (e) { alert("Erreur : " + e.message); }
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -266,6 +278,7 @@ function carteLienPaysage(l) {
           ${Object.entries(STATUT_LIEN_LABELS).map(([v, label]) =>
             `<option value="${v}" ${v === l.statut ? "selected" : ""}>${label}</option>`).join("")}
         </select>
+        <button class="ls-card-edit-btn" data-editer="${l.id}">✏️ Modifier ce paysage</button>
       </div>
     </div>`;
 }
@@ -292,9 +305,13 @@ async function chargerSceneDetail() {
             method: "POST",
             body: JSON.stringify({ paysage_id: Number(sel.dataset.lienPaysage), statut: sel.value }),
           });
-          toast("Statut mis à jour.");
-          chargerSceneDetail();
-        } catch (e) { toast("Erreur : " + e.message, "error"); }
+        } catch (e) { alert("Erreur : " + e.message); }
+      });
+    });
+    $("liste-liens").querySelectorAll("[data-editer]").forEach(btn => {
+      btn.addEventListener("click", ev => {
+        ev.stopPropagation();
+        ouvrirEditionPaysage(btn.dataset.editer, chargerSceneDetail);
       });
     });
   } catch (e) {
@@ -328,9 +345,8 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
             method: "POST",
             body: JSON.stringify({ paysage_id: Number(btn.dataset.lier), statut: "candidat" }),
           });
-          toast("Paysage lié à la scène.");
           chargerSceneDetail();
-        } catch (e) { toast("Erreur : " + e.message, "error"); }
+        } catch (e) { alert("Erreur : " + e.message); }
       });
     });
   } catch (e) {
@@ -343,7 +359,6 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
 // ─────────────────────────────────────────────────────────────
 function carteResultatPaysage(p) {
   const badgeClass = DROITS_CLASS[p.statut_droits] || "";
-  const incomplet = p.latitude == null || p.longitude == null || !p.type;
   return `
     <div class="ls-card" data-id="${p.id}">
       ${p.thumbnail_url ? `<img src="${esc(p.thumbnail_url)}" alt="${esc(p.nom)}">` : `<div class="ls-card-noimg">🖼️</div>`}
@@ -354,23 +369,17 @@ function carteResultatPaysage(p) {
         <div class="ls-badges">
           <span class="ls-badge">${MEDIA_LABELS[p.media_type] || p.media_type}</span>
           ${p.statut_droits ? `<span class="ls-badge ${badgeClass}">${DROITS_LABELS[p.statut_droits] || p.statut_droits}</span>` : ""}
-          ${incomplet ? `<span class="ls-badge warn">Fiche à compléter</span>` : ""}
+          ${(!p.latitude || !p.longitude) ? `<span class="ls-badge warn">Sans géoloc.</span>` : ""}
         </div>
-        <button class="ls-btn" data-modifier="${p.id}">✏️ Modifier</button>
+        <button class="ls-card-edit-btn" data-editer="${p.id}">✏️ Modifier</button>
       </div>
     </div>`;
 }
 
-function attacherBoutonsModifier(el) {
-  el.querySelectorAll("[data-modifier]").forEach(btn => {
-    btn.addEventListener("click", async ev => {
-      ev.stopPropagation();
-      try {
-        const p = await api(`/api/paysages/${btn.dataset.modifier}`);
-        ouvrirModalPaysage(p);
-      } catch (e) { alert("Erreur : " + e.message); }
-    });
-  });
+async function chargerRechercheBibliotheque() {
+  if ($("resultats-recherche").dataset.charge) return;
+  await lancerRechercheBibliotheque();
+  $("resultats-recherche").dataset.charge = "1";
 }
 
 async function lancerRechercheBibliotheque() {
@@ -386,74 +395,17 @@ async function lancerRechercheBibliotheque() {
   try {
     const resultats = await api(`/api/paysages?${params.toString()}`);
     el.innerHTML = resultats.length ? resultats.map(carteResultatPaysage).join("") : `<p class="ls-empty">Aucun paysage ne correspond à ces critères.</p>`;
-    attacherBoutonsModifier(el);
+    el.querySelectorAll("[data-editer]").forEach(btn => {
+      btn.addEventListener("click", ev => {
+        ev.stopPropagation();
+        ouvrirEditionPaysage(btn.dataset.editer, lancerRechercheBibliotheque);
+      });
+    });
   } catch (e) {
     el.innerHTML = `<p class="ls-empty">Erreur : ${esc(e.message)}</p>`;
   }
 }
 $("btn-filtrer").addEventListener("click", lancerRechercheBibliotheque);
-
-// ─────────────────────────────────────────────────────────────
-// BIBLIOTHÈQUE — modale d'édition (complète géoloc / droits / critères)
-// ─────────────────────────────────────────────────────────────
-let paysageModalId = null;
-
-function ouvrirModalPaysage(p) {
-  paysageModalId = p.id;
-  $("pm-titre").textContent = "Compléter « " + (p.nom || "") + " »";
-  $("pm-nom").value = p.nom || "";
-  $("pm-type").value = p.type || "";
-  $("pm-environnement").value = p.environnement || "";
-  $("pm-ambiance").value = p.ambiance || "";
-  $("pm-elements").value = (p.elements || []).join(", ");
-  $("pm-lat").value = p.latitude ?? "";
-  $("pm-lon").value = p.longitude ?? "";
-  $("pm-media-type").value = p.media_type || "photo";
-  $("pm-type-reference").value = p.type_reference || "open_source";
-  $("pm-statut-droits").value = p.statut_droits || "a_verifier";
-  $("pm-artiste-nom").value = p.artiste_nom || "";
-  $("pm-artiste-contact").value = p.artiste_contact || "";
-  actualiserVisibiliteArtiste();
-  $("paysage-modal").classList.remove("hidden");
-}
-
-function fermerModalPaysage() {
-  paysageModalId = null;
-  $("paysage-modal").classList.add("hidden");
-}
-function actualiserVisibiliteArtiste() {
-  $("pm-artiste-row").style.display = $("pm-type-reference").value === "artiste" ? "flex" : "none";
-}
-$("pm-type-reference").addEventListener("change", actualiserVisibiliteArtiste);
-$("pm-annuler").addEventListener("click", fermerModalPaysage);
-$("paysage-modal").addEventListener("click", e => { if (e.target.id === "paysage-modal") fermerModalPaysage(); });
-
-$("pm-valider").addEventListener("click", async () => {
-  if (!paysageModalId) return;
-  const nom = $("pm-nom").value.trim();
-  if (!nom) return alert("Le nom du paysage est requis.");
-  const payload = {
-    nom,
-    type: $("pm-type").value.trim() || null,
-    environnement: $("pm-environnement").value.trim() || null,
-    ambiance: $("pm-ambiance").value.trim() || null,
-    elements: $("pm-elements").value.trim().split(",").map(s => s.trim()).filter(Boolean),
-    latitude: $("pm-lat").value !== "" ? Number($("pm-lat").value) : null,
-    longitude: $("pm-lon").value !== "" ? Number($("pm-lon").value) : null,
-    media_type: $("pm-media-type").value,
-    type_reference: $("pm-type-reference").value,
-    statut_droits: $("pm-statut-droits").value,
-    artiste_nom: $("pm-artiste-nom").value.trim() || null,
-    artiste_contact: $("pm-artiste-contact").value.trim() || null,
-  };
-  try {
-    await api(`/api/paysages/${paysageModalId}`, { method: "PATCH", body: JSON.stringify(payload) });
-    fermerModalPaysage();
-    toast("Fiche mise à jour.");
-    lancerRechercheBibliotheque();
-    if (carteLeaflet) chargerCarte();
-  } catch (e) { toast("Erreur : " + e.message, "error"); }
-});
 
 // ─────────────────────────────────────────────────────────────
 // BIBLIOTHÈQUE — carte Leaflet
@@ -467,6 +419,7 @@ async function chargerCarte() {
   try {
     const points = await api("/api/paysages/carte");
     carteLeaflet.eachLayer(l => { if (l instanceof L.Marker) carteLeaflet.removeLayer(l); });
+    if (!points.length) return;
     points.forEach(p => {
       const m = L.marker([p.latitude, p.longitude]).addTo(carteLeaflet);
       m.bindPopup(`
@@ -474,14 +427,14 @@ async function chargerCarte() {
         <b>${esc(p.nom)}</b><br>${esc(p.type || "")}${p.ambiance ? " · " + esc(p.ambiance) : ""}
       `);
     });
-    if (points.length) carteLeaflet.fitBounds(points.map(p => [p.latitude, p.longitude]), { maxZoom: 10 });
+    carteLeaflet.fitBounds(points.map(p => [p.latitude, p.longitude]), { maxZoom: 10 });
   } catch (e) {
     console.error("Carte paysages :", e.message);
   }
 }
 
 // ─────────────────────────────────────────────────────────────
-// BIBLIOTHÈQUE — import Openverse
+// BIBLIOTHÈQUE — import Openverse (formulaire complet, pas un prompt())
 // ─────────────────────────────────────────────────────────────
 $("ov-rechercher").addEventListener("click", async () => {
   const q = $("ov-q").value.trim();
@@ -502,63 +455,78 @@ $("ov-rechercher").addEventListener("click", async () => {
         </div>
       </div>`).join("");
     el.querySelectorAll("[data-importer]").forEach(btn => {
-      btn.addEventListener("click", () => ouvrirImportOpenverse(resultats.find(r => String(r.id_openverse) === btn.dataset.importer)));
+      btn.addEventListener("click", () => ouvrirFormulaireImportOpenverse(resultats.find(r => String(r.id_openverse) === btn.dataset.importer)));
     });
   } catch (e) {
     el.innerHTML = `<p class="ls-empty">Erreur : ${esc(e.message)}</p>`;
   }
 });
 
-async function ouvrirImportOpenverse(r) {
+function ouvrirFormulaireImportOpenverse(r) {
   if (!r) return;
-  // btn peut être absent si ouvrirImportOpenverse est appelée autrement
-  // qu'au clic (pas le cas ici, mais on reste défensif).
-  const carte = $("ov-resultats").querySelector(`.ls-card[data-id="${CSS.escape(String(r.id_openverse))}"]`);
-  const btn = carte ? carte.querySelector("[data-importer]") : null;
-  if (btn) { btn.disabled = true; btn.textContent = "Import…"; }
-  try {
-    const cree = await api("/api/paysages/depuis-openverse", {
-      method: "POST",
-      body: JSON.stringify({
-        id_openverse: String(r.id_openverse),
-        titre: r.titre || null,
-        image_url: r.image_url,
-        thumbnail_url: r.thumbnail_url || null,
-        auteur: r.auteur || null,
-        auteur_url: r.auteur_url || null,
-        licence: r.licence || null,
-        licence_url: r.licence_url || null,
-        source_nom: r.source_nom || "Openverse",
-        source_url: r.source_url || null,
-        nom: r.titre || "Paysage sans titre",
-        media_type: "photo",
-      }),
-    });
-    // BUG corrigé : l'ancien code rafraîchissait uniquement la liste de
-    // l'onglet "Rechercher" (#resultats-recherche), qui est masquée tant
-    // qu'on est sur le sous-onglet "Importer depuis Openverse" — la carte
-    // sous les yeux de l'utilisateur (#ov-resultats) n'était donc jamais
-    // touchée et rien ne semblait se passer avant un rechargement complet
-    // de la page (qui, lui, repart avec une liste "Rechercher" vide de
-    // filtres et donc à jour). On marque maintenant la carte elle-même
-    // comme importée, immédiatement, en plus du rafraîchissement en fond
-    // de la bibliothèque pour quand l'utilisateur y retournera.
-    if (btn) {
-      btn.textContent = "✅ Importé";
-      btn.classList.remove("ls-btn-accent");
-    } else if (carte) {
-      carte.querySelector(".ls-card-body")?.insertAdjacentHTML(
-        "beforeend", `<span class="ls-badge ok">✅ Importé</span>`,
-      );
-    }
-    toast("Paysage importé depuis Openverse — complétez sa fiche.");
-    lancerRechercheBibliotheque();
-    const paysage = await api(`/api/paysages/${cree.id}`);
-    ouvrirModalPaysage(paysage);
-  } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = "Importer"; }
-    toast("Erreur : " + e.message, "error");
-  }
+  ouvrirModal(`
+    <h3>Importer « ${esc(r.titre || "ce paysage")} »</h3>
+    <div class="ls-form" style="max-width:none;border:none;padding:0;margin:0">
+      <input type="text" id="i-nom" placeholder="Nom" value="${esc(r.titre || 'Paysage sans titre')}">
+      <div class="ls-form-row">
+        <input type="text" id="i-type" placeholder="Type (ex : montagne, urbain...)">
+        <input type="text" id="i-environnement" placeholder="Environnement">
+      </div>
+      <div class="ls-form-row">
+        <input type="text" id="i-ambiance" placeholder="Ambiance">
+        <input type="text" id="i-elements" placeholder="Éléments (virgules)">
+      </div>
+      <div class="ls-form-row">
+        <input type="number" step="any" id="i-lat" placeholder="Latitude">
+        <input type="number" step="any" id="i-lon" placeholder="Longitude">
+      </div>
+      <select id="i-media-type">
+        <option value="photo" selected>Photo</option>
+        <option value="panorama">Panorama</option>
+        <option value="360">360°</option>
+        <option value="video_360">Vidéo 360°</option>
+      </select>
+      <p class="ls-modal-note">Sans latitude/longitude, ce paysage n'apparaîtra pas sur la carte — vous pourrez toujours les compléter plus tard via « Modifier ».</p>
+      <div class="ls-form-actions">
+        <button class="ls-btn ls-btn-accent" id="i-valider">Importer</button>
+        <button class="ls-btn" id="i-annuler">Annuler</button>
+      </div>
+    </div>
+  `);
+
+  $("i-annuler").addEventListener("click", fermerModal);
+  $("i-valider").addEventListener("click", async () => {
+    const nom = $("i-nom").value.trim();
+    if (!nom) return alert("Le nom est requis.");
+    try {
+      await api("/api/paysages/depuis-openverse", {
+        method: "POST",
+        body: JSON.stringify({
+          id_openverse: String(r.id_openverse),
+          titre: r.titre || null,
+          image_url: r.image_url,
+          thumbnail_url: r.thumbnail_url || null,
+          auteur: r.auteur || null,
+          auteur_url: r.auteur_url || null,
+          licence: r.licence || null,
+          licence_url: r.licence_url || null,
+          source_nom: r.source_nom || "Openverse",
+          source_url: r.source_url || null,
+          nom,
+          type: $("i-type").value.trim() || null,
+          environnement: $("i-environnement").value.trim() || null,
+          ambiance: $("i-ambiance").value.trim() || null,
+          elements: $("i-elements").value.trim().split(",").map(s => s.trim()).filter(Boolean),
+          latitude: $("i-lat").value ? Number($("i-lat").value) : null,
+          longitude: $("i-lon").value ? Number($("i-lon").value) : null,
+          media_type: $("i-media-type").value,
+        }),
+      });
+      fermerModal();
+      $("resultats-recherche").dataset.charge = "";
+      alert("Paysage importé et ajouté à la bibliothèque.");
+    } catch (e) { alert("Erreur : " + e.message); }
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -588,10 +556,9 @@ $("m-valider").addEventListener("click", async () => {
     await api("/api/paysages", { method: "POST", body: JSON.stringify(payload) });
     ["m-nom","m-description","m-type","m-environnement","m-ambiance","m-elements","m-lat","m-lon","m-image-url","m-thumbnail-url","m-auteur","m-licence"]
       .forEach(id => $(id).value = "");
-    toast("Paysage ajouté à la bibliothèque.");
-    lancerRechercheBibliotheque();
-    if (carteLeaflet) chargerCarte();
-  } catch (e) { toast("Erreur : " + e.message, "error"); }
+    $("resultats-recherche").dataset.charge = "";
+    alert("Paysage ajouté à la bibliothèque.");
+  } catch (e) { alert("Erreur : " + e.message); }
 });
 
 // ─────────────────────────────────────────────────────────────

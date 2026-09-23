@@ -7,6 +7,28 @@ const API_BASE = "";
 const esc = v => String(v ?? "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const $ = id => document.getElementById(id);
 
+// ─────────────────────────────────────────────────────────────
+// Notifications (succès / erreur) — remplace les alert() muets
+// ─────────────────────────────────────────────────────────────
+function toast(message, type = "ok") {
+  let hote = $("ls-toasts");
+  if (!hote) {
+    hote = document.createElement("div");
+    hote.id = "ls-toasts";
+    hote.className = "ls-toasts";
+    document.body.appendChild(hote);
+  }
+  const el = document.createElement("div");
+  el.className = `ls-toast ls-toast-${type}`;
+  el.textContent = message;
+  hote.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -46,7 +68,7 @@ document.querySelectorAll(".ls-tab").forEach(btn => {
     btn.classList.add("active");
     document.querySelectorAll(".ls-panel").forEach(p => p.classList.add("hidden"));
     $(`tab-${btn.dataset.tab}`).classList.remove("hidden");
-    if (btn.dataset.tab === "bibliotheque") chargerRechercheBibliotheque();
+    if (btn.dataset.tab === "bibliotheque") lancerRechercheBibliotheque();
   });
 });
 
@@ -95,10 +117,18 @@ async function chargerProjets() {
     el.querySelectorAll("[data-supprimer]").forEach(btn => {
       btn.addEventListener("click", async () => {
         if (!confirm("Supprimer ce projet et toutes ses scènes ? Les paysages de la bibliothèque ne sont pas touchés.")) return;
+        const carte = btn.closest(".ls-card");
+        btn.disabled = true;
         try {
           await api(`/api/paysages/projets/${btn.dataset.supprimer}`, { method: "DELETE" });
-          chargerProjets();
-        } catch (e) { alert("Erreur : " + e.message); }
+          if (carte) carte.remove(); // retrait immédiat, sans attendre le rechargement
+          if (!el.querySelector(".ls-card")) el.innerHTML = `<p class="ls-empty">Aucun projet pour l'instant. Créez-en un pour commencer.</p>`;
+          toast("Projet supprimé.");
+          chargerProjets(); // resynchronise avec le serveur (ex. si un autre onglet a aussi modifié la liste)
+        } catch (e) {
+          btn.disabled = false;
+          toast("Erreur : " + e.message, "error");
+        }
       });
     });
   } catch (e) {
@@ -115,8 +145,9 @@ $("np-valider").addEventListener("click", async () => {
     await api("/api/paysages/projets", { method: "POST", body: JSON.stringify({ nom, description: $("np-description").value.trim() || null }) });
     $("np-nom").value = ""; $("np-description").value = "";
     $("form-nouveau-projet").classList.add("hidden");
+    toast("Projet créé.");
     chargerProjets();
-  } catch (e) { alert("Erreur : " + e.message); }
+  } catch (e) { toast("Erreur : " + e.message, "error"); }
 });
 
 $("btn-retour-projets").addEventListener("click", afficherVueListeProjets);
@@ -186,8 +217,9 @@ $("sc-valider").addEventListener("click", async () => {
     ["sc-titre","sc-numero","sc-description","sc-ambiance","sc-environnement","sc-epoque","sc-region","sc-ville","sc-distance","sc-intention"]
       .forEach(id => $(id).value = "");
     $("form-nouvelle-scene").classList.add("hidden");
+    toast("Scène ajoutée.");
     chargerProjetDetail();
-  } catch (e) { alert("Erreur : " + e.message); }
+  } catch (e) { toast("Erreur : " + e.message, "error"); }
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -252,7 +284,9 @@ async function chargerSceneDetail() {
             method: "POST",
             body: JSON.stringify({ paysage_id: Number(sel.dataset.lienPaysage), statut: sel.value }),
           });
-        } catch (e) { alert("Erreur : " + e.message); }
+          toast("Statut mis à jour.");
+          chargerSceneDetail();
+        } catch (e) { toast("Erreur : " + e.message, "error"); }
       });
     });
   } catch (e) {
@@ -286,8 +320,9 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
             method: "POST",
             body: JSON.stringify({ paysage_id: Number(btn.dataset.lier), statut: "candidat" }),
           });
+          toast("Paysage lié à la scène.");
           chargerSceneDetail();
-        } catch (e) { alert("Erreur : " + e.message); }
+        } catch (e) { toast("Erreur : " + e.message, "error"); }
       });
     });
   } catch (e) {
@@ -328,12 +363,6 @@ function attacherBoutonsModifier(el) {
       } catch (e) { alert("Erreur : " + e.message); }
     });
   });
-}
-
-async function chargerRechercheBibliotheque() {
-  if ($("resultats-recherche").dataset.charge) return;
-  await lancerRechercheBibliotheque();
-  $("resultats-recherche").dataset.charge = "1";
 }
 
 async function lancerRechercheBibliotheque() {
@@ -412,9 +441,10 @@ $("pm-valider").addEventListener("click", async () => {
   try {
     await api(`/api/paysages/${paysageModalId}`, { method: "PATCH", body: JSON.stringify(payload) });
     fermerModalPaysage();
-    if ($("resultats-recherche").dataset.charge) lancerRechercheBibliotheque();
+    toast("Fiche mise à jour.");
+    lancerRechercheBibliotheque();
     if (carteLeaflet) chargerCarte();
-  } catch (e) { alert("Erreur : " + e.message); }
+  } catch (e) { toast("Erreur : " + e.message, "error"); }
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -495,9 +525,11 @@ async function ouvrirImportOpenverse(r) {
     // fournit pas) : on rouvre immédiatement la fiche complète pour que
     // ce soit fait tout de suite, plutôt que de renvoyer vers une
     // bibliothèque où rien ne permettait jusqu'ici de la retrouver.
+    toast("Paysage importé depuis Openverse — complétez sa fiche.");
+    lancerRechercheBibliotheque();
     const paysage = await api(`/api/paysages/${cree.id}`);
     ouvrirModalPaysage(paysage);
-  } catch (e) { alert("Erreur : " + e.message); }
+  } catch (e) { toast("Erreur : " + e.message, "error"); }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -527,8 +559,10 @@ $("m-valider").addEventListener("click", async () => {
     await api("/api/paysages", { method: "POST", body: JSON.stringify(payload) });
     ["m-nom","m-description","m-type","m-environnement","m-ambiance","m-elements","m-lat","m-lon","m-image-url","m-thumbnail-url","m-auteur","m-licence"]
       .forEach(id => $(id).value = "");
-    alert("Paysage ajouté à la bibliothèque.");
-  } catch (e) { alert("Erreur : " + e.message); }
+    toast("Paysage ajouté à la bibliothèque.");
+    lancerRechercheBibliotheque();
+    if (carteLeaflet) chargerCarte();
+  } catch (e) { toast("Erreur : " + e.message, "error"); }
 });
 
 // ─────────────────────────────────────────────────────────────

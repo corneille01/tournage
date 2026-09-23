@@ -828,7 +828,7 @@ L'équipe du projet via Pelify`;
           ? "La demande est enregistrée, mais l'email automatique n'est pas encore configuré sur le serveur."
           : "La demande est enregistrée et l'envoi de l'email est en cours.";
 
-      alert(`Demande #${demande.id} enregistrée. ${detail}`);
+      alert(`Demande #${demande.id} enregistrée. ${detail}`);\n      window.location.href = `/droits.html?demande=${encodeURIComponent(demande.id)}`;
     } catch (e) {
       btn.disabled = false;
       btn.textContent = "Envoyer la demande";

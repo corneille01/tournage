@@ -150,37 +150,19 @@ Pelify Landscape
         smtp.send_message(msg)
 
 
-async def _envoyer_email_demande(demande_id: int) -> None:
+async def _envoyer_email_demande(demande_id: int, lien: str) -> None:
     """
     Tâche de fond : l'envoi SMTP ne doit pas ralentir la réponse HTTP.
     FastAPI prévoit précisément ce mécanisme pour les notifications email. 
     """
     demande = await fetch_one(
         """SELECT id, destinataire_nom, destinataire_email, objet, message,
-                  guest_token_hash, demandeur_email
+                  demandeur_email
            FROM demandes_droits
            WHERE id = %s""",
         (demande_id,),
     )
     if not demande:
-        return
-
-    # Le jeton brut n'est jamais récupérable depuis la base.
-    # Le lien est donc construit lors de la création puis stocké temporairement
-    # dans le processus de tâche via une variable dédiée impossible ici.
-    # Pour cette raison, la création enregistre le lien dans email_lien_temporaire
-    # uniquement pendant la durée de la tâche.
-    lien_row = await fetch_one(
-        "SELECT email_lien_temporaire FROM demandes_droits WHERE id = %s",
-        (demande_id,),
-    )
-    lien = lien_row.get("email_lien_temporaire") if lien_row else None
-
-    if not lien:
-        await execute(
-            "UPDATE demandes_droits SET email_statut = 'erreur', email_erreur = %s WHERE id = %s",
-            ("Lien invité indisponible.", demande_id),
-        )
         return
 
     try:
@@ -420,10 +402,9 @@ async def creer_demande(
                destinataire_nom, destinataire_email,
                objet, message, statut,
                guest_token_hash, guest_token_expires_at,
-               email_statut, demandeur_email,
-               email_lien_temporaire
+               email_statut, demandeur_email
            )
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'en_attente',%s,%s,%s,%s,%s)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'en_attente',%s,%s,%s,%s)
            RETURNING id""",
         (
             payload.paysage_id,
@@ -438,7 +419,6 @@ async def creer_demande(
             expiration,
             email_statut,
             demandeur_email,
-            lien,
         ),
     )
 
@@ -450,7 +430,7 @@ async def creer_demande(
     )
 
     if _smtp_configure():
-        background_tasks.add_task(_envoyer_email_demande, demande_id)
+        background_tasks.add_task(_envoyer_email_demande, demande_id, lien)
 
     return {
         "id": demande_id,

@@ -217,7 +217,7 @@ async def creer_projet(payload: ProjetCreation, request: Request, response: Resp
 
 
 @router.get("/projets/{projet_id}")
-async def obtenir_projet(projet_id: str, request: Request, response: Response):
+async def obtenir_projet(projet_id: int, request: Request, response: Response):
     user = await _ensure_profile(request, response)
     projet = await fetch_one(
         "SELECT id, nom, description, created_at FROM paysage_projets "
@@ -235,11 +235,41 @@ async def obtenir_projet(projet_id: str, request: Request, response: Response):
     return projet
 
 
+@router.delete("/projets/{projet_id}", status_code=204)
+async def supprimer_projet(projet_id: int, request: Request, response: Response):
+    """Supprime un projet et tout ce qui lui appartient (scènes, liens
+    vers des paysages) — mais jamais les paysages eux-mêmes, qui sont
+    des fiches de bibliothèque partagées indépendantes du projet.
+
+    Route manquante comme l'était PATCH /paysages/{id} : rien ne
+    permettait de supprimer un dossier de projet, seulement d'en créer
+    et d'en lister. Suppression explicite des lignes filles plutôt que
+    de compter uniquement sur un éventuel ON DELETE CASCADE en base,
+    au cas où les contraintes de clé étrangère ne l'auraient pas prévu.
+    """
+    user = await _ensure_profile(request, response)
+    projet = await fetch_one(
+        "SELECT id FROM paysage_projets WHERE id = %s AND user_id = %s",
+        (projet_id, user["id"]),
+    )
+    if not projet:
+        raise HTTPException(404, "Projet introuvable")
+
+    await execute(
+        "DELETE FROM paysage_scene_liens WHERE scene_id IN "
+        "(SELECT id FROM paysage_scenes WHERE projet_id = %s)",
+        (projet_id,),
+    )
+    await execute("DELETE FROM paysage_scenes WHERE projet_id = %s", (projet_id,))
+    await execute("DELETE FROM paysage_projets WHERE id = %s", (projet_id,))
+    return Response(status_code=204)
+
+
 # ---------------------------------------------------------------------------
 # Scènes
 # ---------------------------------------------------------------------------
 
-async def _verifier_proprietaire_projet(projet_id: str, user_id: str) -> None:
+async def _verifier_proprietaire_projet(projet_id: int, user_id: str) -> None:
     projet = await fetch_one(
         "SELECT id FROM paysage_projets WHERE id = %s AND user_id = %s",
         (projet_id, user_id),
@@ -249,7 +279,7 @@ async def _verifier_proprietaire_projet(projet_id: str, user_id: str) -> None:
 
 
 @router.post("/projets/{projet_id}/scenes", status_code=201)
-async def creer_scene(projet_id: str, payload: SceneCreation, request: Request, response: Response):
+async def creer_scene(projet_id: int, payload: SceneCreation, request: Request, response: Response):
     user = await _ensure_profile(request, response)
     await _verifier_proprietaire_projet(projet_id, user["id"])
     if payload.format_souhaite not in FORMATS_SOUHAITES_VALIDES:

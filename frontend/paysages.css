@@ -25,6 +25,8 @@ body{min-height:100vh;background:#0f1115;color:#eee;font-family:Rajdhani,Arial,s
 .ls-btn:hover{background:#1e2128}
 .ls-btn-accent{border-color:#e63946;background:rgba(230,57,70,.12)}
 .ls-btn-accent:hover{background:rgba(230,57,70,.22)}
+.ls-btn-danger{border-color:#e63946;color:#e63946}
+.ls-btn-danger:hover{background:rgba(230,57,70,.15)}
 
 .ls-form{display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid #292c34;border-radius:14px;background:#17191e;margin-bottom:16px;max-width:640px}
 .ls-form-row{display:flex;gap:8px}

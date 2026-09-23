@@ -70,9 +70,24 @@ async function chargerProjets() {
           <b>${esc(p.nom)}</b>
           <span>${esc(p.description || "Pas de description")}</span>
           <span>${new Date(p.created_at).toLocaleDateString("fr-FR")}</span>
+          <button class="ls-btn ls-btn-danger" data-supprimer="${p.id}">🗑️ Supprimer</button>
         </div>
       </div>`).join("");
-    el.querySelectorAll(".ls-card").forEach(c => c.addEventListener("click", () => ouvrirProjet(c.dataset.id)));
+    el.querySelectorAll(".ls-card").forEach(c => {
+      c.addEventListener("click", e => {
+        if (e.target.closest("[data-supprimer]")) return;
+        ouvrirProjet(c.dataset.id);
+      });
+    });
+    el.querySelectorAll("[data-supprimer]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Supprimer ce projet et toutes ses scènes ? Les paysages de la bibliothèque ne sont pas touchés.")) return;
+        try {
+          await api(`/api/paysages/projets/${btn.dataset.supprimer}`, { method: "DELETE" });
+          chargerProjets();
+        } catch (e) { alert("Erreur : " + e.message); }
+      });
+    });
   } catch (e) {
     el.innerHTML = `<p class="ls-empty">Impossible de charger vos projets : ${esc(e.message)}</p>`;
   }

@@ -1,3 +1,4 @@
+html, body{overflow-y:auto !important;height:auto !important;min-height:100vh}
 body{min-height:100vh;background:#0f1115;color:#eee;font-family:Rajdhani,Arial,sans-serif}
 .ls-app{max-width:1200px;margin:0 auto;padding:28px 18px 60px}
 

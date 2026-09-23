@@ -204,7 +204,7 @@ async def _notifier_demandeur(demande_id: int, contenu: str, reponse_type: str) 
     if not demande or not demande.get("demandeur_email"):
         return
 
-    lien = f"{BASE_URL}/paysages.html"
+    lien = f"{BASE_URL}/droits.html?demande={demande_id}"
     sujet = f"Réponse à votre demande de droits — {demande['paysage_nom']}"
     type_label = {
         "acceptee": "Le photographe indique qu'il accepte la demande.",

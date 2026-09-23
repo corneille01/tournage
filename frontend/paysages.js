@@ -24,6 +24,117 @@ const DROITS_LABELS = { utilisable:"Utilisable", a_negocier:"À négocier", libr
 const DROITS_CLASS = { utilisable:"ok", libre_licence:"ok", a_negocier:"warn", a_verifier:"warn", a_capturer:"risk" };
 const STATUT_LIEN_LABELS = { candidat:"Candidat", selectionne:"Sélectionné", alternative:"Alternative", rejete:"Rejeté" };
 
+
+
+
+
+const LICENCE_LABELS = {
+  cc0: "CC0",
+  pdm: "Domaine public",
+  by: "CC BY",
+  "by-sa": "CC BY-SA",
+  "by-nd": "CC BY-ND",
+  "by-nc": "CC BY-NC",
+  "by-nc-sa": "CC BY-NC-SA",
+  "by-nc-nd": "CC BY-NC-ND",
+};
+
+function licenceLabel(code, fallback = "") {
+  return LICENCE_LABELS[code] || fallback || "Licence inconnue";
+}
+
+function droitsBadge(p) {
+  if (p.usage_commercial === true) {
+    if (p.verification_statut === "droits_confirmes") {
+      return `<span class="ls-badge ok">
+        🟢 Droits confirmés
+      </span>`;
+    }
+
+    return `<span class="ls-badge ok">
+      🟢 Compatible commercial
+    </span>`;
+  }
+
+  if (p.usage_commercial === false) {
+    return `<span class="ls-badge risk">
+      🔴 Non commercial
+    </span>`;
+  }
+
+  if (p.statut_droits === "a_negocier") {
+    return `<span class="ls-badge warn">
+      🟠 À négocier
+    </span>`;
+  }
+
+  return `<span class="ls-badge warn">
+    🟠 Licence à vérifier
+  </span>`;
+}
+
+function informationsLicence(p) {
+  const licence = licenceLabel(
+    p.licence_code,
+    p.licence
+  );
+
+  return `
+    <div class="ls-license-box">
+
+      <div>
+        <strong>Licence</strong>
+        <span>${esc(licence)}</span>
+      </div>
+
+      ${p.usage_commercial === true ? `
+        <div>💼 Usage commercial : <strong>oui</strong></div>
+      ` : ""}
+
+      ${p.usage_commercial === false ? `
+        <div>💼 Usage commercial : <strong>non</strong></div>
+      ` : ""}
+
+      ${p.modification_autorisee === true ? `
+        <div>✏️ Modification : <strong>autorisée</strong></div>
+      ` : ""}
+
+      ${p.modification_autorisee === false ? `
+        <div>✏️ Modification : <strong>non autorisée</strong></div>
+      ` : ""}
+
+      ${p.attribution_requise === true ? `
+        <div>👤 Attribution : <strong>requise</strong></div>
+      ` : ""}
+
+      ${p.licence_url ? `
+        <a
+          href="${esc(p.licence_url)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Voir les conditions de licence
+        </a>
+      ` : ""}
+
+      ${p.source_url ? `
+        <a
+          href="${esc(p.source_url)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Voir la source originale
+        </a>
+      ` : ""}
+
+      <small>
+        Informations issues de la source déclarée.
+        Vérifiez les droits avant exploitation commerciale.
+      </small>
+
+    </div>
+  `;
+}
 // ─────────────────────────────────────────────────────────────
 // Onglets principaux
 // ─────────────────────────────────────────────────────────────
@@ -358,22 +469,92 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
 // BIBLIOTHÈQUE — recherche multicritère
 // ─────────────────────────────────────────────────────────────
 function carteResultatPaysage(p) {
-  const badgeClass = DROITS_CLASS[p.statut_droits] || "";
   return `
     <div class="ls-card" data-id="${p.id}">
-      ${p.thumbnail_url ? `<img src="${esc(p.thumbnail_url)}" alt="${esc(p.nom)}">` : `<div class="ls-card-noimg">🖼️</div>`}
+
+      ${
+        p.thumbnail_url
+          ? `
+            <img
+              src="${esc(p.thumbnail_url)}"
+              alt="${esc(p.nom)}"
+              loading="lazy"
+            >
+          `
+          : `
+            <div class="ls-card-noimg">🖼️</div>
+          `
+      }
+
       <div class="ls-card-body">
+
         <b>${esc(p.nom)}</b>
-        <span>${esc(p.type || "")}${p.environnement ? " · " + esc(p.environnement) : ""}</span>
-        ${p.distance_km != null ? `<span>${p.distance_km} km</span>` : ""}
+
+        <span>
+          ${esc(p.type || "")}
+          ${p.environnement ? " · " + esc(p.environnement) : ""}
+        </span>
+
+        ${
+          p.auteur
+            ? `<span>📷 ${esc(p.auteur)}</span>`
+            : ""
+        }
+
+        ${
+          p.distance_km != null
+            ? `<span>📍 ${p.distance_km} km</span>`
+            : ""
+        }
+
         <div class="ls-badges">
-          <span class="ls-badge">${MEDIA_LABELS[p.media_type] || p.media_type}</span>
-          ${p.statut_droits ? `<span class="ls-badge ${badgeClass}">${DROITS_LABELS[p.statut_droits] || p.statut_droits}</span>` : ""}
-          ${(!p.latitude || !p.longitude) ? `<span class="ls-badge warn">Sans géoloc.</span>` : ""}
+
+          <span class="ls-badge">
+            ${MEDIA_LABELS[p.media_type] || p.media_type}
+          </span>
+
+          ${droitsBadge(p)}
+
         </div>
-        <button class="ls-card-edit-btn" data-editer="${p.id}">✏️ Modifier</button>
+
+        ${informationsLicence(p)}
+
+        ${
+          p.statut_droits === "utilisable"
+            ? `
+              <button
+                class="ls-btn ls-btn-accent"
+                data-ajouter-projet="${p.id}"
+              >
+                Ajouter à mon projet
+              </button>
+            `
+            : ""
+        }
+
+        ${
+          p.statut_droits === "a_negocier"
+            ? `
+              <button
+                class="ls-btn"
+                data-demander-droits="${p.id}"
+              >
+                🔐 Demander les droits
+              </button>
+            `
+            : ""
+        }
+
+        <button
+          class="ls-card-edit-btn"
+          data-editer="${p.id}"
+        >
+          ✏️ Modifier
+        </button>
+
       </div>
-    </div>`;
+    </div>
+  `;
 }
 
 async function chargerRechercheBibliotheque() {

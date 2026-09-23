@@ -42,7 +42,46 @@ MEDIA_TYPES_VALIDES = {"photo", "panorama", "360", "video_360", "a_capturer"}
 TYPES_REFERENCE_VALIDES = {"personnelle", "artiste", "open_source", "panorama_360"}
 STATUTS_DROITS_VALIDES = {"utilisable", "a_negocier", "libre_licence", "a_capturer", "a_verifier"}
 FORMATS_SOUHAITES_VALIDES = {"photo", "panorama", "360", "video_360", "peu_importe"}
+STATUTS_VERIFICATION_LICENCE = {
+    "a_verifier",
+    "metadata_openverse",
+    "verifie_manuellement",
+    "droits_confirmes",
+    "droits_refuses",
+}
 
+# Licences Creative Commons qui autorisent l'usage commercial
+# selon les conditions propres à chaque licence.
+LICENCES_COMMERCIALES = {
+    "cc0",
+    "pdm",
+    "by",
+    "by-sa",
+    "by-nd",
+}
+
+# Licences Creative Commons qui interdisent l'usage commercial.
+LICENCES_NON_COMMERCIALES = {
+    "by-nc",
+    "by-nc-sa",
+    "by-nc-nd",
+}
+
+# Licences qui imposent une attribution.
+LICENCES_ATTRIBUTION = {
+    "by",
+    "by-sa",
+    "by-nd",
+    "by-nc",
+    "by-nc-sa",
+    "by-nc-nd",
+}
+
+# Licences qui interdisent les œuvres dérivées / modifications.
+LICENCES_SANS_DERIVES = {
+    "by-nd",
+    "by-nc-nd",
+}
 
 def _hash_user_token(token: str) -> str:
     return hashlib.sha256((PELIFY_USER_SECRET + ":" + token).encode("utf-8")).hexdigest()
@@ -86,6 +125,76 @@ def _defaut_statut_droits(type_reference: str, source_type: str) -> str:
     return "a_verifier"
 
 
+
+
+
+def analyser_licence(
+    licence: str | None,
+    licence_url: str | None = None,
+) -> dict:
+    """
+    Analyse une licence déclarée.
+
+    IMPORTANT :
+    cette fonction ne constitue pas une validation juridique.
+    Elle interprète les métadonnées de licence fournies par la source.
+
+    Retourne les droits techniques déduits de la licence.
+    """
+
+    code = (licence or "").strip().lower()
+
+    # Normalisation de quelques variantes fréquentes.
+    code = code.replace("_", "-").replace(" ", "-")
+
+    # Certaines sources renvoient "cc-by" plutôt que "by".
+    if code.startswith("cc-"):
+        code = code[3:]
+
+    # Domaine public / CC0.
+    if code in {"cc0", "pdm", "public-domain", "publicdomain"}:
+        return {
+            "licence_code": code,
+            "usage_commercial": True,
+            "modification_autorisee": True,
+            "attribution_requise": False,
+            "statut_droits": "utilisable",
+            "niveau": "compatible",
+            "raison": "Domaine public ou CC0 déclaré.",
+        }
+
+    if code in LICENCES_NON_COMMERCIALES:
+        return {
+            "licence_code": code,
+            "usage_commercial": False,
+            "modification_autorisee": code not in LICENCES_SANS_DERIVES,
+            "attribution_requise": True,
+            "statut_droits": "a_negocier",
+            "niveau": "non_commercial",
+            "raison": "Cette licence contient une restriction NC.",
+        }
+
+    if code in LICENCES_COMMERCIALES:
+        return {
+            "licence_code": code,
+            "usage_commercial": True,
+            "modification_autorisee": code not in LICENCES_SANS_DERIVES,
+            "attribution_requise": code in LICENCES_ATTRIBUTION,
+            "statut_droits": "utilisable",
+            "niveau": "compatible",
+            "raison": "La licence déclarée autorise l'usage commercial sous ses conditions.",
+        }
+
+    # Licence absente ou inconnue.
+    return {
+        "licence_code": code or None,
+        "usage_commercial": None,
+        "modification_autorisee": None,
+        "attribution_requise": None,
+        "statut_droits": "a_verifier",
+        "niveau": "inconnu",
+        "raison": "Licence absente ou non reconnue automatiquement.",
+    }
 # ---------------------------------------------------------------------------
 # Schémas
 # ---------------------------------------------------------------------------
@@ -114,47 +223,79 @@ class SceneCreation(BaseModel):
 class PaysageCreation(BaseModel):
     nom: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
+
     latitude: float | None = None
     longitude: float | None = None
+
     type: str | None = None
     environnement: str | None = None
     ambiance: str | None = None
     elements: list[str] = Field(default_factory=list)
+
     image_url: str | None = None
     thumbnail_url: str | None = None
+
     source_type: str = "user"
     source_nom: str | None = None
     source_url: str | None = None
+    source_identifier: str | None = None
+
     auteur: str | None = None
     auteur_url: str | None = None
+
     licence: str | None = None
     licence_url: str | None = None
+    licence_version: str | None = None
+    licence_code: str | None = None
+
+    usage_commercial: bool | None = None
+    modification_autorisee: bool | None = None
+    attribution_requise: bool | None = None
+
+    verification_statut: str = "a_verifier"
+
     media_type: str = "photo"
     type_reference: str = "open_source"
-    statut_droits: str | None = None  # calculé automatiquement si non fourni
+    statut_droits: str | None = None
+
     artiste_nom: str | None = None
     artiste_contact: str | None = None
 
-
 class PaysageDepuisOpenverse(BaseModel):
     id_openverse: str
+
     titre: str | None = None
+
     image_url: str
     thumbnail_url: str | None = None
+
     auteur: str | None = None
     auteur_url: str | None = None
+
     licence: str | None = None
     licence_url: str | None = None
+    licence_version: str | None = None
+
     source_nom: str | None = None
     source_url: str | None = None
-    # Renseignés par l'utilisateur après import (Openverse ne géolocalise pas)
+
+    # Openverse
+    provider: str | None = None
+
+    # Informations complémentaires éventuelles
+    largeur: int | None = None
+    hauteur: int | None = None
+
+    # Renseignés par l'utilisateur
     nom: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+
     type: str | None = None
     environnement: str | None = None
     ambiance: str | None = None
     elements: list[str] = Field(default_factory=list)
+
     media_type: str = "photo"
 
 
@@ -337,6 +478,8 @@ async def rechercher_paysages(
     elements: list[str] = Query(default=[]),
     media_type: str | None = None,
     statut_droits: str | None = None,
+    usage_commercial: bool | None = None,
+    licence_code: str | None = None,
     lat: float | None = None,
     lon: float | None = None,
     distance_max_km: float | None = None,
@@ -344,7 +487,6 @@ async def rechercher_paysages(
     """Recherche multicritère (V1, sans IA) dans les paysages déjà enregistrés."""
     conditions = []
     params: list = []
-
     if type:
         conditions.append("type = %s")
         params.append(type)
@@ -363,6 +505,13 @@ async def rechercher_paysages(
     if statut_droits:
         conditions.append("statut_droits = %s")
         params.append(statut_droits)
+    if usage_commercial is not None:
+        conditions.append("usage_commercial = %s")
+        params.append(usage_commercial)
+
+    if licence_code:
+        conditions.append("licence_code = %s")
+        params.append(licence_code)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     lignes = await fetch_all(
@@ -522,37 +671,164 @@ async def rechercher_images(
 
 @router.post("/depuis-openverse", status_code=201)
 async def enregistrer_depuis_openverse(
-    payload: PaysageDepuisOpenverse, request: Request, response: Response,
+    payload: PaysageDepuisOpenverse,
+    request: Request,
+    response: Response,
 ):
-    """Enregistre un résultat Openverse comme paysage, avec attribution conservée.
-
-    type_reference='open_source' toujours (c'est la définition même
-    d'une image Openverse) — droits jamais présumés "utilisable" sans
-    vérification.
     """
+    Enregistre une image Openverse.
+
+    La licence est analysée automatiquement à partir des métadonnées
+    retournées par Openverse.
+
+    IMPORTANT :
+    Openverse précise que ses informations de licence peuvent être
+    inexactes. On conserve donc :
+        - la licence originale ;
+        - la source ;
+        - l'URL originale ;
+        - le statut metadata_openverse.
+
+    Pelify ne présente jamais cette analyse comme une garantie juridique.
+    """
+
     user = await _ensure_profile(request, response)
+
     if payload.media_type not in MEDIA_TYPES_VALIDES:
-        raise HTTPException(400, f"media_type invalide, attendu parmi {sorted(MEDIA_TYPES_VALIDES)}")
+        raise HTTPException(
+            400,
+            f"media_type invalide, attendu parmi {sorted(MEDIA_TYPES_VALIDES)}",
+        )
+
+    analyse = analyser_licence(
+        payload.licence,
+        payload.licence_url,
+    )
+
+    # Une licence déclarée compatible ne devient pas
+    # "droits_confirmes".
+    verification_statut = "metadata_openverse"
+
+    # Sans licence, on reste très prudent.
+    if not payload.licence:
+        verification_statut = "a_verifier"
+
+    nom = (
+        payload.nom
+        or payload.titre
+        or "Paysage sans titre"
+    )
 
     paysage_id = await execute(
-        """INSERT INTO paysages
-               (user_id, nom, latitude, longitude, type, environnement, ambiance, elements,
-                image_url, thumbnail_url, source_type, source_nom, source_url,
-                auteur, auteur_url, licence, licence_url, droits_a_verifier,
-                media_type, type_reference, statut_droits)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'openverse',%s,%s,%s,%s,%s,%s,TRUE,%s,'open_source','a_verifier')
-           RETURNING id""",
+        """
+        INSERT INTO paysages (
+            user_id,
+            nom,
+            latitude,
+            longitude,
+            type,
+            environnement,
+            ambiance,
+            elements,
+
+            image_url,
+            thumbnail_url,
+
+            source_type,
+            source_nom,
+            source_url,
+            source_identifier,
+
+            auteur,
+            auteur_url,
+
+            licence,
+            licence_url,
+            licence_version,
+            licence_code,
+
+            usage_commercial,
+            modification_autorisee,
+            attribution_requise,
+
+            verification_statut,
+            droits_a_verifier,
+
+            media_type,
+            type_reference,
+            statut_droits
+        )
+        VALUES (
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+            'openverse',%s,%s,%s,
+            %s,%s,%s,%s,%s,%s,
+            %s,%s,%s,
+            %s,%s,
+            %s,'open_source',%s
+        )
+        RETURNING id
+        """,
         (
-            user["id"], payload.nom or payload.titre or "Paysage sans titre",
-            payload.latitude, payload.longitude, payload.type, payload.environnement,
-            payload.ambiance, payload.elements, payload.image_url, payload.thumbnail_url,
-            payload.source_nom, payload.source_url, payload.auteur, payload.auteur_url,
-            payload.licence, payload.licence_url, payload.media_type,
+            user["id"],
+            nom,
+
+            payload.latitude,
+            payload.longitude,
+
+            payload.type,
+            payload.environnement,
+            payload.ambiance,
+            payload.elements,
+
+            payload.image_url,
+            payload.thumbnail_url,
+
+            payload.source_nom or "Openverse",
+            payload.source_url,
+            payload.id_openverse,
+
+            payload.auteur,
+            payload.auteur_url,
+
+            payload.licence,
+            payload.licence_url,
+            payload.licence_version,
+            analyse["licence_code"],
+
+            analyse["usage_commercial"],
+            analyse["modification_autorisee"],
+            analyse["attribution_requise"],
+
+            verification_statut,
+
+            analyse["statut_droits"] in {
+                "a_verifier",
+                "a_negocier",
+            },
+
+            payload.media_type,
+
+            analyse["statut_droits"],
         ),
     )
-    return {"id": paysage_id}
 
+    return {
+        "id": paysage_id,
 
+        "droits": {
+            "licence": payload.licence,
+            "licence_url": payload.licence_url,
+
+            "usage_commercial": analyse["usage_commercial"],
+            "modification_autorisee": analyse["modification_autorisee"],
+            "attribution_requise": analyse["attribution_requise"],
+
+            "statut_droits": analyse["statut_droits"],
+            "verification_statut": verification_statut,
+
+            "raison": analyse["raison"],
+        },
+    }
 # ---------------------------------------------------------------------------
 # Association scène ↔ paysage
 # ---------------------------------------------------------------------------

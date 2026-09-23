@@ -50,7 +50,6 @@ async def _appeler_openverse(query: str, page: int, page_size: int) -> dict:
             "source_url": image.get("foreign_landing_url"),
             "tags": [t.get("name") for t in (image.get("tags") or []) if t.get("name")],
         })
-
     return {
         "page": data.get("page", page),
         "page_count": data.get("page_count", 0),

@@ -1,85 +1,1419 @@
-html, body{overflow-y:auto !important;height:auto !important;min-height:100vh}
-body{min-height:100vh;background:#0f1115;color:#eee;font-family:Rajdhani,Arial,sans-serif}
-.ls-app{max-width:1200px;margin:0 auto;padding:28px 18px 60px}
+:root {
+  /* ── Thème Pelify ── */
+  --primary: #00ffcc;
+  --accent: #ff007f;
+  --gold: #ffd700;
+  --bg: #050508;
+  --card: #0d0d14;
+  --card2: #13131e;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #dde4f0;
+  --muted: #6b7280;
+  --select-bg: #1a1a2e;
+  --select-text: #dde4f0;
+  --error-bg: rgba(255, 60, 60, 0.1);
+  --error-border: rgba(255, 60, 60, 0.35);
+  --error-text: #ff6b6b;
+  --font-display: "Orbitron", sans-serif;
+  --font-body: "Rajdhani", sans-serif;
 
-.ls-top{display:flex;justify-content:space-between;gap:15px;align-items:flex-start;margin-bottom:18px}
-.ls-title h1{margin:0;font-size:2rem}
-.ls-title p{margin:4px 0;color:#9ca0aa}
-.ls-back{color:#eee;text-decoration:none;padding:9px 12px;border:1px solid #343842;border-radius:9px;white-space:nowrap}
-
-.ls-tabs{display:flex;gap:8px;margin-bottom:20px;border-bottom:1px solid #292c34}
-.ls-tab{background:none;border:none;color:#9ca0aa;padding:10px 16px;font-size:1rem;font-family:inherit;cursor:pointer;border-bottom:2px solid transparent}
-.ls-tab.active{color:#eee;border-bottom-color:#e63946}
-.ls-tab:hover{color:#eee}
-
-.ls-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
-.ls-subtab{background:#17191e;border:1px solid #292c34;color:#9ca0aa;padding:8px 14px;border-radius:9px;font-family:inherit;font-size:.85rem;cursor:pointer}
-.ls-subtab.active{color:#eee;border-color:#e63946;background:rgba(230,57,70,.1)}
-
-.ls-panel.hidden,.ls-sub.hidden,.hidden{display:none !important}
-
-.ls-section-head{display:flex;justify-content:space-between;align-items:center;margin:18px 0 12px}
-.ls-section-head h2,.ls-section-head h3{margin:0}
-
-.ls-btn{padding:9px 14px;border:1px solid #343842;border-radius:9px;background:#17191e;color:#eee;font-family:inherit;font-size:.85rem;cursor:pointer}
-.ls-btn:hover{background:#1e2128}
-.ls-btn-accent{border-color:#e63946;background:rgba(230,57,70,.12)}
-.ls-btn-accent:hover{background:rgba(230,57,70,.22)}
-.ls-btn-danger{border-color:#e63946;color:#e63946}
-.ls-btn-danger:hover{background:rgba(230,57,70,.15)}
-
-.ls-form{display:flex;flex-direction:column;gap:8px;padding:16px;border:1px solid #292c34;border-radius:14px;background:#17191e;margin-bottom:16px;max-width:640px}
-.ls-form-row{display:flex;gap:8px}
-.ls-form-row>*{flex:1}
-.ls-form input,.ls-form textarea,.ls-form select,.ls-filtres input,.ls-filtres select{
-  background:#0f1115;border:1px solid #343842;border-radius:8px;color:#eee;padding:9px 10px;font-family:inherit;font-size:.88rem
+  /* ── Alias : tout le CSS existant utilise ces noms, on les fait
+     pointer vers le thème Pelify ci-dessus plutôt que de réécrire
+     chaque règle une par une. ── */
+  --sidebar-width: 380px;
+  --header-height: auto;
+  --couleur-fond: var(--bg);
+  --couleur-carte: var(--card);
+  --couleur-accent: var(--accent);
+  --couleur-texte: var(--text);
+  --couleur-texte-muted: var(--muted);
+  --rayon: 12px;
 }
-.ls-form-actions{display:flex;gap:8px;margin-top:4px}
 
-.ls-filtres{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.ls-filtres>*{flex:1;min-width:150px}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-.ls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
-.ls-card{border:1px solid #292c34;border-radius:14px;background:#17191e;overflow:hidden;cursor:pointer;display:flex;flex-direction:column}
-.ls-card:hover{border-color:#e63946}
-.ls-card img{width:100%;height:130px;object-fit:cover;background:#0f1115}
-.ls-card-body{padding:10px 12px;display:flex;flex-direction:column;gap:4px}
-.ls-card-body b{font-size:.95rem}
-.ls-card-body span{color:#9ca0aa;font-size:.76rem}
-.ls-badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
-.ls-badge{font-size:.68rem;padding:2px 7px;border-radius:99px;background:#0f1115;border:1px solid #343842;color:#9ca0aa}
-.ls-badge.ok{border-color:#2a9d8f;color:#2a9d8f}
-.ls-badge.warn{border-color:#e9c46a;color:#e9c46a}
-.ls-badge.risk{border-color:#e63946;color:#e63946}
+body { font-family: var(--font-body); }
+h1, h2, h3, .anecdote-titre, .nav-instruction { font-family: var(--font-display); }
 
-.ls-card-noimg{height:130px;display:flex;align-items:center;justify-content:center;background:#0f1115;font-size:1.8rem}
-
-.ls-back-inline{background:none;border:none;color:#9ca0aa;cursor:pointer;font-family:inherit;font-size:.85rem;padding:0 0 14px;text-align:left}
-.ls-back-inline:hover{color:#eee}
-
-.ls-detail-head{padding:16px;border:1px solid #292c34;border-radius:14px;background:#17191e;margin-bottom:8px}
-.ls-detail-head h2{margin:0 0 6px}
-.ls-detail-head p{margin:0;color:#9ca0aa;font-size:.88rem}
-
-.ls-loading,.ls-empty{color:#9ca0aa;padding:15px 0}
-
-.ls-statut-select{margin-top:6px;width:100%}
-
-.ls-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50}
-.ls-modal.hidden{display:none !important}
-.ls-modal-box{background:#17191e;border:1px solid #292c34;border-radius:14px;padding:18px;max-width:640px;width:100%}
-.ls-modal-box h3{margin:0 0 6px}
-.ls-modal-hint{color:#9ca0aa;font-size:.8rem;margin:0 0 14px}
-.ls-card-body .ls-btn{margin-top:4px;align-self:flex-start}
-
-.ls-toasts{position:fixed;top:16px;right:16px;z-index:100;display:flex;flex-direction:column;gap:8px}
-.ls-toast{background:#17191e;border:1px solid #292c34;border-left:4px solid #6c7280;color:#e7e8ea;padding:10px 16px;border-radius:8px;font-size:.85rem;box-shadow:0 4px 16px rgba(0,0,0,.35);opacity:0;transform:translateX(20px);transition:opacity .2s,transform .2s;max-width:320px}
-.ls-toast.show{opacity:1;transform:translateX(0)}
-.ls-toast-ok{border-left-color:#4caf72}
-.ls-toast-error{border-left-color:#e63946}
-
-@media(max-width:750px){
-  .ls-top{flex-direction:column}
-  .ls-grid{grid-template-columns:repeat(2,1fr)}
-  .ls-form-row{flex-direction:column}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--couleur-fond);
+  color: var(--couleur-texte);
+  overflow: hidden; /* on gère le scroll nous-mêmes dans #cartes-scroll et #map */
 }
+
+#app {
+  display: flex;
+  flex-direction: column;   /* mobile : sidebar au-dessus, carte en dessous */
+  height: 100vh;
+  height: 100dvh;           /* évite le décalage de la barre d'adresse mobile */
+}
+
+/* ═══ SIDEBAR ═══ */
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--couleur-fond);
+  flex: 0 0 45%;            /* mobile : sidebar prend 45% de la hauteur */
+  min-height: 0;             /* indispensable pour que le scroll enfant fonctionne */
+}
+
+#sidebar-header {
+  flex: 0 0 auto;            /* en-tête à hauteur fixe, ne bouge jamais */
+  padding: 16px 16px 10px;
+  border-bottom: 1px solid #2a2d35;
+}
+
+#sidebar-header h1 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--couleur-accent);
+}
+
+.sous-titre {
+  font-size: 0.8rem;
+  color: var(--couleur-texte-muted);
+  margin-top: 2px;
+}
+
+#filtres {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.filtre-btn {
+  flex: 0 0 auto;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte-muted);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.filtre-btn.active {
+  background: var(--couleur-accent);
+  color: #fff;
+  border-color: var(--couleur-accent);
+}
+.filtre-independant {
+  margin-left: 8px;
+  border-left: 1px solid #3a3d45;
+  padding-left: 14px;
+}
+
+/* ── Zone scrollable des cartes films, hauteur fixe sous l'en-tête ── */
+#cartes-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px;
+}
+
+#cartes-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.carte-film {
+  display: flex;
+  gap: 10px;
+  background: var(--couleur-carte);
+  border-radius: var(--rayon);
+  padding: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+.carte-film:hover,
+.carte-film.selectionnee {
+  border-color: var(--couleur-accent);
+}
+
+.carte-film img {
+  width: 56px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: 0 0 auto;
+  background: #2a2d35;
+}
+
+.carte-film .infos {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.carte-film .infos h3 {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carte-film .infos .meta {
+  font-size: 0.75rem;
+  color: var(--couleur-texte-muted);
+  margin-top: 4px;
+}
+
+/* ═══ CARTE (map) ═══ */
+#carte-zone {
+  flex: 1 1 55%;
+  position: relative;
+  min-height: 0;
+}
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+/* Icône pancarte de tournage sur la carte */
+.icone-tournage {
+  font-size: 28px;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+}
+
+/* ═══ POPUP LIEU ═══ */
+#popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: flex-end;    /* mobile : popup remonte du bas */
+  justify-content: center;
+  z-index: 1000;
+}
+#popup-overlay.hidden { display: none; }
+
+#popup-lieu {
+  background: var(--couleur-fond);
+  width: 100%;
+  max-height: 85vh;
+  border-radius: 16px 16px 0 0;
+  overflow-y: auto;
+  position: relative;
+  padding-bottom: 20px;
+}
+
+#popup-fermer {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  font-size: 1rem;
+  z-index: 2;
+}
+
+#popup-poster {
+  width: 100%;
+  max-height: 420px;
+  min-height: 280px;
+  object-fit: contain; /* montre l'affiche en entier, jamais coupée — au prix d'un léger bandeau de fond si le ratio ne correspond pas exactement */
+  background: #0a0a0f; /* comble les bords quand le ratio de l'image ne remplit pas tout le cadre */
+  display: block;
+}
+
+#popup-contenu { padding: 16px; }
+
+#popup-titre { font-size: 1.2rem; margin-bottom: 8px; }
+
+#popup-synopsis.scrollable {
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  color: var(--couleur-texte-muted);
+  line-height: 1.4;
+  padding-right: 4px;
+  margin-bottom: 14px;
+}
+
+#popup-boutons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+#popup-boutons button {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 10px 8px;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+}
+#popup-boutons button.actif {
+  border-color: var(--couleur-accent);
+}
+
+#popup-resultats { display: flex; flex-direction: column; gap: 10px; }
+
+.resultat-item {
+  background: var(--couleur-carte);
+  border-radius: 10px;
+  padding: 10px;
+}
+.resultat-item .nom { font-weight: 600; font-size: 0.9rem; }
+.resultat-item .distance { color: var(--couleur-accent); font-size: 0.8rem; margin-top: 2px; }
+.resultat-item .adresse { color: var(--couleur-texte-muted); font-size: 0.78rem; margin-top: 4px; }
+.resultat-item.plus-proche { border: 1px solid var(--couleur-accent); }
+.phrase-recommandation {
+  font-size: 0.82rem;
+  font-style: italic;
+  color: var(--couleur-texte);
+  background: rgba(230,57,70,0.12);
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.hidden { display: none !important; }
+
+/* ═══ BREAKPOINT TABLETTE / DESKTOP ═══ */
+@media (min-width: 768px) {
+  #app { flex-direction: row; }
+
+  #sidebar {
+    flex: 0 0 var(--sidebar-width);
+    height: 100%;
+    border-right: 1px solid #2a2d35;
+  }
+
+  #carte-zone { flex: 1 1 auto; }
+
+  #popup-overlay { align-items: center; }
+  #popup-lieu {
+    width: 480px;
+    max-height: 80vh;
+    border-radius: 16px;
+  }
+}
+
+/* ═══ PAGE FILM SSR (/films/{slug}) ═══ */
+body.page-film-ssr {
+  overflow-y: auto;
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+}
+
+.ssr-header { padding: 16px; }
+.ssr-logo {
+  color: var(--couleur-accent);
+  font-weight: 800;
+  font-size: 1.2rem;
+  text-decoration: none;
+}
+
+.ssr-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 16px;
+}
+.ssr-hero img {
+  width: 160px;
+  border-radius: var(--rayon);
+  align-self: center;
+}
+.ssr-hero h1 { font-size: 1.5rem; margin-bottom: 4px; }
+.ssr-meta { color: var(--couleur-texte-muted); font-size: 0.85rem; margin-bottom: 10px; }
+.ssr-synopsis { line-height: 1.5; margin-bottom: 16px; }
+
+.ssr-cta {
+  display: inline-block;
+  background: var(--couleur-accent);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.ssr-lieux { padding: 24px 16px; }
+.ssr-lieux h2 { font-size: 1.1rem; margin-bottom: 14px; }
+
+.ssr-lieu-card {
+  background: var(--couleur-carte);
+  border-radius: var(--rayon);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.ssr-lieu-card h3 { font-size: 1rem; margin-bottom: 6px; }
+.ssr-lieu-card p { color: var(--couleur-texte-muted); font-size: 0.85rem; margin-bottom: 8px; }
+.ssr-lieu-card a { color: var(--couleur-accent); font-size: 0.85rem; text-decoration: none; }
+
+.ssr-lien-retour {
+  padding: 20px 16px;
+  border-top: 1px solid #2a2d35;
+  font-size: 0.85rem;
+  color: var(--couleur-texte-muted);
+}
+.ssr-lien-retour a { color: var(--couleur-accent); }
+
+/* ═══════════════════════════════════════════════════════════════
+   V2 — filtres, stats, cartes enrichies, popup enrichi
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Barre de recherche ── */
+#recherche-zone { margin-top: 10px; }
+#recherche-input {
+  width: 100%;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+#recherche-input::placeholder { color: var(--couleur-texte-muted); }
+
+/* ── Filtres avancés (année/département/commune) ── */
+#filtres-avances {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+#filtres-avances select {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 7px 4px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  min-width: 0;
+}
+
+/* ── Bouton statistiques + panneau ── */
+#stats-toggle {
+  width: 100%;
+  margin-top: 10px;
+  background: none;
+  border: 1px dashed #3a3d45;
+  color: var(--couleur-texte-muted);
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+#stats-panel {
+  flex: 0 0 auto;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2d35;
+  font-size: 0.78rem;
+}
+#stats-panel.hidden { display: none; }
+.stats-ligne-titre { font-weight: 700; margin: 8px 0 4px; color: var(--couleur-accent); }
+.stats-ligne { display: flex; justify-content: space-between; color: var(--couleur-texte-muted); padding: 2px 0; }
+.stats-ligne b { color: var(--couleur-texte); }
+
+#cartes-vide { color: var(--couleur-texte-muted); padding: 20px 10px; text-align: center; font-size: 0.85rem; }
+
+/* ── Carte film enrichie : badge nb lieux + bouton voir sur carte ── */
+.carte-film { flex-wrap: wrap; }
+.carte-film .infos { flex: 1 1 auto; }
+.carte-film .badge-lieux {
+  font-size: 0.72rem;
+  color: var(--couleur-accent);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.carte-film .btn-voir-carte {
+  flex: 0 0 100%;
+  margin-top: 6px;
+  background: rgba(230,57,70,0.12);
+  border: 1px solid var(--couleur-accent);
+  color: var(--couleur-accent);
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* ── Boutons commodités dynamiques (icône + couleur par catégorie) ── */
+#popup-boutons { grid-template-columns: repeat(2, 1fr); }
+#popup-boutons button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-width: 2px;
+}
+#popup-boutons button .icone-btn { font-size: 1rem; }
+
+.resultat-item.plus-proche {
+  border-width: 2px; /* couleur posée dynamiquement en inline-style par catégorie */
+}
+
+/* ── Plateformes de streaming ── */
+#popup-plateformes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.plateforme-logo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--couleur-carte);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  text-decoration: none;
+  color: var(--couleur-texte);
+}
+.plateforme-logo img { width: 20px; height: 20px; border-radius: 4px; }
+
+/* ── Photo(s) du lieu ── */
+#popup-photos-lieu { margin-bottom: 12px; }
+#popup-photos-lieu img {
+  width: 100%;
+  border-radius: 10px;
+  max-height: 180px;
+  object-fit: cover;
+}
+.popup-intro-visite {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 10px 0 8px;
+}
+
+/* ── Actions globales (activités / tracé) ── */
+#popup-actions-globales {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+#popup-actions-globales button {
+  background: var(--couleur-accent);
+  color: #fff;
+  border: none;
+  padding: 11px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#btn-activites { background: #6a4c93; }
+
+/* ── Emplacement publicité/affiliation ── */
+.pub-slot {
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px dashed #3a3d45;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--couleur-texte-muted);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pub-slot:empty::before { content: "Emplacement partenaire"; }
+
+/* ── Mobile : filtres avancés passent en scroll horizontal sous 360px ── */
+@media (max-width: 360px) {
+  #filtres-avances { grid-template-columns: 1fr; }
+}
+
+.resume-recherche {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  color: #333;
+  background: #f5f7fa;
+  border-left: 4px solid #3388ff;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.resume-recherche strong {
+  color: #111;
+}
+/* ═══════════════════════════════════════════════════════════════
+   V3 — filtres flottants sur la carte, recentrage, popup enrichi
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Bouton "Analyse territoriale" (remplace l'ancien panneau stats) ── */
+#stats-toggle {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  background: var(--couleur-accent);
+  border: none;
+  color: #fff;
+  padding: 9px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  text-decoration: none;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* ── Recherche + type, dans la sidebar ── */
+#sidebar-header input#recherche-input {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+#sidebar-header input#recherche-input::placeholder { color: var(--couleur-texte-muted); }
+
+/* ── Filtres flottants au-dessus de la carte : horizontal, ne chevauche
+   plus le zoom (déplacé à droite dans app.js) ── */
+#carte-zone { position: relative; }
+
+#filtres-carte {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 50px; /* place réservée aux boutons de zoom, désormais à droite */
+  z-index: 1000;
+  background: rgba(15,17,21,0.92);
+  backdrop-filter: blur(4px);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+#filtres-carte select {
+  flex: 1 1 100px;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 7px 6px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  min-width: 0;
+}
+
+#filtre-notoriete {
+  flex: 0 0 auto;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte-muted);
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#filtre-notoriete.active { background: var(--couleur-accent); color: #fff; border-color: var(--couleur-accent); }
+
+/* ── Bouton recentrer (apparaît après avoir zoomé dans un cluster / activités) ── */
+#btn-recentrer {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: var(--couleur-accent);
+  color: #fff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#btn-recentrer.hidden { display: none; }
+
+/* ── Popup : meta (année/type) + adresse complète ── */
+#popup-meta {
+  font-size: 0.8rem;
+  color: var(--couleur-texte-muted);
+  margin-bottom: 2px;
+}
+#popup-adresse {
+  font-size: 0.78rem;
+  color: var(--couleur-accent);
+  margin-bottom: 10px;
+}
+
+/* ── Icônes "activité" sur la carte, distinctes des lieux de tournage ── */
+.icone-commodite { font-size: 22px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+
+/* ── Mobile : filtres flottants passent en pleine largeur ── */
+@media (max-width: 600px) {
+  #filtres-carte { left: 6px; right: 6px; }
+  #filtres-carte select { flex: 1 1 90px; }
+
+  /* La sidebar (cartes films) manquait cruellement de place sur mobile
+     — l'en-tête (titre/recherche/filtres) prenait trop de hauteur au
+     détriment de la liste elle-même. */
+  #sidebar { flex: 0 0 58%; }
+
+  /* Une fois déplacé dans la sidebar par app.js, #filtres-carte n'est
+     plus flottant sur la carte — retour au flux normal du document. */
+  #sidebar-header #filtres-carte {
+    position: static;
+    background: none;
+    backdrop-filter: none;
+    padding: 0;
+    margin-top: 6px;
+    border-radius: 0;
+  }
+  #sidebar-header #filtres-carte select,
+  #sidebar-header #filtre-notoriete {
+    font-size: 0.72rem;
+    padding: 5px 6px;
+  }
+
+  #sidebar-header {
+    padding: 10px 12px 8px;
+  }
+  #sidebar-header h1 { font-size: 1.1rem; }
+  #sidebar-header .sous-titre { display: none; } /* superflu sur petit écran, gagne de la place */
+  #sidebar-header input#recherche-input { padding: 7px 10px; font-size: 0.8rem; margin-top: 6px; }
+  #filtres { margin-top: 6px; }
+  .filtre-btn { padding: 5px 10px; font-size: 0.78rem; }
+  #stats-toggle { padding: 7px; font-size: 0.75rem; margin-top: 6px; }
+
+  /* Cartes films plus compactes et plus lisibles */
+  #cartes-scroll { padding: 6px; }
+  #cartes-liste { gap: 6px; }
+  .carte-film { padding: 6px; gap: 8px; }
+  .carte-film img { width: 46px; height: 68px; }
+  .carte-film .infos h3 { font-size: 0.82rem; }
+  .carte-film .infos .meta { font-size: 0.7rem; }
+  .carte-film .badge-lieux { font-size: 0.68rem; }
+  .carte-film .btn-voir-carte { padding: 5px; font-size: 0.7rem; }
+}
+
+/* ── Calques carte (choroplèthe départements / carte de chaleur) ── */
+#calques-carte {
+  position: absolute;
+  bottom: 24px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#calques-carte button {
+  background: var(--couleur-carte);
+  color: var(--couleur-texte);
+  border: 1px solid #2a2d35;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+#calques-carte button[data-actif="true"] {
+  background: var(--couleur-accent);
+  border-color: var(--couleur-accent);
+  color: #fff;
+}
+
+/* ── Popup département (choroplèthe) — utilise le popup natif Leaflet ── */
+.popup-departement { font-size: 0.82rem; }
+.popup-departement h3 { margin-bottom: 6px; font-size: 0.95rem; }
+.popup-departement .ligne { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.popup-departement .recommandation { margin-top: 6px; font-style: italic; color: #555; font-size: 0.78rem; }
+
+.plateformes-intro {
+  width: 100%;
+  font-size: 0.78rem;
+  color: var(--couleur-texte-muted);
+  margin-bottom: 4px;
+}
+
+/* ── Anecdote de tournage — le contenu que Google Maps n'a pas ── */
+#popup-anecdote:empty { display: none; }
+#popup-anecdote {
+  background: rgba(230,57,70,0.08);
+  border-left: 3px solid var(--couleur-accent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+.anecdote-titre { font-size: 0.78rem; font-weight: 700; margin-bottom: 4px; }
+.anecdote-texte { font-size: 0.82rem; line-height: 1.4; color: var(--couleur-texte); }
+
+/* ── Photo, horaires et itinéraires par commodité ── */
+.resultat-photo {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+.horaires { font-size: 0.75rem; color: var(--couleur-texte-muted); margin-top: 2px; }
+.etoiles { color: var(--gold); font-size: 0.72rem; }
+.equipements, .langues { font-size: 0.72rem; color: var(--couleur-texte-muted); margin-top: 2px; }
+.accessibilite a { font-size: 0.72rem; color: var(--primary); }
+.description-commodite {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--couleur-texte-muted);
+  margin-top: 4px;
+}
+.description-commodite.scrollable { max-height: 120px; overflow-y: auto; }
+
+.boutons-itineraire {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.btn-itineraire {
+  flex: 1;
+  background: var(--couleur-fond);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 6px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.itineraire-resultat {
+  font-size: 0.75rem;
+  color: var(--couleur-accent);
+  margin-top: 4px;
+}
+
+/* ── Infobulle "distance/temps restants" au survol d'un tracé ── */
+.tooltip-itineraire {
+  background: var(--couleur-carte, #13131e);
+  border: 1px solid var(--couleur-accent, #ff007f);
+  color: var(--couleur-texte, #dde4f0);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Panneau de navigation guidée ── */
+#panneau-navigation {
+  position: absolute;
+  bottom: 24px;
+  left: 10px;
+  right: 10px;
+  z-index: 1100;
+  background: #1a1d24;
+  border: 2px solid #ffd60a;
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+}
+#panneau-navigation.hidden { display: none; }
+.nav-instruction { font-size: 1rem; font-weight: 700; color: #ffd60a; }
+.nav-distance { font-size: 0.85rem; color: var(--couleur-texte-muted); margin-top: 4px; }
+#btn-arreter-navigation {
+  margin-top: 10px;
+  background: var(--couleur-accent);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.btn-demarrer-navigation {
+  margin-top: 6px;
+  background: #ffd60a;
+  color: #0f1115;
+  border: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+}
+
+#popup-description-lieu:empty { display: none; }
+#popup-description-lieu {
+  background: rgba(42,157,143,0.08);
+  border-left: 3px solid #2a9d8f;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+
+/* ── Sélecteur de mode (vol d'oiseau/pied/voiture) ── */
+.selecteur-mode {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.mode-btn {
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  color: var(--couleur-texte);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.mode-btn.actif { background: var(--couleur-accent); border-color: var(--couleur-accent); color: #fff; }
+.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.mode-calcul { font-size: 0.7rem; color: var(--couleur-texte-muted); font-style: italic; }
+
+.phrase-comparaison p { margin-bottom: 8px; font-size: 0.8rem; line-height: 1.4; }
+.phrase-comparaison b { color: var(--couleur-accent); }
+
+/* ── Statuts horaires ── */
+.statut-ouvert { color: #2ecc71; font-weight: 700; }
+.statut-ferme { color: #e74c3c; font-weight: 700; }
+.statut-bientot { color: #f39c12; font-weight: 700; }
+
+.phrases-pied-voiture p { margin-bottom: 8px; font-size: 0.82rem; line-height: 1.4; }
+
+/* ── Anecdote scrollable (texte long, pas de limite artificielle) ── */
+.anecdote-texte.scrollable {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  line-height: 1.5;
+}
+.anecdote-source {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--couleur-accent);
+  text-decoration: underline;
+}
+
+/* ── Galerie photos/vidéos du lieu ── */
+.galerie-medias {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+.galerie-medias img,
+.galerie-medias .media-video {
+  flex: 0 0 auto;
+  width: 220px;
+  height: 140px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.galerie-medias .media-video { border: none; }
+
+/* TikTok est en format vertical (portrait), contrairement à YouTube/
+   Vimeo — dimensions dédiées, sinon la vidéo apparaît minuscule et
+   écrasée dans le format paysage prévu pour les autres plateformes. */
+.galerie-medias .media-tiktok {
+  width: 260px;
+  height: 460px;
+  object-fit: contain;
+}
+
+/* ── Numéros d'étape sur la carte (trace du film) ── */
+.numero-etape {
+  position: relative;
+  z-index: 10000; /* toujours au-dessus des icônes de lieu de tournage */
+  background: #e63946;
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  border: 2px solid #fff;
+}
+
+.trace-intro { font-size: 0.85rem; font-weight: 600; margin-top: 10px; margin-bottom: 6px; }
+.trace-liste { padding-left: 20px; font-size: 0.82rem; line-height: 1.6; color: var(--couleur-texte-muted); }
+
+.sous-nom { font-family: var(--font-body); font-size: 0.7rem; color: var(--primary); display: block; font-weight: 600; letter-spacing: 0.5px; }
+
+.marqueur-depart { font-size: 28px; filter: drop-shadow(0 0 6px #00ffcc) drop-shadow(0 2px 3px rgba(0,0,0,0.6)); }
+
+/* ── Section réservation (agence de cinétourisme) ── */
+.btn-voir-sur-carte {
+  width: 100%;
+  margin-top: 10px;
+  background: var(--primary);
+  color: #050508;
+  border: none;
+  padding: 10px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#section-reservation { max-height: 320px; overflow-y: auto; margin-top: 12px; padding-right: 4px; }
+.reservation-intro { font-size: 0.82rem; line-height: 1.5; margin-bottom: 12px; color: var(--couleur-texte-muted); }
+
+.packs-reservation { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.pack-carte {
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+}
+.pack-recommande { border-color: var(--primary); }
+.pack-badge {
+  position: absolute; top: -9px; right: 10px;
+  background: var(--primary); color: #050508;
+  font-size: 0.62rem; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+}
+.pack-nom { font-family: var(--font-display); font-size: 0.9rem; margin-bottom: 2px; }
+.pack-prix { color: var(--gold); font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+.pack-inclus { list-style: none; font-size: 0.75rem; line-height: 1.7; color: var(--couleur-texte-muted); }
+
+.reservation-note { font-size: 0.68rem; color: var(--couleur-texte-muted); font-style: italic; margin-bottom: 10px; }
+.btn-reserver {
+  display: block;
+  text-align: center;
+  background: linear-gradient(135deg, var(--accent), var(--gold));
+  color: #050508;
+  font-weight: 700;
+  padding: 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+/* ── Carrousel publicitaire (Awin, rotation 4s + flèches) ── */
+.carrousel-pub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0;
+}
+.carrousel-contenu { flex: 1; min-width: 0; }
+.pub-carte {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  min-height: 220px;
+  background: linear-gradient(135deg, var(--select-bg), var(--card2)); /* visible tant que l'image charge, ou en repli si absente */
+  text-align: center;
+  display: flex;
+  align-items: flex-end; /* pousse le contenu textuel vers le bas */
+}
+.pub-carte img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* remplit toute la carte, recadrée proprement, pas déformée */
+  z-index: 0;
+  margin: 0;
+  max-width: none;
+  max-height: none;
+  border-radius: 12px;
+}
+.pub-carte::after {
+  /* Dégradé léger, juste assez pour que le bouton reste lisible —
+     l'affiche garde son propre texte visible, on ne le recouvre plus */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(5,5,8,0.75) 0%, rgba(5,5,8,0.35) 25%, transparent 50%);
+  z-index: 1;
+  pointer-events: none;
+  border-radius: 12px;
+}
+.pub-carte > .pub-icone-repli,
+.pub-carte > .pub-cta {
+  position: relative;
+  z-index: 2;
+}
+.pub-icone-repli { font-size: 2.2rem; margin: auto; }
+.pub-cta {
+  display: block;
+  width: fit-content;
+  margin: 0 auto 16px; /* centré horizontalement, marge respirante en bas */
+  background: var(--primary);
+  color: #050508;
+  padding: 9px 22px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35); /* détache bien le bouton de l'image derrière */
+}
+.carrousel-fleche {
+  flex: 0 0 auto;
+  background: var(--couleur-carte);
+  border: 1px solid var(--border);
+  color: var(--couleur-texte);
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.pub-icone-repli { width: 60px; height: 60px; margin: 0 auto 10px; color: var(--primary); }
+.pub-icone-repli svg { width: 100%; height: 100%; }
+
+/* ── Uniformisation demandée : TOUS les border-radius à 2px, sans
+   exception (y compris les pastilles rondes et cercles) ── */
+* { border-radius: 2px !important; }
+
+.lien-pelify { color: inherit; text-decoration: none; }
+.lien-pelify:hover { text-decoration: underline; }
+
+/* ── Menu hamburger (mobile uniquement) ── */
+#btn-hamburger, #btn-fermer-sidebar { display: none; }
+
+@media (max-width: 600px) {
+  #btn-hamburger {
+    display: block;
+    position: fixed;
+    top: 10px; left: 10px;
+    z-index: 2000;
+    background: var(--couleur-carte);
+    color: var(--couleur-texte);
+    border: 1px solid var(--border);
+    width: 40px; height: 40px;
+    font-size: 1.2rem;
+  }
+  #btn-fermer-sidebar {
+    display: block;
+    position: absolute;
+    top: 8px; right: 8px;
+    background: none;
+    border: none;
+    color: var(--couleur-texte);
+    font-size: 1.3rem;
+    z-index: 10;
+  }
+
+  /* Ouvert par défaut au chargement (classe ajoutée par app.js) —
+     l'internaute peut ensuite l'ouvrir/fermer à volonté. */
+  #sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 88%;
+    max-width: 340px;
+    z-index: 1900;
+    flex: none;
+    transition: transform 0.25s ease;
+    transform: translateX(0);
+  }
+
+  /* Le bouton hamburger (fixe, en haut à gauche) se superposait au
+     titre "Pelify Lieux de tournage" — on pousse le header sous lui
+     et on centre le texte pour que ça reste lisible et équilibré. */
+  #sidebar-header {
+    padding-top: 56px; /* dégage l'espace occupé par le hamburger (40px + marge) */
+    text-align: center;
+  }
+  #sidebar-header h1 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  #sidebar.fermee { transform: translateX(-100%); }
+
+  #carte-zone { width: 100%; }
+}
+
+.btn-masquer-tarifs {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--couleur-texte-muted);
+  padding: 5px 10px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.partenaire-visite { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.partenaire-visite:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+
+
+/* =========================================================
+   ISOCHRONES — ACCESSIBILITÉ
+   ========================================================= */
+
+.bloc-accessibilite {
+  margin: 18px 0;
+  padding: 16px;
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.accessibilite-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+
+  margin-bottom: 15px;
+}
+
+.accessibilite-header h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.accessibilite-header p {
+  margin: 0;
+
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.accessibilite-controles {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.accessibilite-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.accessibilite-label {
+  font-size: 11px;
+  font-weight: 700;
+
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+
+  opacity: 0.6;
+}
+
+.accessibilite-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.iso-mode-btn,
+.iso-time-btn {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+
+  background: rgba(255, 255, 255, 0.06);
+
+  color: inherit;
+
+  border-radius: 9px;
+
+  padding: 8px 12px;
+
+  cursor: pointer;
+
+  font-size: 13px;
+
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.iso-mode-btn:hover,
+.iso-time-btn:hover {
+  transform: translateY(-1px);
+}
+
+.iso-mode-btn.actif,
+.iso-time-btn.actif {
+  border-color: #3388ff;
+
+  background: rgba(51, 136, 255, 0.15);
+
+  font-weight: 700;
+}
+
+.iso-time-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+
+  transform: none;
+}
+
+.isochrone-legende {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+
+  margin-top: 14px;
+  padding-top: 10px;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  font-size: 11px;
+
+  opacity: 0.7;
+}
+
+#isochrone-source {
+  font-style: italic;
+}
+
+.isochrone-legende.chargement {
+  opacity: 0.45;
+}
+
+@media (max-width: 600px) {
+
+  .bloc-accessibilite {
+    padding: 13px;
+  }
+
+  .iso-mode-btn,
+  .iso-time-btn {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .isochrone-legende {
+    flex-direction: column;
+  }
+
+}
+/* ═══════════════════════════════════════════════════════════════
+   PELIFY V4 — Parcours cinétouristique enrichi
+   ═══════════════════════════════════════════════════════════════ */
+#panel-parcours-v4 {
+  margin-top: 12px;
+  background: var(--couleur-carte);
+  border: 1px solid #2a2d35;
+  border-radius: 14px;
+  padding: 12px;
+}
+#panel-parcours-v4 h3 { margin: 0 0 6px; font-size: 1rem; }
+.parcours-v4-intro { margin: 0 0 10px; color: var(--couleur-texte-muted); font-size: .8rem; line-height: 1.45; }
+.parcours-v4-options { display:flex; flex-wrap:wrap; gap:7px; margin: 8px 0; }
+.parcours-v4-options label { display:flex; align-items:center; gap:5px; font-size:.78rem; }
+.parcours-v4-etapes { display:flex; flex-direction:column; gap:7px; max-height:240px; overflow:auto; margin:10px 0; }
+.parcours-v4-etape { display:flex; align-items:flex-start; gap:8px; padding:8px; border-radius:9px; background:rgba(255,255,255,.035); }
+.parcours-v4-etape input { margin-top:3px; }
+.parcours-v4-etape .numero { min-width:22px; font-weight:700; color:var(--couleur-accent); }
+.parcours-v4-etape .texte { flex:1; font-size:.8rem; line-height:1.35; }
+.parcours-v4-etape .texte small { display:block; color:var(--couleur-texte-muted); margin-top:2px; }
+.parcours-v4-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.parcours-v4-actions button, .btn-parcours-v4 { border:1px solid var(--couleur-accent); background:rgba(230,57,70,.12); color:var(--couleur-texte); border-radius:9px; padding:9px 8px; cursor:pointer; font-size:.78rem; }
+.parcours-v4-actions button.secondaire { border-color:#3a3d46; background:transparent; }
+.parcours-v4-resultat { margin-top:12px; }
+.parcours-v4-resume { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
+.parcours-v4-stat { padding:8px; border-radius:9px; background:rgba(255,255,255,.04); text-align:center; }
+.parcours-v4-stat b { display:block; font-size:.9rem; }
+.parcours-v4-stat span { color:var(--couleur-texte-muted); font-size:.68rem; }
+.parcours-v4-cats { display:flex; flex-direction:column; gap:9px; }
+.parcours-v4-cat { border-top:1px solid #2a2d35; padding-top:8px; }
+.parcours-v4-cat h4 { margin:0 0 6px; font-size:.84rem; }
+.parcours-v4-amenity { padding:7px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:.78rem; }
+.parcours-v4-amenity:last-child { border-bottom:0; }
+.parcours-v4-amenity small { display:block; color:var(--couleur-texte-muted); margin-top:2px; }
+.parcours-v4-amenity a { color:var(--couleur-accent); }
+.parcours-v4-loading { color:var(--couleur-texte-muted); font-size:.8rem; }
+@media (max-width:600px) {
+  .parcours-v4-resume { grid-template-columns:repeat(2,1fr); }
+  .parcours-v4-actions { grid-template-columns:1fr; }
+}
+
+/* ═══ PELIFY V4.1 — Mon parcours global ═══ */
+.btn-mon-parcours{width:100%;margin:9px 0 7px;padding:10px 12px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.12);color:var(--couleur-texte);font-weight:700;cursor:pointer}.btn-mon-parcours.ajoute{background:rgba(42,157,143,.15)}
+#mon-parcours-compteur{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;margin-left:4px;border-radius:999px;background:var(--couleur-accent);color:#fff;font-size:.72rem}
+.btn-ajouter-parcours{width:100%;margin:8px 0 12px;padding:10px 12px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.10);color:var(--couleur-texte);font-weight:700;cursor:pointer}.btn-ajouter-parcours.ajoute{background:rgba(42,157,143,.16);border-color:#2a9d8f}
+#mon-parcours-overlay{position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.58);display:flex;justify-content:flex-end}#mon-parcours-overlay.hidden{display:none}#mon-parcours-panel{width:min(520px,100vw);height:100%;overflow:auto;background:var(--couleur-fond,#0f1115);border-left:1px solid #2a2d35;box-shadow:-10px 0 35px rgba(0,0,0,.35);padding:18px}.mon-parcours-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:1px solid #2a2d35;padding-bottom:12px;margin-bottom:12px}.mon-parcours-header h2{margin:0 0 4px}.mon-parcours-header p{margin:0;color:var(--couleur-texte-muted);font-size:.82rem}#btn-fermer-mon-parcours{border:0;background:transparent;color:var(--couleur-texte);font-size:1.2rem;cursor:pointer}.mon-parcours-resume-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}.btn-texte-danger{border:0;background:transparent;color:#e76f51;cursor:pointer}.mon-parcours-liste{display:flex;flex-direction:column;gap:7px}.mon-parcours-etape{display:flex;align-items:center;gap:9px;padding:9px;background:rgba(255,255,255,.04);border:1px solid #292c34;border-radius:10px}.mon-parcours-numero{min-width:27px;height:27px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(230,57,70,.15);color:var(--couleur-accent);font-weight:800}.mon-parcours-etape-info{flex:1;min-width:0}.mon-parcours-etape-info strong{display:block;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mon-parcours-etape-info small{display:block;color:var(--couleur-texte-muted);font-size:.7rem;margin-top:2px}.mon-parcours-etape-actions{display:flex;gap:3px}.mon-parcours-etape-actions button{width:28px;height:28px;border:1px solid #363943;border-radius:7px;background:transparent;color:var(--couleur-texte);cursor:pointer}.mon-parcours-etape-actions button:last-child{color:#e76f51}.mon-parcours-options{margin:12px 0;padding:10px;border:1px solid #292c34;border-radius:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.78rem}.mon-parcours-options>span{width:100%;font-weight:700}.mon-parcours-options label{display:flex;gap:5px;align-items:center}.btn-calculer-mon-parcours{width:100%;padding:11px;border:1px solid var(--couleur-accent);border-radius:10px;background:rgba(230,57,70,.14);color:var(--couleur-texte);font-weight:800;cursor:pointer}.mon-parcours-note,.mon-parcours-loading{color:var(--couleur-texte-muted);font-size:.75rem;line-height:1.45}.mon-parcours-erreur{color:#e76f51;font-size:.8rem}.mon-parcours-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}.mon-parcours-stats>div{padding:8px 5px;text-align:center;background:rgba(255,255,255,.04);border-radius:8px}.mon-parcours-stats b{display:block;font-size:.85rem}.mon-parcours-stats span{display:block;color:var(--couleur-texte-muted);font-size:.65rem}.mon-parcours-offres h3{font-size:.95rem;margin:14px 0 8px}.mon-parcours-offres-cat{border-top:1px solid #2a2d35;padding-top:9px;margin-top:9px}.mon-parcours-offres-cat h4{margin:0 0 5px;font-size:.82rem}.mon-parcours-offre{padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.77rem}.mon-parcours-offre small{display:block;color:var(--couleur-texte-muted);margin-top:2px;line-height:1.35}.mon-parcours-offre a{color:var(--couleur-accent)}.mon-parcours-vide{text-align:center;padding:40px 12px;color:var(--couleur-texte-muted)}.mon-parcours-vide-icone{font-size:2.2rem}.mon-parcours-vide h3{color:var(--couleur-texte)}.btn-parcours-v4-ajouter{min-width:30px;height:30px;border:1px solid var(--couleur-accent);border-radius:7px;background:transparent;color:var(--couleur-texte);cursor:pointer;font-weight:800}.btn-parcours-v4-ajouter.ajoute{border-color:#2a9d8f;background:rgba(42,157,143,.15)}
+@media(max-width:600px){#mon-parcours-panel{padding:14px}.mon-parcours-stats{grid-template-columns:repeat(2,1fr)}}
+
+/* ═══ Mon parcours V4.2 — critères de sortie ═══ */
+.mon-parcours-criteres{margin:14px 0;padding:13px;border:1px solid #292c34;border-radius:12px;background:rgba(255,255,255,.025)}
+.mon-parcours-criteres h3{margin:0 0 12px;font-size:.95rem}
+.mp-label{display:block;margin:11px 0 6px;font-weight:700;font-size:.76rem}
+.mp-depart-options{display:flex;flex-wrap:wrap;gap:7px}
+.mp-depart-options label,.mp-check,.mp-interets label{display:flex;align-items:center;gap:5px;padding:7px 8px;border:1px solid #363943;border-radius:8px;font-size:.73rem;cursor:pointer}
+.mp-depart-options input,.mp-check input,.mp-interets input{accent-color:var(--couleur-accent)}
+.mp-adresse-bloc{margin-top:8px}.mp-adresse-ligne{display:flex;gap:6px}.mp-adresse-ligne input,.mon-parcours-criteres select{width:100%;box-sizing:border-box;padding:9px;border:1px solid #363943;border-radius:8px;background:#17191e;color:var(--couleur-texte)}
+.mp-adresse-ligne button{padding:9px 10px;border:1px solid var(--couleur-accent);border-radius:8px;background:rgba(230,57,70,.12);color:var(--couleur-texte);cursor:pointer;font-weight:700}
+.mp-adresse-resultat{display:block;width:100%;margin-top:5px;padding:8px;text-align:left;border:1px solid #292c34;border-radius:7px;background:#17191e;color:var(--couleur-texte);cursor:pointer;font-size:.72rem}
+.mp-selection-info{margin-top:7px;padding:7px 8px;border-radius:7px;background:rgba(42,157,143,.08);font-size:.7rem;color:var(--couleur-texte-muted)}
+.mp-interets{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mp-check{margin-top:10px}
+.mp-budget{display:flex;flex-direction:column;gap:4px;margin:10px 0;padding:10px;border-radius:9px;font-size:.72rem}.mp-budget.ok{border:1px solid rgba(42,157,143,.55);background:rgba(42,157,143,.09)}.mp-budget.alerte{border:1px solid rgba(231,111,81,.65);background:rgba(231,111,81,.09)}
+@media(max-width:600px){.mp-interets{grid-template-columns:1fr}.mp-depart-options{flex-direction:column}.mp-adresse-ligne{flex-direction:column}}
+
+/* ═══ Mon parcours V4.3 — recommandations personnalisées ═══ */
+.mp-conseil{margin:12px 0;padding:11px 12px;border-radius:10px;border:1px solid rgba(42,157,143,.35);background:rgba(42,157,143,.08);display:flex;flex-direction:column;gap:4px;font-size:.74rem;line-height:1.4}.mp-conseil span{color:var(--couleur-texte-muted)}
+.mp-recommandations h3{font-size:.95rem;margin:15px 0 8px}.mp-reco-etape{margin:8px 0;padding:9px;border:1px solid #292c34;border-radius:10px;background:rgba(255,255,255,.025)}
+.mp-reco-etape-titre{display:flex;gap:8px;align-items:center;margin-bottom:7px}.mp-reco-etape-titre .mon-parcours-numero{min-width:25px;height:25px}.mp-reco-etape-titre small{display:block;color:var(--couleur-texte-muted);font-size:.68rem;margin-top:2px}
+.mp-reco-card{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)}.mp-reco-card>div{min-width:0}.mp-reco-card b{display:block;font-size:.76rem}.mp-reco-card small{display:block;color:var(--couleur-texte-muted);font-size:.67rem;line-height:1.35;margin-top:2px}.mp-reco-action,.mp-action{display:inline-block;white-space:nowrap;color:var(--couleur-accent);font-weight:700;font-size:.68rem;text-decoration:none;margin-top:4px}.mp-reco-action{border:1px solid var(--couleur-accent);padding:6px 8px;border-radius:7px}.mp-reco-action:hover,.mp-action:hover{text-decoration:underline}
+@media(max-width:600px){.mp-reco-card{align-items:flex-start;flex-direction:column}.mp-reco-action{align-self:flex-end}}
+
+/* ═══ PELIFY V4.7 — Génération intelligente + espace personnel ═══ */
+#pelify-espace-link{display:block;margin:7px 0;padding:9px 10px;border:1px solid #343842;border-radius:9px;color:var(--couleur-texte);text-decoration:none;font-size:.78rem;text-align:center}
+#landscape-studio-link{display:block;margin:7px 0;padding:9px 10px;border:1px solid #343842;border-radius:9px;color:var(--couleur-texte);text-decoration:none;font-size:.78rem;text-align:center}
+#landscape-studio-link:hover{border-color:#e63946}#pelify-historique-compteur{display:inline-flex;min-width:19px;height:19px;align-items:center;justify-content:center;border-radius:99px;background:#2a9d8f;color:#fff;font-size:.65rem;margin-left:3px}.btn-generer-parcours-ideal{width:100%;margin-top:7px;padding:11px;border:1px solid #2a9d8f;border-radius:10px;background:rgba(42,157,143,.12);color:var(--couleur-texte);font-weight:800;cursor:pointer}.btn-generer-parcours-ideal:hover{background:rgba(42,157,143,.2)}#mp-generation-resultat{margin-top:6px}.mp-generation-note{font-size:.72rem;color:var(--couleur-texte-muted)}
+.mp-time-input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #363943;border-radius:8px;background:#17191e;color:var(--couleur-texte)}.mp-planning{margin:14px 0;padding:10px;border:1px solid #292c34;border-radius:10px}.mp-planning h3{font-size:.9rem;margin:0 0 7px}.mp-planning-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:.73rem}.mp-planning-row b{min-width:45px;color:var(--couleur-accent)}.mp-planning-row span{color:var(--couleur-texte-muted)}
+
+/* V4.7.1 — visites guidées intégrées au parcours */
+.mp-visites-guidees{margin-top:14px;padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.035)}
+.mp-visites-guidees h3{margin:0 0 10px;font-size:1rem}
+.mp-visite-card{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.08)}
+.mp-visite-card:first-of-type{border-top:0}
+.mp-visite-card>div{display:flex;flex-direction:column;gap:4px}
+.mp-visite-card small{opacity:.78;line-height:1.35}
+.mp-visite-card .mp-reco-action{white-space:nowrap}
+@media(max-width:700px){.mp-visite-card{align-items:flex-start;flex-direction:column}.mp-visite-card .mp-reco-action{white-space:normal}}
+
+/* V4.8 — scénario et possibilités intelligentes */
+.mp-scenario{margin:14px 0;padding:14px;border:1px solid rgba(230,57,70,.35);border-radius:12px;background:rgba(230,57,70,.07)}
+.mp-scenario h3{margin:0 0 8px;font-size:.98rem}.mp-scenario p{margin:7px 0;font-size:.76rem;line-height:1.45}
+.mp-possibilites{margin-top:10px;padding:11px;border:1px solid rgba(42,157,143,.35);border-radius:11px;background:rgba(42,157,143,.06)}
+.mp-possibilites h4{margin:0 0 5px;font-size:.88rem}.mp-generation-note{margin:4px 0 8px}
+.mp-possibilite{display:flex;align-items:center;gap:8px;padding:8px;border-top:1px solid rgba(255,255,255,.06);cursor:pointer}.mp-possibilite:first-of-type{border-top:0}.mp-possibilite span{min-width:0}.mp-possibilite b{display:block;font-size:.74rem}.mp-possibilite small{display:block;color:var(--couleur-texte-muted);font-size:.67rem;margin-top:2px}
+
+/* V4.9 — planification temporelle des visites guidées */
+.mp-aide{display:block;color:var(--couleur-texte-muted);font-size:.67rem;line-height:1.35;margin:4px 0 7px}.mp-creneau-confirme{color:#2a9d8f!important;font-weight:700}.mp-scenario{box-shadow:0 4px 18px rgba(0,0,0,.08)}
+
+/* V4.9.1 — scénarios géographiques */
+.mp-scenarios{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.mp-scenario{margin:0;padding:12px;border:1px solid rgba(42,157,143,.35);border-radius:12px;background:rgba(42,157,143,.055)}
+.mp-scenario.compatible{border-color:rgba(42,157,143,.55)}
+.mp-scenario.depasse{border-color:rgba(231,111,81,.45);background:rgba(231,111,81,.045)}
+.mp-scenario-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mp-scenario-head h5{margin:4px 0 0;font-size:.86rem}
+.mp-scenario-head>strong{font-size:.72rem;white-space:nowrap;color:var(--couleur-texte-muted)}
+.mp-scenario-badge{display:inline-block;padding:3px 6px;border-radius:999px;background:rgba(42,157,143,.13);font-size:.62rem;font-weight:800;color:var(--couleur-accent)}
+.mp-scenario-stats{color:var(--couleur-texte-muted);font-size:.68rem!important}
+.mp-scenario-lieux,.mp-scenario-films{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}
+.mp-scenario-lieu,.mp-scenario-film{padding:4px 6px;border-radius:7px;background:rgba(255,255,255,.055);font-size:.64rem;color:var(--couleur-texte-muted)}
+.mp-scenario>small{display:block;color:var(--couleur-texte-muted);font-size:.62rem;line-height:1.35;margin-top:6px}
+.mp-scenario-choisir{width:100%;margin-top:9px;padding:9px;border:1px solid var(--couleur-accent);border-radius:8px;background:rgba(230,57,70,.11);color:var(--couleur-texte);font-weight:800;cursor:pointer}
+.mp-scenario-choisir:hover{filter:brightness(1.08)}
+.mp-tous-candidats{margin-top:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:9px}
+.mp-tous-candidats summary{cursor:pointer;font-size:.7rem;color:var(--couleur-texte-muted)}
+.mp-candidats-liste{margin-top:7px;max-height:280px;overflow:auto}

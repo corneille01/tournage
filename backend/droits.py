@@ -436,6 +436,7 @@ async def creer_demande(
         "id": demande_id,
         "statut": "en_attente",
         "email_statut": email_statut,
+        "guest_link": lien,
         "message": (
             "Demande enregistrée. L'email sera envoyé automatiquement."
             if _smtp_configure()

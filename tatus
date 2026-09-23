@@ -1,0 +1,6 @@
+ backend/droits.py         | 564 [32m++++++++++++++++++++++++++++++++++++++++++++++[m
+ backend/main.py           |   2 [32m+[m
+ backend/migration_v23.sql |  94 [32m++++++++[m
+ frontend/droits.html      | 146 [32m++++++++++++[m
+ frontend/paysages.js      | 103 [32m++++++++[m[31m-[m
+ 5 files changed, 908 insertions(+), 1 deletion(-)

@@ -158,6 +158,33 @@ class PaysageDepuisOpenverse(BaseModel):
     media_type: str = "photo"
 
 
+class PaysageMiseAJour(BaseModel):
+    """Édition partielle (PATCH) — tous les champs sont optionnels, seuls
+    ceux effectivement fournis par le client sont mis à jour (cf.
+    `exclude_unset` dans la route). C'est ce qui manquait pour compléter
+    un paysage après import Openverse (géolocalisation, statut de droits)
+    ou après ajout manuel rapide."""
+    nom: str | None = Field(None, min_length=1, max_length=255)
+    description: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    type: str | None = None
+    environnement: str | None = None
+    ambiance: str | None = None
+    elements: list[str] | None = None
+    image_url: str | None = None
+    thumbnail_url: str | None = None
+    auteur: str | None = None
+    auteur_url: str | None = None
+    licence: str | None = None
+    licence_url: str | None = None
+    media_type: str | None = None
+    type_reference: str | None = None
+    statut_droits: str | None = None
+    artiste_nom: str | None = None
+    artiste_contact: str | None = None
+
+
 class LienScenePaysage(BaseModel):
     paysage_id: int
     statut: str = "candidat"
@@ -399,6 +426,56 @@ async def creer_paysage(payload: PaysageCreation, request: Request, response: Re
         ),
     )
     return {"id": paysage_id, "statut_droits": statut_droits}
+
+
+@router.patch("/{paysage_id}")
+async def modifier_paysage(
+    paysage_id: int, payload: PaysageMiseAJour, request: Request, response: Response,
+):
+    """Édition partielle d'un paysage existant.
+
+    Route qui manquait purement et simplement : rien côté API ne
+    permettait de compléter un paysage après sa création. Résultat
+    concret — un import Openverse arrive sans lat/lon (Openverse ne
+    géolocalise pas) et sans critères de recherche (type/environnement/
+    ambiance), et restait donc invisible sur /carte (qui exige lat/lon
+    non nulles) et introuvable via /api/paysages (dont les filtres
+    comparent à des colonnes NULL, qui ne matchent jamais).
+
+    Bibliothèque partagée entre tous les visiteurs identifiés (comme la
+    recherche GET "" plus haut, qui ne filtre pas non plus par
+    utilisateur) : `_ensure_profile` sert seulement à garder une session
+    active, pas à restreindre l'édition au créateur de la fiche.
+    """
+    user = await _ensure_profile(request, response)
+    existant = await fetch_one("SELECT * FROM paysages WHERE id = %s", (paysage_id,))
+    if not existant:
+        raise HTTPException(404, "Paysage introuvable")
+
+    champs = payload.model_dump(exclude_unset=True)
+    if not champs:
+        raise HTTPException(400, "Aucun champ à mettre à jour")
+
+    media_type = champs.get("media_type", existant["media_type"])
+    type_reference = champs.get("type_reference", existant["type_reference"])
+    statut_droits = champs.get("statut_droits", existant["statut_droits"])
+    _valider_enums_paysage(media_type, type_reference, statut_droits)
+
+    # Si le statut de droits (ou le type de référence, qui pilote son
+    # défaut — cf. _defaut_statut_droits) change, on resynchronise le
+    # drapeau droits_a_verifier hérité de migration_v21 en plus de la
+    # colonne statut_droits plus précise, comme le fait creer_paysage.
+    if "statut_droits" in champs or "type_reference" in champs:
+        champs["statut_droits"] = statut_droits
+        champs["droits_a_verifier"] = statut_droits in ("a_verifier", "a_negocier")
+
+    colonnes = list(champs.keys())
+    valeurs = list(champs.values())
+    set_clause = ", ".join(f"{c} = %s" for c in colonnes)
+    valeurs.append(paysage_id)
+
+    await execute(f"UPDATE paysages SET {set_clause} WHERE id = %s", tuple(valeurs))
+    return await fetch_one("SELECT * FROM paysages WHERE id = %s", (paysage_id,))
 
 
 @router.get("/images/recherche")

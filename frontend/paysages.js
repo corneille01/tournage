@@ -272,8 +272,9 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
 // ─────────────────────────────────────────────────────────────
 function carteResultatPaysage(p) {
   const badgeClass = DROITS_CLASS[p.statut_droits] || "";
+  const incomplet = p.latitude == null || p.longitude == null || !p.type;
   return `
-    <div class="ls-card">
+    <div class="ls-card" data-id="${p.id}">
       ${p.thumbnail_url ? `<img src="${esc(p.thumbnail_url)}" alt="${esc(p.nom)}">` : `<div class="ls-card-noimg">🖼️</div>`}
       <div class="ls-card-body">
         <b>${esc(p.nom)}</b>
@@ -282,9 +283,23 @@ function carteResultatPaysage(p) {
         <div class="ls-badges">
           <span class="ls-badge">${MEDIA_LABELS[p.media_type] || p.media_type}</span>
           ${p.statut_droits ? `<span class="ls-badge ${badgeClass}">${DROITS_LABELS[p.statut_droits] || p.statut_droits}</span>` : ""}
+          ${incomplet ? `<span class="ls-badge warn">Fiche à compléter</span>` : ""}
         </div>
+        <button class="ls-btn" data-modifier="${p.id}">✏️ Modifier</button>
       </div>
     </div>`;
+}
+
+function attacherBoutonsModifier(el) {
+  el.querySelectorAll("[data-modifier]").forEach(btn => {
+    btn.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      try {
+        const p = await api(`/api/paysages/${btn.dataset.modifier}`);
+        ouvrirModalPaysage(p);
+      } catch (e) { alert("Erreur : " + e.message); }
+    });
+  });
 }
 
 async function chargerRechercheBibliotheque() {
@@ -306,11 +321,73 @@ async function lancerRechercheBibliotheque() {
   try {
     const resultats = await api(`/api/paysages?${params.toString()}`);
     el.innerHTML = resultats.length ? resultats.map(carteResultatPaysage).join("") : `<p class="ls-empty">Aucun paysage ne correspond à ces critères.</p>`;
+    attacherBoutonsModifier(el);
   } catch (e) {
     el.innerHTML = `<p class="ls-empty">Erreur : ${esc(e.message)}</p>`;
   }
 }
 $("btn-filtrer").addEventListener("click", lancerRechercheBibliotheque);
+
+// ─────────────────────────────────────────────────────────────
+// BIBLIOTHÈQUE — modale d'édition (complète géoloc / droits / critères)
+// ─────────────────────────────────────────────────────────────
+let paysageModalId = null;
+
+function ouvrirModalPaysage(p) {
+  paysageModalId = p.id;
+  $("pm-titre").textContent = "Compléter « " + (p.nom || "") + " »";
+  $("pm-nom").value = p.nom || "";
+  $("pm-type").value = p.type || "";
+  $("pm-environnement").value = p.environnement || "";
+  $("pm-ambiance").value = p.ambiance || "";
+  $("pm-elements").value = (p.elements || []).join(", ");
+  $("pm-lat").value = p.latitude ?? "";
+  $("pm-lon").value = p.longitude ?? "";
+  $("pm-media-type").value = p.media_type || "photo";
+  $("pm-type-reference").value = p.type_reference || "open_source";
+  $("pm-statut-droits").value = p.statut_droits || "a_verifier";
+  $("pm-artiste-nom").value = p.artiste_nom || "";
+  $("pm-artiste-contact").value = p.artiste_contact || "";
+  actualiserVisibiliteArtiste();
+  $("paysage-modal").classList.remove("hidden");
+}
+
+function fermerModalPaysage() {
+  paysageModalId = null;
+  $("paysage-modal").classList.add("hidden");
+}
+function actualiserVisibiliteArtiste() {
+  $("pm-artiste-row").style.display = $("pm-type-reference").value === "artiste" ? "flex" : "none";
+}
+$("pm-type-reference").addEventListener("change", actualiserVisibiliteArtiste);
+$("pm-annuler").addEventListener("click", fermerModalPaysage);
+$("paysage-modal").addEventListener("click", e => { if (e.target.id === "paysage-modal") fermerModalPaysage(); });
+
+$("pm-valider").addEventListener("click", async () => {
+  if (!paysageModalId) return;
+  const nom = $("pm-nom").value.trim();
+  if (!nom) return alert("Le nom du paysage est requis.");
+  const payload = {
+    nom,
+    type: $("pm-type").value.trim() || null,
+    environnement: $("pm-environnement").value.trim() || null,
+    ambiance: $("pm-ambiance").value.trim() || null,
+    elements: $("pm-elements").value.trim().split(",").map(s => s.trim()).filter(Boolean),
+    latitude: $("pm-lat").value !== "" ? Number($("pm-lat").value) : null,
+    longitude: $("pm-lon").value !== "" ? Number($("pm-lon").value) : null,
+    media_type: $("pm-media-type").value,
+    type_reference: $("pm-type-reference").value,
+    statut_droits: $("pm-statut-droits").value,
+    artiste_nom: $("pm-artiste-nom").value.trim() || null,
+    artiste_contact: $("pm-artiste-contact").value.trim() || null,
+  };
+  try {
+    await api(`/api/paysages/${paysageModalId}`, { method: "PATCH", body: JSON.stringify(payload) });
+    fermerModalPaysage();
+    if ($("resultats-recherche").dataset.charge) lancerRechercheBibliotheque();
+    if (carteLeaflet) chargerCarte();
+  } catch (e) { alert("Erreur : " + e.message); }
+});
 
 // ─────────────────────────────────────────────────────────────
 // BIBLIOTHÈQUE — carte Leaflet
@@ -368,10 +445,8 @@ $("ov-rechercher").addEventListener("click", async () => {
 
 async function ouvrirImportOpenverse(r) {
   if (!r) return;
-  const nom = prompt("Nom à donner à ce paysage :", r.titre || "Paysage sans titre");
-  if (nom === null) return;
   try {
-    await api("/api/paysages/depuis-openverse", {
+    const cree = await api("/api/paysages/depuis-openverse", {
       method: "POST",
       body: JSON.stringify({
         id_openverse: String(r.id_openverse),
@@ -384,11 +459,16 @@ async function ouvrirImportOpenverse(r) {
         licence_url: r.licence_url || null,
         source_nom: r.source_nom || "Openverse",
         source_url: r.source_url || null,
-        nom,
+        nom: r.titre || "Paysage sans titre",
         media_type: "photo",
       }),
     });
-    alert("Paysage importé. Complétez sa géolocalisation et son statut de droits depuis la bibliothèque.");
+    // Import minimal réussi (pas de géoloc/critères — Openverse ne les
+    // fournit pas) : on rouvre immédiatement la fiche complète pour que
+    // ce soit fait tout de suite, plutôt que de renvoyer vers une
+    // bibliothèque où rien ne permettait jusqu'ici de la retrouver.
+    const paysage = await api(`/api/paysages/${cree.id}`);
+    ouvrirModalPaysage(paysage);
   } catch (e) { alert("Erreur : " + e.message); }
 }
 

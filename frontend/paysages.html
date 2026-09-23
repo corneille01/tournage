@@ -312,6 +312,95 @@
           </div>
         </div>
       </section>
+
+      <!-- ═══════════ MODALE ÉDITION D'UN PAYSAGE ═══════════ -->
+      <div id="paysage-modal" class="ls-modal hidden">
+        <div class="ls-modal-box">
+          <h3 id="pm-titre">Compléter le paysage</h3>
+          <p class="ls-modal-hint">
+            Géolocalisation et statut de droits déterminent si ce paysage
+            apparaît sur la carte et dans les résultats de recherche filtrée.
+          </p>
+          <div class="ls-form">
+            <input
+              type="text"
+              id="pm-nom"
+              placeholder="Nom du paysage"
+              maxlength="255"
+            />
+            <div class="ls-form-row">
+              <input type="text" id="pm-type" placeholder="Type" />
+              <input
+                type="text"
+                id="pm-environnement"
+                placeholder="Environnement"
+              />
+            </div>
+            <div class="ls-form-row">
+              <input type="text" id="pm-ambiance" placeholder="Ambiance" />
+              <input
+                type="text"
+                id="pm-elements"
+                placeholder="Éléments (séparés par virgules)"
+              />
+            </div>
+            <div class="ls-form-row">
+              <input
+                type="number"
+                step="any"
+                id="pm-lat"
+                placeholder="Latitude"
+              />
+              <input
+                type="number"
+                step="any"
+                id="pm-lon"
+                placeholder="Longitude"
+              />
+            </div>
+            <div class="ls-form-row">
+              <select id="pm-media-type">
+                <option value="photo">Photo</option>
+                <option value="panorama">Panorama</option>
+                <option value="360">360°</option>
+                <option value="video_360">Vidéo 360°</option>
+                <option value="a_capturer">À capturer</option>
+              </select>
+              <select id="pm-type-reference">
+                <option value="personnelle">Référence personnelle</option>
+                <option value="artiste">Œuvre d'artiste</option>
+                <option value="open_source">Open source</option>
+                <option value="panorama_360">Panorama 360</option>
+              </select>
+            </div>
+            <select id="pm-statut-droits">
+              <option value="a_verifier">Statut des droits : à vérifier</option>
+              <option value="utilisable">Utilisable</option>
+              <option value="a_negocier">À négocier</option>
+              <option value="libre_licence">Libre de licence</option>
+              <option value="a_capturer">À capturer</option>
+            </select>
+            <div class="ls-form-row" id="pm-artiste-row">
+              <input
+                type="text"
+                id="pm-artiste-nom"
+                placeholder="Nom de l'artiste"
+              />
+              <input
+                type="text"
+                id="pm-artiste-contact"
+                placeholder="Contact de l'artiste"
+              />
+            </div>
+            <div class="ls-form-actions">
+              <button class="ls-btn ls-btn-accent" id="pm-valider">
+                Enregistrer
+              </button>
+              <button class="ls-btn" id="pm-annuler">Annuler</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script src="/vendor/leaflet/leaflet.js"></script>

@@ -63,6 +63,13 @@ body{min-height:100vh;background:#0f1115;color:#eee;font-family:Rajdhani,Arial,s
 
 .ls-statut-select{margin-top:6px;width:100%}
 
+.ls-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;z-index:50}
+.ls-modal.hidden{display:none !important}
+.ls-modal-box{background:#17191e;border:1px solid #292c34;border-radius:14px;padding:18px;max-width:640px;width:100%}
+.ls-modal-box h3{margin:0 0 6px}
+.ls-modal-hint{color:#9ca0aa;font-size:.8rem;margin:0 0 14px}
+.ls-card-body .ls-btn{margin-top:4px;align-self:flex-start}
+
 @media(max-width:750px){
   .ls-top{flex-direction:column}
   .ls-grid{grid-template-columns:repeat(2,1fr)}

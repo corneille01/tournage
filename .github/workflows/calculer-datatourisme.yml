@@ -3,13 +3,13 @@ name: Calcul distances DATAtourisme
 # 100% SQL local, aucun appel réseau — rapide (quelques minutes pour
 # tous les lieux), contrairement aux workflows Overpass équivalents.
 #
-# Quotidien, juste après l'import DATAtourisme (3h) — les 4 catégories
+# Quotidien, juste après l'import DATAtourisme (3h) — les 5 catégories
 # sont traitées en SÉQUENCE (une attend la fin de la précédente).
 on:
   workflow_dispatch:
     inputs:
       categorie:
-        description: "Catégorie à calculer (ignoré sur le déclenchement automatique, qui traite les 4)"
+        description: "Catégorie à calculer (ignoré sur le déclenchement automatique, qui traite les 5)"
         required: true
         type: choice
         options:
@@ -17,6 +17,7 @@ on:
           - restaurant
           - activite
           - office_tourisme
+          - fetes_manifestations
       lieu_id:
         description: "ID d'un seul lieu à tester (laisser vide pour tous)"
         required: false
@@ -48,7 +49,7 @@ jobs:
             python calculer_amenities_datatourisme.py --categorie "${{ github.event.inputs.categorie }}"
           fi
 
-  calcul-quotidien-4-categories:
+  calcul-quotidien-5-categories:
     if: ${{ github.event_name == 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -56,7 +57,14 @@ jobs:
       fail-fast: false
       max-parallel: 1 # SÉQUENTIEL — une catégorie attend la fin de la précédente
       matrix:
-        categorie: [hebergement, restaurant, activite, office_tourisme]
+        categorie:
+          [
+            hebergement,
+            restaurant,
+            activite,
+            office_tourisme,
+            fetes_manifestations,
+          ]
     defaults:
       run:
         working-directory: backend

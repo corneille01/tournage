@@ -14,12 +14,6 @@ Reprend automatiquement là où une exécution précédente s'est arrêtée
 (URL "next" sauvegardée dans sync_state), utile si le run est
 interrompu par le plafond horaire ou un timeout GitHub Actions.
 
-⚠️ À VÉRIFIER avant le premier run réel : la forme exacte de
-isLocatedAt / hasContact / hasDescription / hasMainRepresentation
-dans la réponse JSON (la doc publique ne montre pas d'exemple concret
-de POI). Le script logue le premier objet brut reçu — compare-le aux
-extractions ci-dessous et ajuste _texte()/_chemin() si besoin.
-
 Usage :
     python import_datatourisme_api.py
 """
@@ -68,17 +62,43 @@ async def _sauver_curseur(valeur: str | None) -> None:
 
 
 def _texte(champ, lang: str = "fr"):
-    """Les champs multilingues sont probablement {"fr": "...", "en": "..."}
-    — à confirmer sur un vrai objet (voir le log du premier POI)."""
+    """Les champs multilingues sont de la forme {"@fr": "...", "@en": "..."}
+    (confirmé sur les payloads réels observés)."""
     if champ is None:
         return None
     if isinstance(champ, dict):
+        cle_lang = f"@{lang}"
+        if cle_lang in champ:
+            return champ[cle_lang]
         if lang in champ:
             return champ[lang]
         return next(iter(champ.values()), None)
     if isinstance(champ, list):
         return _texte(champ[0], lang) if champ else None
     return champ
+
+
+def _texte_liste(champ) -> str | None:
+    """Aplatit un champ qui peut être une chaîne, une liste de chaînes,
+    ou une liste de dicts multilingues, en une seule chaîne (les valeurs
+    multiples sont jointes par ', ').
+
+    Nécessaire car dans les payloads réels de l'API DATAtourisme, des
+    champs comme isLocatedAt.address.streetAddress ou
+    hasContact.telephone / hasContact.homepage sont systématiquement des
+    listes, même quand ils ne contiennent qu'une seule valeur — contrairement
+    à d'autres champs "simples" comme postalCode."""
+    if champ is None:
+        return None
+    if isinstance(champ, str):
+        return champ or None
+    if isinstance(champ, list):
+        valeurs = [
+            v for v in (_texte(x) if isinstance(x, dict) else x for x in champ)
+            if v
+        ]
+        return ", ".join(valeurs) if valeurs else None
+    return None
 
 
 def _chemin(objet: dict, *cles, defaut=None):
@@ -118,7 +138,6 @@ def _extraire_photo(poi: dict) -> str | None:
         repr_ = repr_[0] if repr_ else None
     if not isinstance(repr_, dict):
         return None
-    # Candidats plausibles — à ajuster une fois un vrai payload observé.
     return repr_.get("url") or _chemin(repr_, "hasRelatedResource", "locator")
 
 
@@ -134,7 +153,7 @@ def _extraire_objet(poi: dict) -> dict | None:
     adresse_obj = _chemin(poi, "isLocatedAt", "address", defaut={})
     commune = _texte(_chemin(adresse_obj, "hasAddressCity", "label"))
     departement = _texte(_chemin(adresse_obj, "hasAddressCity", "isPartOfDepartment", "label"))
-    rue = adresse_obj.get("streetAddress")
+    rue = _texte_liste(adresse_obj.get("streetAddress"))
     cp = adresse_obj.get("postalCode")
     adresse_complete = ", ".join(p for p in (rue, cp, commune) if p) or None
 
@@ -150,8 +169,8 @@ def _extraire_objet(poi: dict) -> dict | None:
         "latitude": float(lat),
         "longitude": float(lon),
         "adresse": (adresse_complete or "")[:495] or None,
-        "telephone": (contact.get("telephone") or "")[:45] or None,
-        "site_web": (contact.get("homepage") or "")[:495] or None,
+        "telephone": (_texte_liste(contact.get("telephone")) or "")[:45] or None,
+        "site_web": (_texte_liste(contact.get("homepage")) or "")[:495] or None,
         "description": _extraire_description(poi),
         "photo_url": (_extraire_photo(poi) or "")[:495] or None,
     }
@@ -197,7 +216,18 @@ async def main():
                     premier_log_fait = True
 
                 for poi in data.get("objects", []):
-                    objet = _extraire_objet(poi)
+                    try:
+                        objet = _extraire_objet(poi)
+                    except Exception as exc:
+                        # Un POI malformé ne doit jamais interrompre toute
+                        # la synchro : on le logue et on continue.
+                        ignores += 1
+                        print(
+                            f"  ⚠️ POI ignoré (erreur d'extraction: {exc}) — uuid={poi.get('uuid')!r}",
+                            flush=True,
+                        )
+                        continue
+
                     if not objet:
                         ignores += 1
                         continue

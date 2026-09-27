@@ -1044,9 +1044,26 @@ async def amenities_proches(lieu_id: int):
         (lieu_id,),
     )
 
+    amenities_par_categorie: dict[str, list[dict]] = {}
+    for row in rows:
+        item = dict(row)
+        item["distance_texte"] = (
+            _formater_distance(item["distance_metres"])
+            if item["distance_metres"] is not None else None
+        )
+        item["duree_pied_texte"] = (
+            _formater_duree(item["duree_pied_secondes"])
+            if item["duree_pied_secondes"] is not None else None
+        )
+        item["duree_voiture_texte"] = (
+            _formater_duree(item["duree_voiture_secondes"])
+            if item["duree_voiture_secondes"] is not None else None
+        )
+        amenities_par_categorie.setdefault(item["categorie"], []).append(item)
 
+    return {"lieu": lieu, "amenities": amenities_par_categorie}t
 
-
+    
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     """Ordonne les lieux par plus proche voisin (heuristique simple,
     pas un vrai TSP optimal — largement suffisant pour quelques lieux

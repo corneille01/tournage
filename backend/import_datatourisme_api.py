@@ -132,8 +132,8 @@ def _extraire_objet(poi: dict) -> dict | None:
         return None
 
     adresse_obj = _chemin(poi, "isLocatedAt", "address", defaut={})
-    commune = _chemin(adresse_obj, "hasAddressCity", "name")
-    departement = _chemin(adresse_obj, "hasAddressCity", "isPartOfDepartment", "name")
+    commune = _texte(_chemin(adresse_obj, "hasAddressCity", "label"))
+    departement = _texte(_chemin(adresse_obj, "hasAddressCity", "isPartOfDepartment", "label"))
     rue = adresse_obj.get("streetAddress")
     cp = adresse_obj.get("postalCode")
     adresse_complete = ", ".join(p for p in (rue, cp, commune) if p) or None

@@ -1832,7 +1832,7 @@ function _texteDistanceDynamique(item, modeTri) {
   // Repli sur l'AUTRE mode plutôt que le vol d'oiseau, si disponible
   if (item.distance_pied_metres != null) return `${formatDistance(item.distance_pied_metres)} à pied (${formatDuree(item.duree_pied_secondes)})`;
   if (item.distance_voiture_metres != null) return `${formatDistance(item.distance_voiture_metres)} en voiture (${formatDuree(item.duree_voiture_secondes)})`;
-  return "Calcul du trajet en cours…";
+  return "Distance non disponible pour le moment";
 }
 
 function creerResumeRecherche(stats, nombreAffiche) {

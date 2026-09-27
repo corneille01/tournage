@@ -47,7 +47,9 @@ async def main(categorie: str, lieu_id: int | None):
                        horaires, tarif_min, tarif_max, devise, adresse, photo_url,
                        equipements, capacite, note_etoiles, labels_qualite,
                        lien_accessibilite, langues_parlees, description,
-                       moyens_paiement, note_tarif, distance_metres
+                       moyens_paiement, note_tarif,
+                       types, organisme_diffuseur, reseaux_sociaux,
+                       photo_credits, photo_licence, distance_metres
                 FROM (
                     SELECT
                         nom, latitude, longitude, site_web, telephone, email,
@@ -55,6 +57,8 @@ async def main(categorie: str, lieu_id: int | None):
                         photo_url, equipements, capacite, note_etoiles, labels_qualite,
                         lien_accessibilite, langues_parlees, description,
                         moyens_paiement, note_tarif,
+                        types, organisme_diffuseur, reseaux_sociaux,
+                        photo_credits, photo_licence,
                         (
                             6371000 * acos(
                                 LEAST(1.0, GREATEST(-1.0,
@@ -139,8 +143,10 @@ async def main(categorie: str, lieu_id: int | None):
                          distance_metres, site_web, telephone, email, horaires,
                          tarif_min, tarif_max, devise, adresse, photo_url, equipements, capacite,
                          note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, description,
-                         moyens_paiement, note_tarif, rang)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         moyens_paiement, note_tarif,
+                         types, organisme_diffuseur, reseaux_sociaux, photo_credits, photo_licence,
+                         rang)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (lieu_tournage_id, categorie, nom, latitude, longitude)
                     DO UPDATE SET
                         distance_metres = EXCLUDED.distance_metres,
@@ -162,6 +168,11 @@ async def main(categorie: str, lieu_id: int | None):
                         description = EXCLUDED.description,
                         moyens_paiement = EXCLUDED.moyens_paiement,
                         note_tarif = EXCLUDED.note_tarif,
+                        types = EXCLUDED.types,
+                        organisme_diffuseur = EXCLUDED.organisme_diffuseur,
+                        reseaux_sociaux = EXCLUDED.reseaux_sociaux,
+                        photo_credits = EXCLUDED.photo_credits,
+                        photo_licence = EXCLUDED.photo_licence,
                         rang = EXCLUDED.rang,
                         date_maj = CURRENT_TIMESTAMP
                         -- distance_pied_metres / duree_pied_secondes /
@@ -177,14 +188,13 @@ async def main(categorie: str, lieu_id: int | None):
                         r["adresse"], r["photo_url"], r["equipements"], r["capacite"],
                         r["note_etoiles"], r["labels_qualite"], r["lien_accessibilite"],
                         r["langues_parlees"], r["description"],
-                        r["moyens_paiement"], r["note_tarif"], rang,
+                        r["moyens_paiement"], r["note_tarif"],
+                        r["types"], r["organisme_diffuseur"], r["reseaux_sociaux"],
+                        r["photo_credits"], r["photo_licence"],
+                        rang,
                     ),
                 )
 
-           
-           
-           
-           
             await execute(
                 """
                 INSERT INTO amenity_stats

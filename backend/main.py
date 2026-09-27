@@ -668,9 +668,14 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
         # catégories confondus — regroupé en Python ensuite.
         toutes_commodites = await fetch_all(
             """
-            SELECT lieu_tournage_id, categorie, nom, distance_voiture_metres,
-                   duree_voiture_secondes, capacite
-            FROM amenity_cache
+                SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
+               distance_metres, adresse, telephone, site_web,
+               horaires, photo_url, tarif_min, tarif_max, devise,
+               capacite,
++              types, organisme_diffuseur, reseaux_sociaux, photo_credits, photo_licence,
+               distance_pied_metres, duree_pied_secondes,
+               distance_voiture_metres, duree_voiture_secondes
+        FROM amenity_cache
             WHERE lieu_tournage_id = ANY(%s) AND categorie = ANY(%s)
                   AND duree_voiture_secondes IS NOT NULL
             ORDER BY duree_voiture_secondes ASC
@@ -1029,6 +1034,7 @@ async def amenities_proches(lieu_id: int):
                tarif_min, tarif_max, devise, equipements, capacite,
                note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, description,
                moyens_paiement, note_tarif,
+               types, organisme_diffuseur, reseaux_sociaux, photo_credits, photo_licence,
                distance_pied_metres, duree_pied_secondes,
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache
@@ -1038,57 +1044,6 @@ async def amenities_proches(lieu_id: int):
         (lieu_id,),
     )
 
-    stats_rows = await fetch_all(
-        """
-        SELECT categorie, rayon_metres, nombre_total, nombre_500m,
-               nombre_1000m, distance_min_m, distance_moy_top10_m
-        FROM amenity_stats
-        WHERE lieu_tournage_id = %s
-        """,
-        (lieu_id,),
-    )
-    stats_par_categorie = {r["categorie"]: r for r in stats_rows}
-
-    par_categorie: dict[str, list[dict]] = {}
-    for r in rows:
-        par_categorie.setdefault(r["categorie"], []).append(r)
-
-    # Deux phrases par catégorie (à pied / en voiture), basées sur les
-    # distances précalculées — jamais de vol d'oiseau, jamais d'appel
-    # OSRM en direct ici (tout vient déjà de amenity_cache).
-    phrases = {}
-    for categorie, items in par_categorie.items():
-        label = _LABELS_CATEGORIE.get(categorie, categorie)
-        stat = stats_par_categorie.get(categorie)
-        total = stat["nombre_total"] if stat else len(items)
-        rayon_km = (stat["rayon_metres"] // 1000) if stat else None
-
-        for mode, cle_distance, cle_duree, verbe in (
-            ("pied", "distance_pied_metres", "duree_pied_secondes", "à pied"),
-            ("voiture", "distance_voiture_metres", "duree_voiture_secondes", "en voiture"),
-        ):
-            candidats = [i for i in items if i.get(cle_distance) is not None]
-            if not candidats:
-                continue
-            meilleur = min(candidats, key=lambda i: i[cle_distance])
-            phrase = (
-                f"{label} « {meilleur['nom']} » est situé à {_formater_distance(meilleur[cle_distance])} {verbe} "
-                f"du lieu de tournage, soit environ {_formater_duree(meilleur[cle_duree])} de trajet. "
-                f"C'est {label.lower()} le plus proche {verbe} parmi les {total} recensés"
-                + (f" dans un rayon de {rayon_km} km." if rayon_km else ".")
-            )
-            phrases.setdefault(categorie, {})[mode] = {
-                "texte": phrase, "nom": meilleur["nom"],
-                "distance_metres": meilleur[cle_distance], "duree_secondes": meilleur[cle_duree],
-            }
-
-    return {
-        "lieu": lieu,
-        "amenities": par_categorie,
-        "stats": stats_par_categorie,
-        "phrases_pied_voiture": phrases,
-        "icones_categorie": ICONES_CATEGORIE,
-    }
 
 
 

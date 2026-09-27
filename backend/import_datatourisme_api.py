@@ -36,6 +36,7 @@ import datetime
 import json
 import os
 import time
+import urllib.parse
 
 import httpx
 
@@ -60,6 +61,19 @@ CLE_CURSEUR = "datatourisme_api_fetes_next_url"
 # On ne logue l'avertissement "dates introuvables" qu'une seule fois par
 # run pour ne pas noyer les logs si le champ est structurellement absent.
 _avertissement_dates_deja_logue = False
+
+# Domaines de réseaux sociaux connus, pour NE JAMAIS les mélanger avec
+# le vrai site officiel dans "site_web" (voir _extraire_site_et_reseaux).
+DOMAINES_RESEAUX_SOCIAUX = {
+    "facebook.com": "facebook",
+    "fb.com": "facebook",
+    "instagram.com": "instagram",
+    "twitter.com": "twitter",
+    "x.com": "twitter",
+    "tiktok.com": "tiktok",
+    "youtube.com": "youtube",
+    "youtu.be": "youtube",
+}
 
 
 async def _lire_curseur() -> str | None:
@@ -103,7 +117,13 @@ def _texte_liste(champ, lang: str = "fr") -> str | None:
     champs comme isLocatedAt.address.streetAddress, postalCode ou
     hasContact.telephone / hasContact.homepage sont systématiquement des
     listes, même quand ils ne contiennent qu'une seule valeur —
-    contrairement à d'autres champs vraiment "simples"."""
+    contrairement à d'autres champs vraiment "simples".
+
+    ⚠️ NE JAMAIS utiliser cette fonction pour un champ qui doit rester
+    un LIEN cliquable unique (URL de site, tel:) : joindre plusieurs
+    URLs avec ", " casse le lien (voir _extraire_site_et_reseaux pour
+    hasContact.homepage). Elle reste correcte pour de l'affichage texte
+    (adresse, plusieurs numéros de téléphone affichés côte à côte)."""
     if champ is None:
         return None
     if isinstance(champ, str):
@@ -117,6 +137,62 @@ def _texte_liste(champ, lang: str = "fr") -> str | None:
         ]
         return ", ".join(valeurs) if valeurs else None
     return None
+
+
+def _reseau_social_pour_url(url: str) -> str | None:
+    """Retourne le nom du réseau social ('facebook', 'instagram', ...) si
+    l'URL pointe vers un domaine de réseau social connu, sinon None."""
+    if not url or not isinstance(url, str):
+        return None
+    try:
+        hote = urllib.parse.urlparse(url).netloc.lower()
+    except ValueError:
+        return None
+    if hote.startswith("www."):
+        hote = hote[4:]
+    return DOMAINES_RESEAUX_SOCIAUX.get(hote)
+
+
+def _extraire_site_et_reseaux(contact: dict) -> tuple[str | None, dict]:
+    """Sépare hasContact.homepage en (site_web, reseaux_sociaux).
+
+    C'est ICI qu'était le bug : hasContact.homepage est presque toujours
+    une LISTE dans les payloads DATAtourisme (convention JSON-LD), et
+    peut contenir à la fois le site officiel ET une page Facebook /
+    Instagram dans la même liste. L'ancien code appelait _texte_liste()
+    dessus, qui aplatit toute liste en une seule chaîne jointe par ", " —
+    ce qui est très bien pour une adresse, mais fabrique un href invalide
+    dès qu'il y a 2 URLs ("https://site.fr, https://facebook.com/xxx"),
+    et surtout ne fait aucune différence entre "site officiel" et
+    "réseau social" : le premier lien de la liste (parfois Facebook)
+    finissait affiché comme "Voir le site".
+
+    Retourne :
+    - site_web : la première URL qui N'EST PAS un réseau social connu
+      (jamais plusieurs URLs collées ensemble).
+    - reseaux_sociaux : dict {"facebook": url, "instagram": url, ...}
+      pour les liens sociaux détectés, à stocker et afficher séparément
+      côté frontend (icône Facebook/Instagram dédiée, pas "Voir le
+      site").
+    """
+    urls = contact.get("homepage")
+    if not urls:
+        return None, {}
+    if isinstance(urls, (str, dict)):
+        urls = [urls]
+
+    site_web = None
+    reseaux: dict[str, str] = {}
+    for u in urls:
+        valeur = _texte(u) if isinstance(u, dict) else u
+        if not isinstance(valeur, str) or not valeur:
+            continue
+        reseau = _reseau_social_pour_url(valeur)
+        if reseau:
+            reseaux.setdefault(reseau, valeur)
+        elif site_web is None:
+            site_web = valeur
+    return site_web, reseaux
 
 
 def _chemin(objet: dict, *cles, defaut=None):
@@ -316,6 +392,11 @@ def _extraire_objet(poi: dict) -> dict | None:
 
     photo_credits, photo_licence = _extraire_photo_credits(poi)
     date_debut, date_fin, dates_json = _extraire_dates(poi)
+    # hasContact.homepage peut contenir le site officiel ET une page
+    # Facebook/Instagram dans la même liste : on les sépare pour ne
+    # jamais coller plusieurs URLs dans "site_web" (voir docstring de
+    # _extraire_site_et_reseaux pour le détail du bug corrigé ici).
+    site_web, reseaux_sociaux = _extraire_site_et_reseaux(contact)
 
     organisme = _texte_liste(_chemin(poi, "hasBeenCreatedBy", "legalName"))
 
@@ -328,7 +409,8 @@ def _extraire_objet(poi: dict) -> dict | None:
         "longitude": float(lon),
         "adresse": (adresse_complete or "")[:495] or None,
         "telephone": (_texte_liste(contact.get("telephone")) or "")[:45] or None,
-        "site_web": (_texte_liste(contact.get("homepage")) or "")[:495] or None,
+        "site_web": (site_web or "")[:495] or None,
+        "reseaux_sociaux": json.dumps(reseaux_sociaux, ensure_ascii=False) if reseaux_sociaux else None,
         "description": _extraire_description(poi, "fr"),
         "photo_url": (_extraire_photo(poi) or "")[:495] or None,
         # Champs précédemment inexploités :
@@ -409,19 +491,22 @@ async def main():
                         INSERT INTO datatourisme_objets
                             (identifiant_dt, nom, categorie, commune, departement,
                              latitude, longitude, adresse, telephone, site_web,
+                             reseaux_sociaux,
                              description, photo_url,
                              uri, types, insee, adresse_localite,
                              photo_credits, photo_licence, organisme_diffuseur,
                              date_maj_source, date_maj_datatourisme, description_en,
                              date_debut, date_fin, dates_evenement)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                 %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (identifiant_dt) DO UPDATE SET
                             nom = EXCLUDED.nom, commune = EXCLUDED.commune,
                             departement = EXCLUDED.departement,
                             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
                             adresse = EXCLUDED.adresse, telephone = EXCLUDED.telephone,
-                            site_web = EXCLUDED.site_web, description = EXCLUDED.description,
+                            site_web = EXCLUDED.site_web,
+                            reseaux_sociaux = EXCLUDED.reseaux_sociaux,
+                            description = EXCLUDED.description,
                             photo_url = EXCLUDED.photo_url,
                             uri = EXCLUDED.uri, types = EXCLUDED.types,
                             insee = EXCLUDED.insee, adresse_localite = EXCLUDED.adresse_localite,
@@ -438,7 +523,7 @@ async def main():
                             objet["identifiant_dt"], objet["nom"], CATEGORIE,
                             objet["commune"], objet["departement"],
                             objet["latitude"], objet["longitude"], objet["adresse"],
-                            objet["telephone"], objet["site_web"],
+                            objet["telephone"], objet["site_web"], objet["reseaux_sociaux"],
                             objet["description"], objet["photo_url"],
                             objet["uri"], objet["types"], objet["insee"], objet["adresse_localite"],
                             objet["photo_credits"], objet["photo_licence"], objet["organisme_diffuseur"],

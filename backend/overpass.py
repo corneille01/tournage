@@ -176,9 +176,14 @@ ICONES_CATEGORIE = {
         "couleur": "#06923e",
     },
 
-    "activite": {
+     "activite": {
         "emoji": "🎡",
         "couleur": "#9b5de5",
+    },
+
+    "fetes_manifestations": {
+        "emoji": "🎉",
+        "couleur": "#f15bb5",
     },
 }
 

@@ -391,7 +391,7 @@ function afficherResultatMonParcours(data){
 
   const budgetHtml=budget?`<div class="mp-budget ${data.budget_respecte?'ok':'alerte'}"><b>${data.budget_respecte?'✅ Votre parcours tient dans votre créneau':'⚠️ Votre parcours dépasse votre temps disponible'}</b><span>Déplacements : ${duree?formatDuree(duree):'—'} · Visites : ${formatDuree(visite)}${data.duree_visites_guidees_secondes?` · Visites guidées : ${formatDuree(data.duree_visites_guidees_secondes)}`:''}${data.attente_visites_guidees_minutes?` · Attente : ${data.attente_visites_guidees_minutes} min`:''} · Total : ${formatDuree(total)} · Disponible : ${formatDuree(budget*60)}</span>${data.optimiser&&data.etapes_exclues_optimisation?.length?`<small>✨ ${data.etapes_exclues_optimisation.length} étape(s) ont été écartées automatiquement pour respecter vos contraintes.</small>`:''}</div>`:'';
 
-  const ordre=["activite","restaurant","hebergement","office_tourisme","parking","gare","aeroport","refuge","arret_bus"];
+ const ordre=["activite","restaurant","hebergement","office_tourisme","parking","gare","aeroport","refuge","arret_bus","fetes_manifestations"];
   const blocs=ordre.filter(k=>cats[k]?.length).map(k=>{
     const info=icones[k]||ICONES_CATEGORIE[k]||{};
     const offres=(cats[k]||[]).map(x=>{
@@ -2082,7 +2082,7 @@ function afficherResultatEnrichiV4(data) {
     </div>
   `;
 
-  const ordreCategories = ["activite", "restaurant", "hebergement", "office_tourisme", "parking", "gare", "aeroport", "refuge"];
+  const ordreCategories = ["activite", "restaurant", "hebergement", "office_tourisme", "parking", "gare", "aeroport", "refuge", "fetes_manifestations"];
   const blocs = ordreCategories
     .filter((categorie) => Array.isArray(categories[categorie]) && categories[categorie].length)
     .map((categorie) => {

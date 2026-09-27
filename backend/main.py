@@ -60,6 +60,7 @@ _LABELS_CATEGORIE = {
     "refuge":          "Le refuge",
     "distributeur":    "Le distributeur",
     "activite":        "L'activité",
+     "fetes_manifestations": "L'événement",
 }
 
 

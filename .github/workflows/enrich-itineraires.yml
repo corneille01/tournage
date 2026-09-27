@@ -29,14 +29,13 @@ on:
           - Tarn
           - Tarn-et-Garonne
 
-schedule:
-  - cron: "30 6 * * *" # tous les jours, 30 min après "Calcul distances DATAtourisme" (6h)
+  schedule:
+    - cron: "30 6 * * *" # tous les jours, 30 min après "Calcul distances DATAtourisme" (6h)
 
 jobs:
   precalcul-1:
     runs-on: ubuntu-latest
     timeout-minutes: 340
-
     defaults:
       run:
         working-directory: backend

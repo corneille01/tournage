@@ -3,7 +3,7 @@ name: DATAtourisme API — Fêtes et manifestations
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 3 * * *" # juste après l'import diffuseur des 4 autres catégories
+    - cron: "15 3 * * *"
 
 jobs:
   synchroniser:

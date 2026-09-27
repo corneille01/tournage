@@ -110,20 +110,8 @@ def _texte(champ, lang: str = "fr"):
 
 def _texte_liste(champ, lang: str = "fr") -> str | None:
     """Aplatit un champ qui peut être une chaîne, un dict multilingue, ou
-    une liste de chaînes/dicts multilingues, en une seule chaîne (les
-    valeurs multiples sont jointes par ', ').
-
-    Nécessaire car dans les payloads réels de l'API DATAtourisme, des
-    champs comme isLocatedAt.address.streetAddress, postalCode ou
-    hasContact.telephone / hasContact.homepage sont systématiquement des
-    listes, même quand ils ne contiennent qu'une seule valeur —
-    contrairement à d'autres champs vraiment "simples".
-
-    ⚠️ NE JAMAIS utiliser cette fonction pour un champ qui doit rester
-    un LIEN cliquable unique (URL de site, tel:) : joindre plusieurs
-    URLs avec ", " casse le lien (voir _extraire_site_et_reseaux pour
-    hasContact.homepage). Elle reste correcte pour de l'affichage texte
-    (adresse, plusieurs numéros de téléphone affichés côte à côte)."""
+    une liste (potentiellement imbriquée) de chaînes/dicts multilingues,
+    en une seule chaîne (les valeurs multiples sont jointes par ', ')."""
     if champ is None:
         return None
     if isinstance(champ, str):
@@ -131,14 +119,21 @@ def _texte_liste(champ, lang: str = "fr") -> str | None:
     if isinstance(champ, dict):
         return _texte(champ, lang)
     if isinstance(champ, list):
-        valeurs = [
-            v for v in (_texte(x, lang) if isinstance(x, dict) else x for x in champ)
-            if v
-        ]
+        valeurs = []
+        for x in champ:
+            if isinstance(x, dict):
+                v = _texte(x, lang)
+            elif isinstance(x, list):
+                # Repli défensif : certains payloads DATAtourisme imbriquent
+                # une liste dans une liste sur ce type de champ — on aplatit
+                # récursivement plutôt que de planter sur le join().
+                v = _texte_liste(x, lang)
+            else:
+                v = x
+            if v:
+                valeurs.append(v)
         return ", ".join(valeurs) if valeurs else None
     return None
-
-
 def _reseau_social_pour_url(url: str) -> str | None:
     """Retourne le nom du réseau social ('facebook', 'instagram', ...) si
     l'URL pointe vers un domaine de réseau social connu, sinon None."""

@@ -29,8 +29,8 @@ on:
           - Tarn
           - Tarn-et-Garonne
 
-  schedule:
-    - cron: "0 4 * * 1"
+schedule:
+  - cron: "30 6 * * *" # tous les jours, 30 min après "Calcul distances DATAtourisme" (6h)
 
 jobs:
   precalcul-1:

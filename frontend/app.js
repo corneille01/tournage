@@ -110,6 +110,11 @@ const ICONES_CATEGORIE = {
     emoji: "🎡",
     couleur: "#9b5de5",
     label: "Activités à proximité"
+  },
+    fetes_manifestations: {
+    emoji: "🎉",
+    couleur: "#f15bb5",
+    label: "Fêtes et manifestations"
   }
 };
 
@@ -1725,9 +1730,6 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
   const infoCategorie = ICONES_CATEGORIE[categorie] || {};
   const bounds = lieuActuel ? [[lieuActuel.latitude, lieuActuel.longitude]] : [];
 
-  // Cercle Turf.js autour du lieu de tournage, rayon = celui utilisé
-  // pour la recherche de cette catégorie (visualise concrètement la
-  // zone dans laquelle les commodités ont été cherchées).
   if (lieuActuel && stats?.rayon_metres) {
     const centre = turf.point([lieuActuel.longitude, lieuActuel.latitude]);
     const cercle = turf.circle(centre, stats.rayon_metres / 1000, { units: "kilometers", steps: 64 });
@@ -1757,16 +1759,14 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
       ${item.langues_parlees ? `<br>🗣️ ${item.langues_parlees}` : ""}
       ${item.description ? `<div class="description-commodite scrollable">${item.description}</div>` : ""}
       ${item.lien_accessibilite ? `<br><a href="${item.lien_accessibilite}" target="_blank" rel="noopener noreferrer">♿ Infos accessibilité</a>` : ""}
+      ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
       <div class="boutons-itineraire" style="margin-top:6px;">
         <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}">🚶 À pied</button>
         <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}">🚗 En voiture</button>
       </div>
       <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
-    `);
+    `, { maxHeight: 340, autoPanPadding: [20, 20] });
 
-    // Leaflet reconstruit le contenu du popup à chaque ouverture — il
-    // faut rebrancher les écouteurs à ce moment-là (popupopen), pas à
-    // la création du marqueur (le DOM du popup n'existe pas encore).
     marker.on("popupopen", (e) => {
       if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
       e.popup.getElement().querySelectorAll(".btn-itineraire").forEach((btn) => {
@@ -1774,10 +1774,6 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
       });
     });
 
-    // Le plus proche (selon le mode piéton/voiture choisi, plus de vol
-    // d'oiseau) a une couleur distincte + un son au clic — plus de
-    // trait en pointillés, uniquement demandé pour un lieu précis via
-    // les boutons 🚶/🚗 désormais.
     if (estPlusProche) {
       marker.on("click", () => _jouerSon());
     }

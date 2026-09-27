@@ -23,6 +23,7 @@ RAYON_PAR_DEFAUT_M = {
     "restaurant": 8_000,
     "activite": 15_000,
     "office_tourisme": 20_000,
+    "fetes_manifestations": 15_000,
 }
 
 
@@ -110,10 +111,26 @@ async def main(categorie: str, lieu_id: int | None):
             nombre_500m = total[0]["total_500m"] if total else 0
             nombre_1000m = total[0]["total_1000m"] if total else 0
 
-            await execute(
-                "DELETE FROM amenity_cache WHERE lieu_tournage_id = %s AND categorie = %s",
+            existants = await fetch_all(
+                "SELECT nom, latitude, longitude FROM amenity_cache "
+                "WHERE lieu_tournage_id = %s AND categorie = %s",
                 (lieu["id"], categorie),
             )
+            cles_nouvelles = {(r["nom"], float(r["latitude"]), float(r["longitude"])) for r in resultats}
+            cles_existantes = {(r["nom"], float(r["latitude"]), float(r["longitude"])) for r in existants}
+
+            # On ne supprime QUE ce qui n'est plus dans le top 10 —
+            # jamais un DELETE global, pour ne pas perdre les distances
+            # piéton/voiture déjà calculées par enrich_itineraires.py
+            # sur les commodités qui restent proches.
+            for nom, lat, lon in (cles_existantes - cles_nouvelles):
+                await execute(
+                    "DELETE FROM amenity_cache "
+                    "WHERE lieu_tournage_id = %s AND categorie = %s "
+                    "AND nom = %s AND latitude = %s AND longitude = %s",
+                    (lieu["id"], categorie, nom, lat, lon),
+                )
+
             for rang, r in enumerate(resultats, start=1):
                 await execute(
                     """
@@ -124,6 +141,34 @@ async def main(categorie: str, lieu_id: int | None):
                          note_etoiles, labels_qualite, lien_accessibilite, langues_parlees, description,
                          moyens_paiement, note_tarif, rang)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (lieu_tournage_id, categorie, nom, latitude, longitude)
+                    DO UPDATE SET
+                        distance_metres = EXCLUDED.distance_metres,
+                        site_web = EXCLUDED.site_web,
+                        telephone = EXCLUDED.telephone,
+                        email = EXCLUDED.email,
+                        horaires = EXCLUDED.horaires,
+                        tarif_min = EXCLUDED.tarif_min,
+                        tarif_max = EXCLUDED.tarif_max,
+                        devise = EXCLUDED.devise,
+                        adresse = EXCLUDED.adresse,
+                        photo_url = EXCLUDED.photo_url,
+                        equipements = EXCLUDED.equipements,
+                        capacite = EXCLUDED.capacite,
+                        note_etoiles = EXCLUDED.note_etoiles,
+                        labels_qualite = EXCLUDED.labels_qualite,
+                        lien_accessibilite = EXCLUDED.lien_accessibilite,
+                        langues_parlees = EXCLUDED.langues_parlees,
+                        description = EXCLUDED.description,
+                        moyens_paiement = EXCLUDED.moyens_paiement,
+                        note_tarif = EXCLUDED.note_tarif,
+                        rang = EXCLUDED.rang,
+                        date_maj = CURRENT_TIMESTAMP
+                        -- distance_pied_metres / duree_pied_secondes /
+                        -- distance_voiture_metres / duree_voiture_secondes
+                        -- ne sont VOLONTAIREMENT PAS dans ce SET : c'est
+                        -- enrich_itineraires.py qui les calcule, on ne
+                        -- veut pas écraser ce travail à chaque refresh.
                     """,
                     (
                         lieu["id"], categorie, r["nom"], r["latitude"], r["longitude"],
@@ -136,6 +181,10 @@ async def main(categorie: str, lieu_id: int | None):
                     ),
                 )
 
+           
+           
+           
+           
             await execute(
                 """
                 INSERT INTO amenity_stats

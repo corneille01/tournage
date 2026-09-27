@@ -1,0 +1,25 @@
+name: DATAtourisme API — Fêtes et manifestations
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "15 3 * * *" # juste après l'import diffuseur des 4 autres catégories
+
+jobs:
+  synchroniser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg httpx python-dotenv
+      - name: Synchroniser via l'API DATAtourisme
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATATOURISME_API_KEY: ${{ secrets.DATATOURISME_API_KEY }}
+        run: python import_datatourisme_api.py

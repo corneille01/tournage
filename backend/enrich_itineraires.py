@@ -347,6 +347,18 @@ if __name__ == "__main__":
         default=None,
     )
 
+    parser.add_argument(
+        "--auto-departement",
+        action="store_true",
+        help=(
+            "Utilisé par le cron hebdomadaire : traite tout ce qu'il reste "
+            "à calculer. Ne fait rien de spécial en soi — le filtre SQL "
+            "(distance IS NULL) reprend déjà automatiquement là où on "
+            "s'était arrêté, ce flag existe juste pour ne pas faire "
+            "planter argparse."
+        ),
+    )
+
     args = parser.parse_args()
 
     asyncio.run(

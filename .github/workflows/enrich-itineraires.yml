@@ -73,26 +73,33 @@ jobs:
           fi
 
   # ───────────────────────────────────────────────────────────
-  # Jobs de continuation — uniquement pour le run planifié.
+  # Jobs de continuation — pour le run planifié, ET pour un
+  # dispatch manuel "tous" (sans lieu_id précis).
   #
   # Un seul job GitHub Actions est plafonné à 340 min (limite
-  # dure de 360 min côté GitHub, impossible à dépasser). Si tous
-  # les départements ne sont pas finis en 340 min, ce job reprend
-  # exactement là où le précédent s'est arrêté (--auto-departement
-  # relit à chaque fois ce qu'il reste en base) — jusqu'à 4 x 340
-  # min ≈ 22h dans la même journée. Un département déjà terminé
+  # dure de 360 min côté GitHub, impossible à dépasser). Si tout
+  # n'est pas fini en 340 min, ce job reprend exactement là où
+  # le précédent s'est arrêté (le filtre SQL "IS NULL" relit à
+  # chaque fois ce qu'il reste en base) — jusqu'à 4 x 340 min
+  # ≈ 22h dans la même journée/run. Un département déjà terminé
   # ressort du calcul en quelques secondes (aucun travail restant),
   # donc chaîner ces jobs ne coûte quasiment rien une fois que tout
   # est à jour.
   #
-  # Le dispatch manuel (un lieu, un département précis, ou "tous")
+  # Le dispatch manuel ciblé sur UN lieu ou UN département précis
   # n'utilise que precalcul-1 : ces jobs de continuation ne se
-  # déclenchent pas dans ce cas.
+  # déclenchent pas dans ce cas (le volume à traiter tient
+  # largement dans les 340 min).
   # ───────────────────────────────────────────────────────────
 
   precalcul-2:
     needs: precalcul-1
-    if: always() && github.event_name == 'schedule'
+    if: >
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.departement == 'tous' &&
+        github.event.inputs.lieu_id == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 340
 
@@ -121,7 +128,12 @@ jobs:
 
   precalcul-3:
     needs: precalcul-2
-    if: always() && github.event_name == 'schedule'
+    if: >
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.departement == 'tous' &&
+        github.event.inputs.lieu_id == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 340
 
@@ -150,7 +162,12 @@ jobs:
 
   precalcul-4:
     needs: precalcul-3
-    if: always() && github.event_name == 'schedule'
+    if: >
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.departement == 'tous' &&
+        github.event.inputs.lieu_id == ''))
     runs-on: ubuntu-latest
     timeout-minutes: 340
 

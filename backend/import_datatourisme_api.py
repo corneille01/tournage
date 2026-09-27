@@ -92,6 +92,8 @@ def _texte_liste(champ) -> str | None:
         return None
     if isinstance(champ, str):
         return champ or None
+    if isinstance(champ, dict):
+        return _texte(champ)
     if isinstance(champ, list):
         valeurs = [
             v for v in (_texte(x) if isinstance(x, dict) else x for x in champ)
@@ -151,10 +153,13 @@ def _extraire_objet(poi: dict) -> dict | None:
         return None
 
     adresse_obj = _chemin(poi, "isLocatedAt", "address", defaut={})
-    commune = _texte(_chemin(adresse_obj, "hasAddressCity", "label"))
-    departement = _texte(_chemin(adresse_obj, "hasAddressCity", "isPartOfDepartment", "label"))
+    commune = _texte_liste(_chemin(adresse_obj, "hasAddressCity", "label"))
+    departement = _texte_liste(_chemin(adresse_obj, "hasAddressCity", "isPartOfDepartment", "label"))
     rue = _texte_liste(adresse_obj.get("streetAddress"))
-    cp = adresse_obj.get("postalCode")
+    # postalCode est généralement une chaîne, mais certains POI le renvoient
+    # en liste (parfois plusieurs codes postaux pour une même adresse) —
+    # d'où le même traitement défensif que pour les autres champs.
+    cp = _texte_liste(adresse_obj.get("postalCode"))
     adresse_complete = ", ".join(p for p in (rue, cp, commune) if p) or None
 
     contact = poi.get("hasContact") or {}

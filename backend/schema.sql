@@ -147,3 +147,31 @@ CREATE INDEX idx_datatourisme_coords ON datatourisme_objets (latitude, longitude
 CREATE TRIGGER trg_datatourisme_objets_date_maj
     BEFORE UPDATE ON datatourisme_objets
     FOR EACH ROW EXECUTE FUNCTION maj_date_modification();
+
+
+
+
+-- Migration : ajoute les champs DATAtourisme jusqu'ici non exploités
+-- à la table datatourisme_objets.
+-- À exécuter une fois avant de déployer la nouvelle version du script.
+
+ALTER TABLE datatourisme_objets
+    ADD COLUMN IF NOT EXISTS uri TEXT,
+    ADD COLUMN IF NOT EXISTS types TEXT,                    -- ex: "MusicEvent, Concert, EntertainmentAndEvent"
+    ADD COLUMN IF NOT EXISTS insee VARCHAR(10),
+    ADD COLUMN IF NOT EXISTS adresse_localite VARCHAR(250),  -- addressLocality (peut différer de "commune")
+    ADD COLUMN IF NOT EXISTS photo_credits VARCHAR(495),
+    ADD COLUMN IF NOT EXISTS photo_licence VARCHAR(95),      -- ex: "By-NC-ND 4.0"
+    ADD COLUMN IF NOT EXISTS organisme_diffuseur VARCHAR(250), -- hasBeenCreatedBy.legalName
+    ADD COLUMN IF NOT EXISTS date_maj_source DATE,           -- lastUpdate
+    ADD COLUMN IF NOT EXISTS date_maj_datatourisme TIMESTAMPTZ, -- lastUpdateDatatourisme
+    ADD COLUMN IF NOT EXISTS description_en TEXT,
+    ADD COLUMN IF NOT EXISTS date_debut DATE,                -- première date trouvée dans takesPlaceAt
+    ADD COLUMN IF NOT EXISTS date_fin DATE,                  -- dernière date trouvée dans takesPlaceAt
+    ADD COLUMN IF NOT EXISTS dates_evenement JSONB;           -- structure brute complète (plusieurs représentations possibles)
+
+-- Index utiles pour les cas d'usage évidents (filtrage par type et par date)
+CREATE INDEX IF NOT EXISTS idx_datatourisme_objets_date_debut
+    ON datatourisme_objets (date_debut);
+CREATE INDEX IF NOT EXISTS idx_datatourisme_objets_insee
+    ON datatourisme_objets (insee);

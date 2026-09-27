@@ -14,6 +14,16 @@ Reprend automatiquement là où une exécution précédente s'est arrêtée
 (URL "next" sauvegardée dans sync_state), utile si le run est
 interrompu par le plafond horaire ou un timeout GitHub Actions.
 
+⚠️ À VÉRIFIER au premier run après déploiement : la forme exacte de
+takesPlaceAt (dates de l'événement) dans cette API REST. L'ontologie
+DATAtourisme documente ce champ comme un LimitedPeriod (startDate,
+endDate, startTime, endTime) ou un RecurrentPeriod (appliesOnDay +
+dates), mais la doc REST publique ne montre pas d'exemple concret et
+ce n'était pas visible dans les payloads observés jusqu'ici (tronqués
+avant ce champ). _extraire_dates() essaie plusieurs formes plausibles
+et logue un avertissement si rien n'est trouvé — à ajuster une fois un
+vrai POI avec dates observé (voir le log "Premier objet brut reçu").
+
 Usage :
     python import_datatourisme_api.py
 """
@@ -22,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import time
 
@@ -44,6 +55,10 @@ DELAI_ENTRE_REQUETES_S = 0.35
 PLAFOND_REQUETES_PAR_RUN = 900  # sécurité : on s'arrête avant 1000/h et on reprendra au run suivant
 
 CLE_CURSEUR = "datatourisme_api_fetes_next_url"
+
+# On ne logue l'avertissement "dates introuvables" qu'une seule fois par
+# run pour ne pas noyer les logs si le champ est structurellement absent.
+_avertissement_dates_deja_logue = False
 
 
 async def _lire_curseur() -> str | None:
@@ -78,25 +93,25 @@ def _texte(champ, lang: str = "fr"):
     return champ
 
 
-def _texte_liste(champ) -> str | None:
-    """Aplatit un champ qui peut être une chaîne, une liste de chaînes,
-    ou une liste de dicts multilingues, en une seule chaîne (les valeurs
-    multiples sont jointes par ', ').
+def _texte_liste(champ, lang: str = "fr") -> str | None:
+    """Aplatit un champ qui peut être une chaîne, un dict multilingue, ou
+    une liste de chaînes/dicts multilingues, en une seule chaîne (les
+    valeurs multiples sont jointes par ', ').
 
     Nécessaire car dans les payloads réels de l'API DATAtourisme, des
-    champs comme isLocatedAt.address.streetAddress ou
+    champs comme isLocatedAt.address.streetAddress, postalCode ou
     hasContact.telephone / hasContact.homepage sont systématiquement des
-    listes, même quand ils ne contiennent qu'une seule valeur — contrairement
-    à d'autres champs "simples" comme postalCode."""
+    listes, même quand ils ne contiennent qu'une seule valeur —
+    contrairement à d'autres champs vraiment "simples"."""
     if champ is None:
         return None
     if isinstance(champ, str):
         return champ or None
     if isinstance(champ, dict):
-        return _texte(champ)
+        return _texte(champ, lang)
     if isinstance(champ, list):
         valeurs = [
-            v for v in (_texte(x) if isinstance(x, dict) else x for x in champ)
+            v for v in (_texte(x, lang) if isinstance(x, dict) else x for x in champ)
             if v
         ]
         return ", ".join(valeurs) if valeurs else None
@@ -120,7 +135,7 @@ def _chemin(objet: dict, *cles, defaut=None):
     return courant if courant is not None else defaut
 
 
-def _extraire_description(poi: dict) -> str | None:
+def _extraire_description(poi: dict, lang: str = "fr") -> str | None:
     descriptions = poi.get("hasDescription")
     if not descriptions:
         return None
@@ -128,7 +143,7 @@ def _extraire_description(poi: dict) -> str | None:
         descriptions = [descriptions]
     for d in descriptions:
         for cle in ("description", "longDescription", "shortDescription"):
-            texte = _texte(d.get(cle) if isinstance(d, dict) else None)
+            texte = _texte(d.get(cle) if isinstance(d, dict) else None, lang)
             if texte:
                 return texte[:1990]
     return None
@@ -141,6 +156,118 @@ def _extraire_photo(poi: dict) -> str | None:
     if not isinstance(repr_, dict):
         return None
     return repr_.get("url") or _chemin(repr_, "hasRelatedResource", "locator")
+
+
+def _extraire_photo_credits(poi: dict) -> tuple[str | None, str | None]:
+    """Retourne (credits, licence) depuis hasMainRepresentation.hasAnnotation.
+    Certaines licences (ex. By-NC-ND) imposent d'afficher le crédit à côté
+    de l'image — jusqu'ici on ne le stockait pas du tout."""
+    repr_ = poi.get("hasMainRepresentation")
+    if isinstance(repr_, list):
+        repr_ = repr_[0] if repr_ else None
+    if not isinstance(repr_, dict):
+        return None, None
+    annotation = _chemin(repr_, "hasAnnotation", defaut={})
+    credits_ = _texte_liste(annotation.get("credits"))
+    licence = annotation.get("isCoveredBy")
+    if isinstance(licence, list):
+        licence = licence[0] if licence else None
+    return credits_, licence
+
+
+def _extraire_types(poi: dict) -> str | None:
+    """Le champ "type" liste les catégories DATAtourisme de l'objet
+    (ex. MusicEvent, Concert, EntertainmentAndEvent). Utile pour filtrer
+    par type d'événement côté appli — jusqu'ici entièrement ignoré."""
+    types_ = poi.get("type")
+    if not types_:
+        return None
+    if isinstance(types_, str):
+        return types_
+    if isinstance(types_, list):
+        return ", ".join(str(t) for t in types_ if t) or None
+    return None
+
+
+def _parse_date(valeur) -> str | None:
+    """Normalise une date en 'YYYY-MM-DD' si elle en a la forme, sinon
+    renvoie None plutôt que de planter l'insertion SQL."""
+    if not valeur or not isinstance(valeur, str):
+        return None
+    valeur = valeur[:10]
+    if len(valeur) == 10 and valeur[4] == "-" and valeur[7] == "-":
+        return valeur
+    return None
+
+
+def _extraire_dates(poi: dict) -> tuple[str | None, str | None, str | None]:
+    """Extrait les dates de l'événement depuis takesPlaceAt.
+
+    Retourne (date_debut, date_fin, json_brut_str) :
+    - date_debut / date_fin : bornes simplifiées (la plus proche / la plus
+      lointaine trouvée parmi toutes les périodes), pratiques pour trier
+      ou filtrer "événements à venir".
+    - json_brut_str : la structure takesPlaceAt telle quelle (sérialisée),
+      pour ne perdre aucune information si un événement a plusieurs
+      représentations / une récurrence complexe.
+
+    ⚠️ Forme non confirmée sur un vrai payload REST à ce jour — voir la
+    note en tête de fichier. Si ça ne matche rien, un avertissement est
+    logué une fois par run plutôt que de faire planter l'extraction.
+    """
+    global _avertissement_dates_deja_logue
+
+    periodes = poi.get("takesPlaceAt")
+    if not periodes:
+        # Repli sur schema:startDate / schema:endDate, mentionnés dans la
+        # doc de l'ontologie comme parfois présents en parallèle.
+        sd = poi.get("startDate") or _chemin(poi, "schema:startDate")
+        ed = poi.get("endDate") or _chemin(poi, "schema:endDate")
+        sd = _parse_date(_texte_liste(sd)) if sd else None
+        ed = _parse_date(_texte_liste(ed)) if ed else None
+        if sd or ed:
+            return sd, ed, json.dumps({"startDate": sd, "endDate": ed}, ensure_ascii=False)
+        if not _avertissement_dates_deja_logue:
+            print(
+                "  ⚠️ Aucun champ de date trouvé (takesPlaceAt/startDate/endDate absents) "
+                "— à vérifier sur le payload brut loggué plus haut.",
+                flush=True,
+            )
+            _avertissement_dates_deja_logue = True
+        return None, None, None
+
+    if not isinstance(periodes, list):
+        periodes = [periodes]
+
+    dates_debut: list[str] = []
+    dates_fin: list[str] = []
+    for p in periodes:
+        if not isinstance(p, dict):
+            continue
+        sd = _parse_date(_texte_liste(p.get("startDate")))
+        ed = _parse_date(_texte_liste(p.get("endDate")))
+        if sd:
+            dates_debut.append(sd)
+        if ed:
+            dates_fin.append(ed)
+
+    date_debut = min(dates_debut) if dates_debut else None
+    date_fin = max(dates_fin) if dates_fin else (max(dates_debut) if dates_debut else None)
+
+    try:
+        json_brut = json.dumps(periodes, ensure_ascii=False, default=str)
+    except TypeError:
+        json_brut = None
+
+    if not date_debut and not date_fin and not _avertissement_dates_deja_logue:
+        print(
+            "  ⚠️ takesPlaceAt présent mais aucune startDate/endDate exploitable "
+            "— structure probablement différente de ce qui est attendu, à vérifier.",
+            flush=True,
+        )
+        _avertissement_dates_deja_logue = True
+
+    return date_debut, date_fin, json_brut
 
 
 def _extraire_objet(poi: dict) -> dict | None:
@@ -162,9 +289,19 @@ def _extraire_objet(poi: dict) -> dict | None:
     cp = _texte_liste(adresse_obj.get("postalCode"))
     adresse_complete = ", ".join(p for p in (rue, cp, commune) if p) or None
 
+    insee = _chemin(adresse_obj, "hasAddressCity", "insee")
+    if isinstance(insee, list):
+        insee = insee[0] if insee else None
+    adresse_localite = _texte_liste(adresse_obj.get("addressLocality"))
+
     contact = poi.get("hasContact") or {}
     if isinstance(contact, list):
         contact = contact[0] if contact else {}
+
+    photo_credits, photo_licence = _extraire_photo_credits(poi)
+    date_debut, date_fin, dates_json = _extraire_dates(poi)
+
+    organisme = _texte_liste(_chemin(poi, "hasBeenCreatedBy", "legalName"))
 
     return {
         "identifiant_dt": str(uuid)[:95],
@@ -176,8 +313,22 @@ def _extraire_objet(poi: dict) -> dict | None:
         "adresse": (adresse_complete or "")[:495] or None,
         "telephone": (_texte_liste(contact.get("telephone")) or "")[:45] or None,
         "site_web": (_texte_liste(contact.get("homepage")) or "")[:495] or None,
-        "description": _extraire_description(poi),
+        "description": _extraire_description(poi, "fr"),
         "photo_url": (_extraire_photo(poi) or "")[:495] or None,
+        # Champs précédemment inexploités :
+        "uri": poi.get("uri"),
+        "types": _extraire_types(poi),
+        "insee": (str(insee)[:10] if insee else None),
+        "adresse_localite": (adresse_localite or "")[:250] or None,
+        "photo_credits": (photo_credits or "")[:495] or None,
+        "photo_licence": (photo_licence or "")[:95] or None,
+        "organisme_diffuseur": (organisme or "")[:250] or None,
+        "date_maj_source": _parse_date(poi.get("lastUpdate")),
+        "date_maj_datatourisme": poi.get("lastUpdateDatatourisme"),
+        "description_en": _extraire_description(poi, "en"),
+        "date_debut": date_debut,
+        "date_fin": date_fin,
+        "dates_evenement": dates_json,
     }
 
 
@@ -242,15 +393,30 @@ async def main():
                         INSERT INTO datatourisme_objets
                             (identifiant_dt, nom, categorie, commune, departement,
                              latitude, longitude, adresse, telephone, site_web,
-                             description, photo_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                             description, photo_url,
+                             uri, types, insee, adresse_localite,
+                             photo_credits, photo_licence, organisme_diffuseur,
+                             date_maj_source, date_maj_datatourisme, description_en,
+                             date_debut, date_fin, dates_evenement)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (identifiant_dt) DO UPDATE SET
                             nom = EXCLUDED.nom, commune = EXCLUDED.commune,
                             departement = EXCLUDED.departement,
                             latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
                             adresse = EXCLUDED.adresse, telephone = EXCLUDED.telephone,
                             site_web = EXCLUDED.site_web, description = EXCLUDED.description,
-                            photo_url = EXCLUDED.photo_url
+                            photo_url = EXCLUDED.photo_url,
+                            uri = EXCLUDED.uri, types = EXCLUDED.types,
+                            insee = EXCLUDED.insee, adresse_localite = EXCLUDED.adresse_localite,
+                            photo_credits = EXCLUDED.photo_credits,
+                            photo_licence = EXCLUDED.photo_licence,
+                            organisme_diffuseur = EXCLUDED.organisme_diffuseur,
+                            date_maj_source = EXCLUDED.date_maj_source,
+                            date_maj_datatourisme = EXCLUDED.date_maj_datatourisme,
+                            description_en = EXCLUDED.description_en,
+                            date_debut = EXCLUDED.date_debut, date_fin = EXCLUDED.date_fin,
+                            dates_evenement = EXCLUDED.dates_evenement
                         """,
                         (
                             objet["identifiant_dt"], objet["nom"], CATEGORIE,
@@ -258,6 +424,10 @@ async def main():
                             objet["latitude"], objet["longitude"], objet["adresse"],
                             objet["telephone"], objet["site_web"],
                             objet["description"], objet["photo_url"],
+                            objet["uri"], objet["types"], objet["insee"], objet["adresse_localite"],
+                            objet["photo_credits"], objet["photo_licence"], objet["organisme_diffuseur"],
+                            objet["date_maj_source"], objet["date_maj_datatourisme"], objet["description_en"],
+                            objet["date_debut"], objet["date_fin"], objet["dates_evenement"],
                         ),
                     )
                     importes += 1

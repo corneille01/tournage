@@ -83,12 +83,18 @@ def _texte(champ, lang: str = "fr"):
 
 def _chemin(objet: dict, *cles, defaut=None):
     """Descend dans un dict imbriqué, clé par clé, sans planter si un
-    niveau est absent."""
+    niveau est absent. Déballe automatiquement les listes à un seul
+    élément (convention JSON-LD de l'API DATAtourisme : isLocatedAt,
+    hasAddressCity, etc. sont presque toujours des tableaux)."""
     courant = objet
     for cle in cles:
+        if isinstance(courant, list):
+            courant = courant[0] if courant else None
         if not isinstance(courant, dict):
             return defaut
         courant = courant.get(cle)
+    if isinstance(courant, list):
+        courant = courant[0] if courant else None
     return courant if courant is not None else defaut
 
 

@@ -114,3 +114,36 @@ CREATE TRIGGER trg_amenity_cache_date_maj
 CREATE TRIGGER trg_amenity_stats_date_maj
     BEFORE UPDATE ON amenity_stats
     FOR EACH ROW EXECUTE FUNCTION maj_date_modification();
+
+
+
+CREATE TABLE sync_state (
+    cle     VARCHAR(100) PRIMARY KEY,
+    valeur  TEXT NULL,
+    maj     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE datatourisme_objets (
+    id              SERIAL PRIMARY KEY,
+    identifiant_dt  VARCHAR(95) NOT NULL UNIQUE,
+    nom             VARCHAR(255) NOT NULL,
+    categorie       VARCHAR(30) NOT NULL DEFAULT 'fetes_manifestations',
+    commune         VARCHAR(255) NULL,
+    departement     VARCHAR(100) NULL,
+    latitude        DECIMAL(10, 7) NOT NULL,
+    longitude       DECIMAL(10, 7) NOT NULL,
+    adresse         VARCHAR(500) NULL,
+    telephone       VARCHAR(50) NULL,
+    site_web        VARCHAR(500) NULL,
+    description     TEXT NULL,
+    photo_url       VARCHAR(500) NULL,
+    date_creation   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_maj        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_datatourisme_departement ON datatourisme_objets (departement);
+CREATE INDEX idx_datatourisme_coords ON datatourisme_objets (latitude, longitude);
+
+-- réutilise le trigger déjà défini dans schema.sql (maj_date_modification)
+CREATE TRIGGER trg_datatourisme_objets_date_maj
+    BEFORE UPDATE ON datatourisme_objets
+    FOR EACH ROW EXECUTE FUNCTION maj_date_modification();

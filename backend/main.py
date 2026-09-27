@@ -1061,9 +1061,9 @@ async def amenities_proches(lieu_id: int):
         )
         amenities_par_categorie.setdefault(item["categorie"], []).append(item)
 
-    return {"lieu": lieu, "amenities": amenities_par_categorie}t
+    return {"lieu": lieu, "amenities": amenities_par_categorie}
 
-    
+
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     """Ordonne les lieux par plus proche voisin (heuristique simple,
     pas un vrai TSP optimal — largement suffisant pour quelques lieux

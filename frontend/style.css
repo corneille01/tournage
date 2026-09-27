@@ -777,6 +777,7 @@ body.page-film-ssr {
   line-height: 1.4;
   color: var(--couleur-texte-muted);
   margin-top: 4px;
+  padding-right: 10px;
 }
 .description-commodite.scrollable { max-height: 120px; overflow-y: auto; }
 

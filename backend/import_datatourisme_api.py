@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime
 import json
 import os
 import time
@@ -189,18 +190,33 @@ def _extraire_types(poi: dict) -> str | None:
     return None
 
 
-def _parse_date(valeur) -> str | None:
-    """Normalise une date en 'YYYY-MM-DD' si elle en a la forme, sinon
-    renvoie None plutôt que de planter l'insertion SQL."""
+def _parse_date(valeur) -> datetime.date | None:
+    """Convertit une chaîne 'YYYY-MM-DD...' en véritable datetime.date.
+
+    asyncpg exige un objet date pour les colonnes DATE — lui passer une
+    chaîne plante l'insertion avec 'str' object has no attribute
+    'toordinal', même si la chaîne est au bon format."""
     if not valeur or not isinstance(valeur, str):
         return None
-    valeur = valeur[:10]
-    if len(valeur) == 10 and valeur[4] == "-" and valeur[7] == "-":
-        return valeur
-    return None
+    try:
+        return datetime.date.fromisoformat(valeur[:10])
+    except ValueError:
+        return None
 
 
-def _extraire_dates(poi: dict) -> tuple[str | None, str | None, str | None]:
+def _parse_datetime(valeur) -> datetime.datetime | None:
+    """Convertit une chaîne ISO 8601 (ex. '2026-09-09T13:01:06.218Z') en
+    véritable datetime.datetime, pour les mêmes raisons que _parse_date
+    — nécessaire pour une colonne TIMESTAMPTZ."""
+    if not valeur or not isinstance(valeur, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(valeur.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _extraire_dates(poi: dict) -> tuple[datetime.date | None, datetime.date | None, str | None]:
     """Extrait les dates de l'événement depuis takesPlaceAt.
 
     Retourne (date_debut, date_fin, json_brut_str) :
@@ -226,7 +242,7 @@ def _extraire_dates(poi: dict) -> tuple[str | None, str | None, str | None]:
         sd = _parse_date(_texte_liste(sd)) if sd else None
         ed = _parse_date(_texte_liste(ed)) if ed else None
         if sd or ed:
-            return sd, ed, json.dumps({"startDate": sd, "endDate": ed}, ensure_ascii=False)
+            return sd, ed, json.dumps({"startDate": sd, "endDate": ed}, ensure_ascii=False, default=str)
         if not _avertissement_dates_deja_logue:
             print(
                 "  ⚠️ Aucun champ de date trouvé (takesPlaceAt/startDate/endDate absents) "
@@ -324,7 +340,7 @@ def _extraire_objet(poi: dict) -> dict | None:
         "photo_licence": (photo_licence or "")[:95] or None,
         "organisme_diffuseur": (organisme or "")[:250] or None,
         "date_maj_source": _parse_date(poi.get("lastUpdate")),
-        "date_maj_datatourisme": poi.get("lastUpdateDatatourisme"),
+        "date_maj_datatourisme": _parse_datetime(poi.get("lastUpdateDatatourisme")),
         "description_en": _extraire_description(poi, "en"),
         "date_debut": date_debut,
         "date_fin": date_fin,

@@ -242,6 +242,45 @@ CREATE INDEX idx_datatourisme_coords ON datatourisme_objets (latitude, longitude
 CREATE INDEX idx_datatourisme_objets_date_debut ON datatourisme_objets (date_debut);
 CREATE INDEX idx_datatourisme_objets_insee ON datatourisme_objets (insee);
 
+-- ─────────────────────────────────────────────────────────────
+-- guides
+-- Ajoutée par migration_v26.sql. Annuaire MVP des guides et
+-- médiateurs cinétouristiques (voir backend/guides.py) — saisie
+-- manuelle, pas de compte utilisateur guide en V1.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE guides (
+    id                      SERIAL PRIMARY KEY,
+    nom                     VARCHAR(255) NOT NULL,
+    type_guide              VARCHAR(30) NOT NULL DEFAULT 'autre'
+                                CHECK (type_guide IN (
+                                    'guide_conferencier', 'mediateur_culturel', 'accompagnateur',
+                                    'historien', 'passionne_cinema', 'autre'
+                                )),
+    bio                     TEXT NULL,
+    specialites             TEXT[] NOT NULL DEFAULT '{}',
+    langues                 TEXT[] NOT NULL DEFAULT '{}',
+    publics                 TEXT[] NOT NULL DEFAULT '{}',
+    mobilite                TEXT[] NOT NULL DEFAULT '{}',
+    latitude                DECIMAL(10, 7) NOT NULL,
+    longitude               DECIMAL(10, 7) NOT NULL,
+    rayon_intervention_km   INT NOT NULL DEFAULT 30,
+    capacite_max            INT NULL,
+    tarif_indicatif         VARCHAR(255) NULL,
+    site_web                VARCHAR(500) NULL,
+    lien_contact            VARCHAR(500) NULL,
+    photo_url               VARCHAR(500) NULL,
+    statut                  VARCHAR(15) NOT NULL DEFAULT 'actif'
+                                CHECK (statut IN ('actif', 'inactif', 'en_attente')),
+    date_creation           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_maj                TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_guides_statut ON guides (statut);
+CREATE INDEX idx_guides_coords ON guides (latitude, longitude);
+
+CREATE TRIGGER trg_guides_date_maj
+    BEFORE UPDATE ON guides
+    FOR EACH ROW EXECUTE FUNCTION maj_date_modification();
+
 CREATE TRIGGER trg_datatourisme_objets_date_maj
     BEFORE UPDATE ON datatourisme_objets
     FOR EACH ROW EXECUTE FUNCTION maj_date_modification();

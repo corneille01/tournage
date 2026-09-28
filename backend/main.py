@@ -40,6 +40,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
+from guides import guides_recommandes, exiger_admin, SPECIALITES_VALIDES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES
 from paysages import router as paysages_router
 from droits import router as droits_router
 
@@ -1917,6 +1918,15 @@ async def parcours_enrichi(request: Request, response: Response):
     heure_depart = str(body.get("heure_depart") or "09:00")
     date_sortie = str(body.get("date_sortie") or "")
     budget_max_euros = body.get("budget_max_euros")
+    inclure_guides = bool(body.get("inclure_guides", True))
+    langue_guide = body.get("langue") or None
+    if langue_guide is not None:
+        langue_guide = str(langue_guide).strip()[:20] or None
+    nb_personnes = body.get("nb_personnes")
+    try:
+        nb_personnes = int(nb_personnes) if nb_personnes not in (None, "") else None
+    except (TypeError, ValueError):
+        nb_personnes = None
 
     if not isinstance(lieu_ids, list):
         raise HTTPException(400, "lieu_ids doit être une liste")
@@ -1992,7 +2002,7 @@ async def parcours_enrichi(request: Request, response: Response):
         raise HTTPException(404, f"Lieu(x) introuvable(s) : {manquants}")
 
     film_ids_parcours = list({int(x["film_id"]) for x in lieux if x.get("film_id") is not None})
-    visites_disponibles = creneaux_pour_date(date_sortie, film_ids_parcours) if date_sortie else []
+    visites_disponibles = (await creneaux_pour_date(date_sortie, film_ids_parcours)) if date_sortie else []
 
     # On conserve exactement l'ordre choisi dans l'interface, sauf si
     # l'utilisateur demande explicitement une optimisation sous contrainte de temps.
@@ -2028,6 +2038,15 @@ async def parcours_enrichi(request: Request, response: Response):
                     suivant = min(autres, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
                     ordonnes.append(suivant); autres.remove(suivant); courant = suivant
                 etapes = ordonnes
+
+    # Guides et médiateurs dont la zone d'intervention couvre ce parcours.
+    # Ne remplace jamais une visite guidée existante (visites_disponibles) :
+    # c'est une piste complémentaire quand aucune offre packagée n'existe,
+    # ou simplement une option supplémentaire à côté.
+    guides_pertinents = (
+        await guides_recommandes(etapes, mode=mode, langue=langue_guide, nb_personnes=nb_personnes)
+        if inclure_guides else []
+    )
 
     resultat_route = None
     depart_effectif = None
@@ -2252,6 +2271,8 @@ async def parcours_enrichi(request: Request, response: Response):
         "visites_guidees": visites_guidees,
         "visites_guidees_disponibles": visites_disponibles,
         "visites_guidees_planifiees": [guide_planifie] if guide_planifie else [],
+        "guides_recommandes": guides_pertinents,
+        "inclure_guides": inclure_guides,
         "date_sortie": date_sortie or None,
         "scenario_recommande": {
             "type": "visite_guidee" if guide_planifie else "parcours_personnalise",
@@ -2285,6 +2306,389 @@ async def parcours_enrichi(request: Request, response: Response):
     await _enregistrer_parcours_historique(request, response, body, reponse)
     return reponse
 
+
+# ══════════════════════════════════════════════════════════════
+# V5 — ANNUAIRE DES GUIDES ET MÉDIATEURS CINÉTOURISTIQUES
+#
+# MVP volontairement simple : pas de compte guide, pas de réservation
+# ni de messagerie in-app. Un guide est une fiche saisie manuellement
+# (via POST, protégé par ADMIN_TOKEN, ou directement en base), avec
+# une zone d'intervention = un point + un rayon en kilomètres. Le
+# matching (backend/guides.py) filtre par zone puis trie par
+# pertinence ; il ne renvoie jamais de score chiffré au visiteur.
+# ══════════════════════════════════════════════════════════════
+
+@app.get("/api/guides")
+async def liste_guides(statut: str = Query("actif")):
+    """
+    Annuaire public. `statut=actif` (par défaut) ne montre que les
+    fiches publiées ; `statut=tous` permet à l'admin de voir aussi les
+    fiches en_attente/inactives (pas de données sensibles dans cette
+    table, donc pas besoin de protéger la lecture elle-même).
+    """
+    if statut == "tous":
+        where, params = "", ()
+    else:
+        if statut not in {"actif", "inactif", "en_attente"}:
+            raise HTTPException(400, "statut invalide")
+        where, params = "WHERE statut = %s", (statut,)
+    lignes = await fetch_all(
+        f"""
+        SELECT id, nom, type_guide, bio, specialites, langues, publics,
+               mobilite, latitude, longitude, rayon_intervention_km,
+               capacite_max, tarif_indicatif, site_web, lien_contact,
+               photo_url, statut, date_creation
+        FROM guides
+        {where}
+        ORDER BY date_creation DESC
+        """,
+        params,
+    )
+    return {"guides": lignes, "total": len(lignes)}
+
+
+@app.post("/api/guides")
+async def creer_guide(request: Request):
+    """
+    Création d'une fiche guide. Protégé par un jeton d'administration
+    simple (en-tête X-Admin-Token = variable d'env ADMIN_TOKEN) : il
+    n'y a pour l'instant aucun compte utilisateur guide, donc pas de
+    self-service — c'est Pelify (ou l'office de tourisme partenaire)
+    qui saisit les fiches vérifiées, comme convenu pour le lancement
+    limité à l'Occitanie.
+    """
+    exiger_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+
+    nom = str(body.get("nom") or "").strip()
+    if not nom:
+        raise HTTPException(400, "Le nom du guide est obligatoire")
+
+    type_guide = str(body.get("type_guide") or "autre")
+    if type_guide not in TYPES_GUIDE_VALIDES:
+        raise HTTPException(400, f"type_guide invalide (valeurs possibles : {sorted(TYPES_GUIDE_VALIDES)})")
+
+    try:
+        latitude = float(body.get("latitude"))
+        longitude = float(body.get("longitude"))
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(400, "latitude/longitude invalides")
+
+    def _liste_valeurs(cle: str, valides: set[str]) -> list[str]:
+        valeurs = body.get(cle) or []
+        if not isinstance(valeurs, list):
+            raise HTTPException(400, f"{cle} doit être une liste")
+        valeurs = [str(x) for x in valeurs]
+        invalides = [x for x in valeurs if x not in valides]
+        if invalides:
+            raise HTTPException(400, f"{cle} contient des valeurs invalides : {invalides} (valeurs possibles : {sorted(valides)})")
+        return valeurs
+
+    specialites = _liste_valeurs("specialites", SPECIALITES_VALIDES)
+    mobilite = _liste_valeurs("mobilite", MOBILITES_VALIDES)
+    langues = [str(x).strip().lower() for x in (body.get("langues") or []) if str(x).strip()][:10]
+    publics = [str(x).strip() for x in (body.get("publics") or []) if str(x).strip()][:10]
+
+    rayon_intervention_km = body.get("rayon_intervention_km")
+    try:
+        rayon_intervention_km = max(1, min(int(rayon_intervention_km), 200)) if rayon_intervention_km not in (None, "") else 30
+    except (TypeError, ValueError):
+        rayon_intervention_km = 30
+
+    capacite_max = body.get("capacite_max")
+    try:
+        capacite_max = max(1, int(capacite_max)) if capacite_max not in (None, "") else None
+    except (TypeError, ValueError):
+        capacite_max = None
+
+    statut = str(body.get("statut") or "actif")
+    if statut not in {"actif", "inactif", "en_attente"}:
+        statut = "en_attente"
+
+    guide_id = await execute(
+        """
+        INSERT INTO guides (
+            nom, type_guide, bio, specialites, langues, publics, mobilite,
+            latitude, longitude, rayon_intervention_km, capacite_max,
+            tarif_indicatif, site_web, lien_contact, photo_url, statut
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
+        """,
+        (
+            nom, type_guide, body.get("bio"), specialites, langues, publics, mobilite,
+            latitude, longitude, rayon_intervention_km, capacite_max,
+            body.get("tarif_indicatif"), body.get("site_web"), body.get("lien_contact"),
+            body.get("photo_url"), statut,
+        ),
+    )
+    return {"id": guide_id, "message": "Guide créé"}
+
+
+@app.post("/api/guides/candidature")
+async def candidature_guide(request: Request):
+    """
+    Formulaire public d'inscription à l'annuaire — voir
+    frontend/devenir-guide.html. Contrairement à POST /api/guides,
+    aucun jeton n'est requis : n'importe qui peut candidater, mais la
+    fiche est TOUJOURS créée avec statut='en_attente' et n'apparaît
+    donc jamais dans le matching (guides_recommandes ne lit que les
+    fiches statut='actif') tant qu'elle n'a pas été validée à la main
+    via PATCH /api/guides/{id}/statut.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+
+    # Piège à robots : un champ caché côté formulaire, que seul un bot
+    # remplit habituellement. On ne le dit pas dans le message d'erreur
+    # pour ne pas aider à le contourner.
+    if str(body.get("site_web_confirmation") or "").strip():
+        raise HTTPException(400, "Candidature invalide")
+
+    nom = str(body.get("nom") or "").strip()
+    if not nom:
+        raise HTTPException(400, "Le nom est obligatoire")
+    contact = str(body.get("lien_contact") or "").strip()
+    if not contact:
+        raise HTTPException(400, "Indiquez un email ou un moyen de contact")
+
+    type_guide = str(body.get("type_guide") or "autre")
+    if type_guide not in TYPES_GUIDE_VALIDES:
+        type_guide = "autre"
+
+    def _liste_valeurs_publique(cle: str, valides: set[str]) -> list[str]:
+        valeurs = body.get(cle) or []
+        if not isinstance(valeurs, list):
+            return []
+        return [str(x) for x in valeurs if str(x) in valides][:10]
+
+    specialites = _liste_valeurs_publique("specialites", SPECIALITES_VALIDES)
+    mobilite = _liste_valeurs_publique("mobilite", MOBILITES_VALIDES)
+    langues = [str(x).strip().lower() for x in (body.get("langues") or []) if str(x).strip()][:10]
+    publics = [str(x).strip() for x in (body.get("publics") or []) if str(x).strip()][:10]
+
+    try:
+        latitude = float(body.get("latitude"))
+        longitude = float(body.get("longitude"))
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Indiquez la zone où vous intervenez (latitude/longitude)")
+
+    rayon_intervention_km = body.get("rayon_intervention_km")
+    try:
+        rayon_intervention_km = max(1, min(int(rayon_intervention_km), 200)) if rayon_intervention_km not in (None, "") else 30
+    except (TypeError, ValueError):
+        rayon_intervention_km = 30
+
+    capacite_max = body.get("capacite_max")
+    try:
+        capacite_max = max(1, int(capacite_max)) if capacite_max not in (None, "") else None
+    except (TypeError, ValueError):
+        capacite_max = None
+
+    guide_id = await execute(
+        """
+        INSERT INTO guides (
+            nom, type_guide, bio, specialites, langues, publics, mobilite,
+            latitude, longitude, rayon_intervention_km, capacite_max,
+            tarif_indicatif, site_web, lien_contact, photo_url, statut
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
+        """,
+        (
+            nom, type_guide, body.get("bio"), specialites, langues, publics, mobilite,
+            latitude, longitude, rayon_intervention_km, capacite_max,
+            body.get("tarif_indicatif"), body.get("site_web"), contact,
+            None, "en_attente",
+        ),
+    )
+    return {"id": guide_id, "message": "Merci ! Votre candidature a été enregistrée et sera vérifiée avant publication."}
+
+
+@app.patch("/api/guides/{guide_id}/statut")
+async def changer_statut_guide(guide_id: int, request: Request):
+    """Publier/dépublier une fiche (ex: passer 'en_attente' à 'actif' après vérification)."""
+    exiger_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+    statut = str(body.get("statut") or "")
+    if statut not in {"actif", "inactif", "en_attente"}:
+        raise HTTPException(400, "statut invalide")
+    resultat = await execute(
+        "UPDATE guides SET statut = %s WHERE id = %s RETURNING id",
+        (statut, guide_id),
+    )
+    if not resultat:
+        raise HTTPException(404, "Guide introuvable")
+    return {"id": guide_id, "statut": statut}
+
+
+# ══════════════════════════════════════════════════════════════
+# V5.1 — VISITES CINÉTOURISTIQUES (100% BASE DE DONNÉES)
+#
+# Depuis migration_v27, plus aucune visite n'est codée en dur dans
+# visites_cinetouristiques.py : tout vient de la table du même nom.
+# Mêmes principes que pour les guides : lecture publique, écriture
+# protégée par ADMIN_TOKEN (pas de self-service ici, les créneaux
+# datés engagent la crédibilité de Pelify).
+# ══════════════════════════════════════════════════════════════
+
+def _slugifier_visite(nom: str) -> str:
+    import re as _re
+    import unicodedata as _ud
+    base = _ud.normalize("NFKD", nom).encode("ascii", "ignore").decode("ascii")
+    base = _re.sub(r"[^a-zA-Z0-9]+", "-", base).strip("-").lower()
+    return base[:140] or "visite"
+
+
+@app.get("/api/visites")
+async def liste_visites(statut: str = Query("actif"), film_id: int | None = Query(None)):
+    conditions, params = [], []
+    if statut != "tous":
+        if statut not in {"actif", "inactif", "en_attente"}:
+            raise HTTPException(400, "statut invalide")
+        conditions.append("statut = %s"); params.append(statut)
+    if film_id is not None:
+        conditions.append("film_ids @> %s"); params.append([int(film_id)])
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    lignes = await fetch_all(
+        f"""
+        SELECT id, slug, film_ids, nom, description, duree_minutes, lien,
+               creneaux, creneaux_regles, statut, date_creation
+        FROM visites_cinetouristiques
+        {where}
+        ORDER BY date_creation DESC
+        """,
+        tuple(params),
+    )
+    for l in lignes:
+        l["creneaux"] = _parser_json(l.get("creneaux")) or []
+        l["creneaux_regles"] = _parser_json(l.get("creneaux_regles")) or []
+    return {"visites": lignes, "total": len(lignes)}
+
+
+@app.post("/api/visites")
+async def creer_visite(request: Request):
+    exiger_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+
+    nom = str(body.get("nom") or "").strip()
+    if not nom:
+        raise HTTPException(400, "Le nom de la visite est obligatoire")
+    try:
+        film_ids = list(dict.fromkeys(int(x) for x in (body.get("film_ids") or [])))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "film_ids doit être une liste d'identifiants numériques")
+    if not film_ids:
+        raise HTTPException(400, "Sélectionnez au moins un film")
+    try:
+        duree_minutes = max(1, min(int(body.get("duree_minutes")), 600))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "duree_minutes invalide")
+
+    creneaux = body.get("creneaux") or []
+    creneaux_regles = body.get("creneaux_regles") or []
+    if not isinstance(creneaux, list) or not isinstance(creneaux_regles, list):
+        raise HTTPException(400, "creneaux et creneaux_regles doivent être des listes")
+
+    slug = str(body.get("slug") or _slugifier_visite(nom))
+    statut = str(body.get("statut") or "actif")
+    if statut not in {"actif", "inactif", "en_attente"}:
+        statut = "en_attente"
+
+    try:
+        visite_id = await execute(
+            """
+            INSERT INTO visites_cinetouristiques
+                (slug, film_ids, nom, description, duree_minutes, lien,
+                 creneaux, creneaux_regles, statut)
+            VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s)
+            RETURNING id
+            """,
+            (
+                slug, film_ids, nom, body.get("description"), duree_minutes,
+                body.get("lien"), json.dumps(creneaux), json.dumps(creneaux_regles),
+                statut,
+            ),
+        )
+    except Exception as exc:
+        if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+            raise HTTPException(409, f"Le slug « {slug} » existe déjà, précisez-en un autre.")
+        raise
+    return {"id": visite_id, "slug": slug, "message": "Visite créée"}
+
+
+@app.patch("/api/visites/{visite_id}")
+async def modifier_visite(visite_id: int, request: Request):
+    """
+    Mise à jour partielle : n'envoyer que les champs à changer. Utile
+    pour corriger un créneau (`creneaux`) sans retaper toute la fiche.
+    """
+    exiger_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "JSON invalide")
+
+    champs, valeurs = [], []
+    if "nom" in body:
+        nom = str(body["nom"] or "").strip()
+        if not nom:
+            raise HTTPException(400, "nom ne peut pas être vide")
+        champs.append("nom = %s"); valeurs.append(nom)
+    if "description" in body:
+        champs.append("description = %s"); valeurs.append(body["description"])
+    if "duree_minutes" in body:
+        try:
+            champs.append("duree_minutes = %s"); valeurs.append(max(1, min(int(body["duree_minutes"]), 600)))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "duree_minutes invalide")
+    if "lien" in body:
+        champs.append("lien = %s"); valeurs.append(body["lien"])
+    if "film_ids" in body:
+        try:
+            film_ids = list(dict.fromkeys(int(x) for x in (body["film_ids"] or [])))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "film_ids invalide")
+        if not film_ids:
+            raise HTTPException(400, "film_ids ne peut pas être vide")
+        champs.append("film_ids = %s"); valeurs.append(film_ids)
+    if "creneaux" in body:
+        if not isinstance(body["creneaux"], list):
+            raise HTTPException(400, "creneaux doit être une liste")
+        champs.append("creneaux = %s::jsonb"); valeurs.append(json.dumps(body["creneaux"]))
+    if "creneaux_regles" in body:
+        if not isinstance(body["creneaux_regles"], list):
+            raise HTTPException(400, "creneaux_regles doit être une liste")
+        champs.append("creneaux_regles = %s::jsonb"); valeurs.append(json.dumps(body["creneaux_regles"]))
+    if "statut" in body:
+        if body["statut"] not in {"actif", "inactif", "en_attente"}:
+            raise HTTPException(400, "statut invalide")
+        champs.append("statut = %s"); valeurs.append(body["statut"])
+
+    if not champs:
+        raise HTTPException(400, "Aucun champ à mettre à jour")
+
+    valeurs.append(visite_id)
+    resultat = await execute(
+        f"UPDATE visites_cinetouristiques SET {', '.join(champs)} WHERE id = %s RETURNING id",
+        tuple(valeurs),
+    )
+    if not resultat:
+        raise HTTPException(404, "Visite introuvable")
+    return {"id": visite_id, "message": "Visite mise à jour"}
 
 
 # ══════════════════════════════════════════════════════════════

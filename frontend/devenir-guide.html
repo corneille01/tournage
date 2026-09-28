@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pelify — Devenir guide référencé</title>
+    <meta
+      name="description"
+      content="Inscrivez-vous à l'annuaire des guides et médiateurs cinétouristiques Pelify en Occitanie."
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <style>
+      .dg-wrap {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 24px 16px 60px;
+      }
+      .dg-wrap h1 {
+        font-size: 1.4rem;
+        margin: 0 0 6px;
+      }
+      .dg-wrap > p.dg-intro {
+        color: var(--couleur-texte-muted);
+        margin: 0 0 24px;
+        line-height: 1.5;
+      }
+      .dg-champ {
+        margin-bottom: 18px;
+      }
+      .dg-champ label {
+        display: block;
+        font-weight: 600;
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+      }
+      .dg-champ small.dg-aide {
+        display: block;
+        color: var(--couleur-texte-muted);
+        font-size: 0.72rem;
+        margin-top: 4px;
+      }
+      .dg-champ input[type="text"],
+      .dg-champ input[type="number"],
+      .dg-champ input[type="email"],
+      .dg-champ textarea,
+      .dg-champ select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 9px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: var(--couleur-carte);
+        color: var(--couleur-texte);
+        font: inherit;
+      }
+      .dg-champ textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      .dg-cases {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .dg-case {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 11px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        font-size: 0.78rem;
+        cursor: pointer;
+        user-select: none;
+      }
+      .dg-case input {
+        margin: 0;
+      }
+      .dg-case:has(input:checked) {
+        border-color: var(--couleur-accent);
+        color: var(--couleur-accent);
+      }
+      .dg-row2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      @media (max-width: 520px) {
+        .dg-row2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .dg-adresse-suggestions {
+        margin-top: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .dg-adresse-suggestions button {
+        text-align: left;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--couleur-carte);
+        color: var(--couleur-texte);
+        font-size: 0.78rem;
+        cursor: pointer;
+      }
+      .dg-adresse-suggestions button:hover {
+        border-color: var(--couleur-accent);
+      }
+      .dg-zone-confirmee {
+        margin-top: 6px;
+        font-size: 0.76rem;
+        color: var(--couleur-accent);
+      }
+      .dg-honeypot {
+        position: absolute;
+        left: -9999px;
+        opacity: 0;
+        height: 0;
+        overflow: hidden;
+      }
+      .dg-submit {
+        background: var(--couleur-accent);
+        color: #111;
+        border: 0;
+        padding: 12px 22px;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      .dg-submit:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .dg-statut {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        font-size: 0.85rem;
+        line-height: 1.4;
+      }
+      .dg-statut.ok {
+        background: rgba(120, 220, 140, 0.12);
+        border: 1px solid rgba(120, 220, 140, 0.35);
+      }
+      .dg-statut.erreur {
+        background: rgba(240, 110, 110, 0.12);
+        border: 1px solid rgba(240, 110, 110, 0.35);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="dg-wrap">
+      <h1>🎙️ Devenir guide référencé sur Pelify</h1>
+      <p class="dg-intro">
+        Vous êtes guide-conférencier, médiateur culturel, accompagnateur ou
+        simplement passionné de cinéma et vous proposez des visites autour des
+        lieux de tournage en Occitanie ? Complétez cette fiche : elle est
+        vérifiée à la main avant publication, puis proposée automatiquement aux
+        visiteurs dont le parcours correspond à votre zone et à vos spécialités.
+      </p>
+
+      <form id="dg-form" novalidate>
+        <!-- Piège à robots : champ invisible, un humain ne le remplit jamais. -->
+        <div class="dg-champ dg-honeypot">
+          <label for="dg-leurre">Ne pas remplir</label>
+          <input
+            type="text"
+            id="dg-leurre"
+            name="site_web_confirmation"
+            tabindex="-1"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="dg-champ">
+          <label for="dg-nom">Nom ou nom de structure *</label>
+          <input type="text" id="dg-nom" required maxlength="255" />
+        </div>
+
+        <div class="dg-row2">
+          <div class="dg-champ">
+            <label for="dg-type">Type de guide *</label>
+            <select id="dg-type" required>
+              <option value="guide_conferencier">Guide-conférencier</option>
+              <option value="mediateur_culturel">Médiateur culturel</option>
+              <option value="accompagnateur">Accompagnateur</option>
+              <option value="historien">Historien</option>
+              <option value="passionne_cinema">Passionné cinéma</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          <div class="dg-champ">
+            <label for="dg-contact">Email ou lien de contact *</label>
+            <input
+              type="text"
+              id="dg-contact"
+              required
+              placeholder="vous@exemple.fr ou site web"
+            />
+          </div>
+        </div>
+
+        <div class="dg-champ">
+          <label for="dg-bio">Présentation courte</label>
+          <textarea
+            id="dg-bio"
+            maxlength="1000"
+            placeholder="Votre expérience, votre approche, ce qui vous différencie…"
+          ></textarea>
+        </div>
+
+        <div class="dg-champ">
+          <label>Spécialités</label>
+          <div class="dg-cases" id="dg-specialites">
+            <label class="dg-case"
+              ><input type="checkbox" value="cinema" />🎬 Cinéma</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="series" />📺 Séries</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="histoire" />📜 Histoire</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="architecture" />🏛️
+              Architecture</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="patrimoine" />🏰 Patrimoine</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="paysage" />🌄 Paysage</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="culture_populaire" />🎭 Culture
+              populaire</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="production_audiovisuelle" />🎥
+              Production audiovisuelle</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="photographie" />📸
+              Photographie</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="gastronomie" />🍽️
+              Gastronomie</label
+            >
+          </div>
+          <small class="dg-aide"
+            >Au moins une spécialité liée au cinéma/aux séries augmente vos
+            chances d'être proposé sur les parcours Pelify.</small
+          >
+        </div>
+
+        <div class="dg-champ">
+          <label>Mode(s) de déplacement proposés</label>
+          <div class="dg-cases" id="dg-mobilite">
+            <label class="dg-case"
+              ><input type="checkbox" value="pied" />🚶 À pied</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="velo" />🚲 Vélo</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="voiture" />🚗 Voiture</label
+            >
+            <label class="dg-case"
+              ><input type="checkbox" value="transport_collectif" />🚌 Transport
+              collectif</label
+            >
+          </div>
+        </div>
+
+        <div class="dg-row2">
+          <div class="dg-champ">
+            <label for="dg-langues">Langues (séparées par une virgule)</label>
+            <input type="text" id="dg-langues" placeholder="fr, en, es" />
+          </div>
+          <div class="dg-champ">
+            <label for="dg-publics">Publics (séparés par une virgule)</label>
+            <input
+              type="text"
+              id="dg-publics"
+              placeholder="familles, groupes, scolaires"
+            />
+          </div>
+        </div>
+
+        <div class="dg-champ">
+          <label for="dg-adresse"
+            >Zone d'intervention (ville ou adresse de référence) *</label
+          >
+          <input
+            type="text"
+            id="dg-adresse"
+            required
+            placeholder="Ex : Montpellier, Sète, Collioure…"
+            autocomplete="off"
+          />
+          <div class="dg-adresse-suggestions" id="dg-adresse-suggestions"></div>
+          <div class="dg-zone-confirmee" id="dg-zone-confirmee"></div>
+        </div>
+
+        <div class="dg-row2">
+          <div class="dg-champ">
+            <label for="dg-rayon">Rayon d'intervention (km)</label>
+            <input type="number" id="dg-rayon" min="1" max="200" value="30" />
+          </div>
+          <div class="dg-champ">
+            <label for="dg-capacite">Taille de groupe max (optionnel)</label>
+            <input type="number" id="dg-capacite" min="1" />
+          </div>
+        </div>
+
+        <div class="dg-champ">
+          <label for="dg-tarif">Tarif indicatif (optionnel)</label>
+          <input
+            type="text"
+            id="dg-tarif"
+            placeholder="Ex : à partir de 15€/pers., sur devis…"
+          />
+        </div>
+
+        <button type="submit" class="dg-submit" id="dg-submit">
+          Envoyer ma candidature
+        </button>
+        <div id="dg-statut" style="display: none" class="dg-statut"></div>
+      </form>
+    </main>
+
+    <script>
+      const API_BASE = "";
+      let zoneChoisie = null; // {latitude, longitude, label}
+      let rechercheTimer = null;
+
+      const champAdresse = document.getElementById("dg-adresse");
+      const suggestionsEl = document.getElementById("dg-adresse-suggestions");
+      const zoneConfirmeeEl = document.getElementById("dg-zone-confirmee");
+
+      champAdresse.addEventListener("input", () => {
+        zoneChoisie = null;
+        zoneConfirmeeEl.textContent = "";
+        clearTimeout(rechercheTimer);
+        const q = champAdresse.value.trim();
+        if (q.length < 3) {
+          suggestionsEl.innerHTML = "";
+          return;
+        }
+        rechercheTimer = setTimeout(async () => {
+          try {
+            const res = await fetch(
+              `${API_BASE}/api/geocodage?q=${encodeURIComponent(q)}`,
+            );
+            const data = await res.json();
+            const resultats = data.resultats || [];
+            suggestionsEl.innerHTML = resultats
+              .map(
+                (r, i) =>
+                  `<button type="button" data-i="${i}">${r.label}</button>`,
+              )
+              .join("");
+            suggestionsEl.querySelectorAll("button").forEach((btn, i) => {
+              btn.addEventListener("click", () => {
+                const r = resultats[i];
+                zoneChoisie = {
+                  latitude: r.latitude,
+                  longitude: r.longitude,
+                  label: r.label,
+                };
+                champAdresse.value = r.label;
+                suggestionsEl.innerHTML = "";
+                zoneConfirmeeEl.textContent = `✓ Zone centrée sur : ${r.label}`;
+              });
+            });
+          } catch (e) {
+            /* silencieux : l'utilisateur peut réessayer */
+          }
+        }, 350);
+      });
+
+      function valeursCochees(conteneurId) {
+        return Array.from(
+          document.querySelectorAll(`#${conteneurId} input:checked`),
+        ).map((x) => x.value);
+      }
+      function listeDepuisTexte(id) {
+        return document
+          .getElementById(id)
+          .value.split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
+      }
+
+      document
+        .getElementById("dg-form")
+        .addEventListener("submit", async (ev) => {
+          ev.preventDefault();
+          const statutEl = document.getElementById("dg-statut");
+          const submitBtn = document.getElementById("dg-submit");
+          statutEl.style.display = "none";
+
+          if (!zoneChoisie) {
+            statutEl.className = "dg-statut erreur";
+            statutEl.textContent =
+              "Choisissez votre zone d'intervention dans la liste de suggestions après avoir tapé une ville ou une adresse.";
+            statutEl.style.display = "block";
+            return;
+          }
+
+          const body = {
+            nom: document.getElementById("dg-nom").value.trim(),
+            type_guide: document.getElementById("dg-type").value,
+            lien_contact: document.getElementById("dg-contact").value.trim(),
+            bio: document.getElementById("dg-bio").value.trim() || null,
+            specialites: valeursCochees("dg-specialites"),
+            mobilite: valeursCochees("dg-mobilite"),
+            langues: listeDepuisTexte("dg-langues"),
+            publics: listeDepuisTexte("dg-publics"),
+            latitude: zoneChoisie.latitude,
+            longitude: zoneChoisie.longitude,
+            rayon_intervention_km:
+              Number(document.getElementById("dg-rayon").value) || 30,
+            capacite_max: document.getElementById("dg-capacite").value
+              ? Number(document.getElementById("dg-capacite").value)
+              : null,
+            tarif_indicatif:
+              document.getElementById("dg-tarif").value.trim() || null,
+            site_web_confirmation: document.getElementById("dg-leurre").value, // doit rester vide
+          };
+
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Envoi en cours…";
+          try {
+            const res = await fetch(`${API_BASE}/api/guides/candidature`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const data = await res.json().catch(() => null);
+            if (!res.ok)
+              throw new Error(data?.detail || `Erreur ${res.status}`);
+            statutEl.className = "dg-statut ok";
+            statutEl.textContent =
+              data?.message || "Candidature envoyée. Merci !";
+            statutEl.style.display = "block";
+            document.getElementById("dg-form").reset();
+            zoneChoisie = null;
+            zoneConfirmeeEl.textContent = "";
+          } catch (e) {
+            statutEl.className = "dg-statut erreur";
+            statutEl.textContent =
+              e.message ||
+              "Une erreur est survenue, réessayez dans un instant.";
+            statutEl.style.display = "block";
+          } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Envoyer ma candidature";
+          }
+        });
+    </script>
+  </body>
+</html>

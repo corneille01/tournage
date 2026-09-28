@@ -429,11 +429,22 @@ function afficherResultatMonParcours(data){
   }
   const visitesGuideesHtml=visitesGuidees.length?`<section class="mp-visites-guidees"><h3>🎟️ Visites guidées pertinentes</h3>${visitesGuidees.map(v=>`<article class="mp-visite-card"><div><b>${escapeHtml(v.nom)}</b><small>${v.ordre?`Étape ${v.ordre}`:''}${v.film_titre?` · ${escapeHtml(v.film_titre)}`:''}${v.duree_minutes?` · ⏱️ ${v.duree_minutes} min`:''}${v.heure_debut?` · 🕘 ${escapeHtml(v.heure_debut)}–${escapeHtml(v.heure_fin||'')}`:''}</small><small>${escapeHtml(v.description||'')}${v.date?` · 📅 ${escapeHtml(v.date)}`:''}</small>${v.heure_debut?`<small class="mp-creneau-confirme">✓ Créneau publié pour la date sélectionnée — réservation à confirmer sur le site officiel.</small>`:''}</div>${v.lien?`<a class="mp-reco-action" href="${escapeAttr(v.lienAffiliation||v.lien)}" target="_blank" rel="noopener noreferrer">📩 Réserver / voir la visite ↗</a>`:''}</article>`).join('')}</section>`:'';
 
+  // Guides et médiateurs pertinents pour ce parcours (backend/guides.py).
+  // Pelify affiche une étiquette de correspondance qualitative, jamais un
+  // score chiffré, et ne prétend jamais qu'un guide est réservable ici :
+  // le contact se fait via le lien fourni sur la fiche.
+  const guidesRecommandes=data.guides_recommandes||[];
+  const guidesHtml=guidesRecommandes.length?`<section class="mp-visites-guidees mp-guides"><h3>🎙️ Guides et médiateurs pertinents</h3>${guidesRecommandes.map(g=>{
+    const meta=[(g.specialites||[]).join(' · ')||g.type_guide,g.tarif_indicatif].filter(Boolean).join(' · ');
+    const lien=g.site_web||g.lien_contact;
+    return `<article class="mp-visite-card"><div><b>${escapeHtml(g.nom)}</b><small>${escapeHtml(meta)}</small><small class="mp-guide-correspondance">✓ ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
+  }).join('')}</section>`:'';
+
   const conseil=scenario.texte.length?`<section class="mp-scenario"><h3>🎬 Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</section>`:'';
   const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b>💶 Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>Calculé uniquement à partir des tarifs disponibles ; carburant et dépenses sans tarif renseigné ne sont pas inclus.</span></div>`:'';
   const planning=(data.planning_horaire||[]).map(x=>`<div class="mp-planning-row"><b>${escapeHtml(x.heure_arrivee)}</b><span>${escapeHtml(x.nom||'Étape')}${x.film_titre?` · 🎬 ${escapeHtml(x.film_titre)}`:''} · fin estimée ${escapeHtml(x.heure_fin_visite)}</span></div>`).join('');
 
-  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'—'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'—'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${planning?`<section class="mp-planning"><h3>🕘 Votre journée cinéma</h3>${planning}</section>`:''}${conseil}${visitesGuideesHtml}${etapeRecos?`<div class="mp-recommandations"><h3>✨ Mes suggestions étape par étape</h3>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3>🎟️ Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
+  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'—'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'—'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${planning?`<section class="mp-planning"><h3>🕘 Votre journée cinéma</h3>${planning}</section>`:''}${conseil}${visitesGuideesHtml}${guidesHtml}${etapeRecos?`<div class="mp-recommandations"><h3>✨ Mes suggestions étape par étape</h3>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3>🎟️ Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
   afficherAmenitiesParcoursV4(cats);
 }
 // ── Initialisation carte Leaflet + clustering ────────────────────

@@ -109,31 +109,23 @@ def _texte(champ, lang: str = "fr"):
 
 
 def _texte_liste(champ, lang: str = "fr") -> str | None:
-    """Aplatit un champ qui peut être une chaîne, un dict multilingue, ou
-    une liste (potentiellement imbriquée) de chaînes/dicts multilingues,
-    en une seule chaîne (les valeurs multiples sont jointes par ', ')."""
+    """Renvoie toujours une chaîne (ou None), quelle que soit l'imbrication
+    (str, nombre, dict multilingue, liste, dict dont la valeur est une liste)."""
     if champ is None:
         return None
     if isinstance(champ, str):
         return champ or None
+    if isinstance(champ, (int, float)):
+        return str(champ)
     if isinstance(champ, dict):
-        return _texte(champ, lang)
+        return _texte_liste(_texte(champ, lang), lang)
     if isinstance(champ, list):
-        valeurs = []
-        for x in champ:
-            if isinstance(x, dict):
-                v = _texte(x, lang)
-            elif isinstance(x, list):
-                # Repli défensif : certains payloads DATAtourisme imbriquent
-                # une liste dans une liste sur ce type de champ — on aplatit
-                # récursivement plutôt que de planter sur le join().
-                v = _texte_liste(x, lang)
-            else:
-                v = x
-            if v:
-                valeurs.append(v)
+        valeurs = [v for v in (_texte_liste(x, lang) for x in champ) if v]
         return ", ".join(valeurs) if valeurs else None
     return None
+
+
+
 def _reseau_social_pour_url(url: str) -> str | None:
     """Retourne le nom du réseau social ('facebook', 'instagram', ...) si
     l'URL pointe vers un domaine de réseau social connu, sinon None."""
@@ -216,7 +208,14 @@ def _extraire_description(poi: dict, lang: str = "fr") -> str | None:
     for d in descriptions:
         for cle in ("description", "longDescription", "shortDescription"):
             texte = _texte(d.get(cle) if isinstance(d, dict) else None, lang)
-            if texte:
+            # Certains POI renvoient {"@fr": ["version 1", "version 2"]} :
+            # _texte() rend alors une liste. On garde le premier texte non vide.
+            if isinstance(texte, list):
+                texte = next(
+                    (t for t in texte if isinstance(t, str) and t.strip()),
+                    None,
+                )
+            if isinstance(texte, str) and texte.strip():
                 return texte[:1990]
     return None
 

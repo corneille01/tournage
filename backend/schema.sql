@@ -281,6 +281,34 @@ CREATE TRIGGER trg_guides_date_maj
     BEFORE UPDATE ON guides
     FOR EACH ROW EXECUTE FUNCTION maj_date_modification();
 
+-- ─────────────────────────────────────────────────────────────
+-- visites_cinetouristiques
+-- Ajoutée par migration_v27.sql. Remplace la liste VISITES codée en
+-- dur qui existait dans backend/visites_cinetouristiques.py (0 valeur
+-- en dur restante dans ce fichier depuis cette migration).
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE visites_cinetouristiques (
+    id                SERIAL PRIMARY KEY,
+    slug              VARCHAR(150) NOT NULL UNIQUE,
+    film_ids          INT[] NOT NULL DEFAULT '{}',
+    nom               VARCHAR(255) NOT NULL,
+    description       TEXT NULL,
+    duree_minutes     INT NOT NULL,
+    lien              VARCHAR(500) NULL,
+    creneaux          JSONB NOT NULL DEFAULT '[]',     -- [[date_iso, heure_debut, heure_fin], ...]
+    creneaux_regles   JSONB NOT NULL DEFAULT '[]',     -- [{debut, fin, jours:[0..6], start, end}, ...]
+    statut            VARCHAR(15) NOT NULL DEFAULT 'actif'
+                          CHECK (statut IN ('actif', 'inactif', 'en_attente')),
+    date_creation     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    date_maj          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_visites_statut ON visites_cinetouristiques (statut);
+CREATE INDEX idx_visites_film_ids ON visites_cinetouristiques USING GIN (film_ids);
+
+CREATE TRIGGER trg_visites_date_maj
+    BEFORE UPDATE ON visites_cinetouristiques
+    FOR EACH ROW EXECUTE FUNCTION maj_date_modification();
+
 CREATE TRIGGER trg_datatourisme_objets_date_maj
     BEFORE UPDATE ON datatourisme_objets
     FOR EACH ROW EXECUTE FUNCTION maj_date_modification();

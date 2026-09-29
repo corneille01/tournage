@@ -438,7 +438,7 @@ function afficherResultatMonParcours(data){
     const meta=[(g.specialites||[]).join(' · ')||g.type_guide,g.tarif_indicatif].filter(Boolean).join(' · ');
     const lien=g.site_web||g.lien_contact;
     return `<article class="mp-visite-card"><div><b>${escapeHtml(g.nom)}</b><small>${escapeHtml(meta)}</small><small class="mp-guide-correspondance">✓ ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
-  }).join('')}</section>`:'';
+  }).join('')}<p class="mp-guides-inscription"><a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
 
   const conseil=scenario.texte.length?`<section class="mp-scenario"><h3>🎬 Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</section>`:'';
   const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b>💶 Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>Calculé uniquement à partir des tarifs disponibles ; carburant et dépenses sans tarif renseigné ne sont pas inclus.</span></div>`:'';

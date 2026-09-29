@@ -1390,6 +1390,9 @@ body.page-film-ssr {
 .mp-visite-card .mp-reco-action{white-space:nowrap}
 @media(max-width:700px){.mp-visite-card{align-items:flex-start;flex-direction:column}.mp-visite-card .mp-reco-action{white-space:normal}}
 .mp-guide-correspondance{color:var(--couleur-accent);font-weight:600}
+.mp-guides-inscription{margin-top:8px;font-size:.75rem;text-align:right}
+.mp-guides-inscription a{color:var(--couleur-texte-muted)}
+.mp-guides-inscription a:hover{color:var(--couleur-accent)}
 
 /* V4.8 — scénario et possibilités intelligentes */
 .mp-scenario{margin:14px 0;padding:14px;border:1px solid rgba(230,57,70,.35);border-radius:12px;background:rgba(230,57,70,.07)}

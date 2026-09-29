@@ -57,6 +57,10 @@ def _score_guide(guide: dict, distance_metres: float, mode: str,
     return score
 
 
+# Rayon maximal du repli « guide le plus proche » quand aucun guide ne couvre le parcours.
+RAYON_REPLI_M = 250_000
+
+
 def _etiquette(score: int) -> str:
     if score >= 45:
         return "Très bonne correspondance avec votre parcours"
@@ -100,7 +104,8 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
 
         distance_min = min(distances)
         rayon_m = (guide.get("rayon_intervention_km") or 0) * 1000
-        if rayon_m and distance_min > rayon_m:
+        hors_zone = bool(rayon_m and distance_min > rayon_m)
+        if hors_zone and distance_min > RAYON_REPLI_M:
             continue
 
         score = _score_guide(guide, distance_min, mode, langue, nb_personnes)
@@ -113,10 +118,21 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
             "photo_url": guide.get("photo_url"),
             "source_donnee": guide.get("source_donnee") or "manuel",
             "distance_metres": round(distance_min), "correspondance": _etiquette(score),
-            "_score": score,
+            "hors_zone": hors_zone, "_score": score,
         })
 
-    resultats.sort(key=lambda x: (-x["_score"], x["distance_metres"], x["nom"].lower()))
+    # Guides dont la zone couvre le parcours d'abord. S'il n'y en a aucun, on
+    # propose les plus proches (dans RAYON_REPLI_M), clairement signalés
+    # « hors zone » : mieux qu'une section vide, sans faire croire à une
+    # couverture.
+    dans_zone = [r for r in resultats if not r["hors_zone"]]
+    if dans_zone:
+        resultats = dans_zone
+        resultats.sort(key=lambda x: (-x["_score"], x["distance_metres"], x["nom"].lower()))
+    else:
+        for r in resultats:
+            r["correspondance"] = "Le plus proche de votre parcours — hors de sa zone habituelle, à confirmer avec lui"
+        resultats.sort(key=lambda x: (x["distance_metres"], x["nom"].lower()))
     for resultat in resultats:
         resultat.pop("_score", None)
     return resultats[:limite]

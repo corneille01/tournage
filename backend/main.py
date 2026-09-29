@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 from analyse_indicateurs import construire_indicateurs_cinetourisme, construire_observatoire_statistique
 from navigation_cache import navigation_cache
 import os
+import re
 import json
 import asyncio
 import hashlib
@@ -1422,16 +1423,38 @@ def _adresse_complete(lieu: dict) -> str:
 
 
 
-def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite=False):
+_CATEGORIES_TRANSPORT = {"gare", "aeroport", "aerodrome", "arret_bus", "refuge"}
+_MOTS_VIDES = {"de", "du", "des", "la", "le", "les", "et", "en", "au", "aux", "sur", "sous", "dans", "pour", "par", "the", "of"}
+
+
+def _tokens_nom(texte):
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(texte or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return {m for m in re.findall(r"[a-z0-9]+", t) if len(m) > 3 and m not in _MOTS_VIDES}
+
+
+def _est_l_etape_elle_meme(item, etape_nom):
+    """Évite de suggérer, pour « Château X », l'offre « Château et remparts de X »."""
+    commun = _tokens_nom(item.get("nom")) & _tokens_nom(etape_nom)
+    return len(commun) >= 3 and float(item.get("distance_metres") or 0) < 300
+
+
+def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite=False,
+                        mode="driving-car", extremite=False):
     """Score déterministe d'une commodité pour une personnalisation légère.
 
-    Le score ne prétend pas être une note de qualité universelle : il sert à
-    ordonner les offres en fonction des préférences choisies par l'utilisateur.
+    Le score sert à ordonner les offres selon les préférences choisies ; ce
+    n'est pas une note de qualité universelle. Les points de transport ne
+    sont pertinents qu'au début ou à la fin du parcours.
     """
     score = 0.0
     distance = float(item.get("meilleure_distance_metres") or item.get("distance_metres") or 999999)
-    # Proximité : elle pèse davantage pour un parcours à pied.
-    score += max(0.0, 38.0 - distance / 180.0)
+    echelle = 180.0 if mode != "driving-car" else 400.0
+    score += max(0.0, 38.0 - distance / echelle)
+
+    if categorie in _CATEGORIES_TRANSPORT:
+        score += 10.0 if (extremite and categorie in ("gare", "aeroport")) else -15.0
 
     note = item.get("note_etoiles")
     try:
@@ -1461,7 +1484,6 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
     elif accessible:
         score += 3.0
 
-    # Petit bonus si une fiche web exploitable est disponible.
     if item.get("site_web"):
         score += 4.0
     if item.get("telephone"):
@@ -1469,18 +1491,72 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
     return round(score, 2)
 
 
-def _phrase_recommandation_offre(item, categorie, profil, etape_nom):
-    nom = item.get("nom") or "cet établissement"
-    distance = item.get("meilleure_distance_metres")
-    distance_txt = f"à {round(float(distance))} m" if distance is not None and float(distance) < 1000 else (f"à {float(distance)/1000:.1f} km" if distance is not None else "à proximité")
-    raisons = [distance_txt]
-    if profil == "economique" and item.get("tarif_min") is not None:
-        raisons.append("un positionnement tarifaire intéressant")
-    if profil == "confort" and item.get("note_etoiles") is not None:
-        raisons.append("un niveau de confort renseigné")
+def _phrase_recommandation_offre(item, categorie, profil, etape_nom, mode="driving-car", accessibilite=False):
+    """Fragment de raison, sans répéter le nom de l'étape ni celui de l'offre
+    (le front les affiche déjà). Ex. : « À 4 min à pied · à partir de 2 € »."""
+    raisons = []
+    a_pied = mode != "driving-car"
+    duree = item.get("duree_pied_secondes") if a_pied else item.get("duree_voiture_secondes")
+    distance = item.get("meilleure_distance_metres") or item.get("distance_metres")
+    if duree is not None:
+        mn = max(1, round(float(duree) / 60))
+        raisons.append(f"À {mn} min {'à pied' if a_pied else 'en voiture'}")
+    elif distance is not None:
+        d = float(distance)
+        raisons.append(f"À {round(d)} m" if d < 1000 else f"À {d / 1000:.1f} km")
+    else:
+        raisons.append("Proche de l'étape")
+    if item.get("tarif_min") is not None:
+        t = float(item["tarif_min"])
+        raisons.append("gratuit" if t == 0 else f"à partir de {t:g} €")
+        if profil == "economique":
+            raisons[-1] += " (adapté à un budget serré)"
     if item.get("note_etoiles") is not None:
-        raisons.append(f"{item['note_etoiles']} étoile(s) renseignée(s)")
-    return f"Pour l’étape « {etape_nom} », {nom} est une suggestion pertinente pour votre parcours : {', '.join(raisons)}."
+        raisons.append(f"{float(item['note_etoiles']):g} étoile(s)")
+    texte_access = " ".join(str(item.get(k) or "") for k in ("equipements", "labels_qualite", "lien_accessibilite")).lower()
+    if accessibilite and (item.get("lien_accessibilite") or any(x in texte_access for x in ("pmr", "accessible", "handicap"))):
+        raisons.append("accessibilité renseignée")
+    return " · ".join(raisons)
+
+
+def _recommandations_par_etape(etapes, categories, par_etape, budget_level, accessibilite, mode, seuil=15.0, max_par_etape=3):
+    """Jusqu'à `max_par_etape` suggestions par étape, une par catégorie, triées
+    par score. Les catégories retenues sont celles de `categories` (donc
+    déjà filtrées par les centres d'intérêt de l'utilisateur)."""
+    resultat = {}
+    n = len(etapes)
+    for idx, etape in enumerate(etapes):
+        eid = str(int(etape["id"]))
+        extremite = idx == 0 or idx == n - 1
+        propositions = []
+        for categorie in categories.keys():
+            if categorie in ("arret_bus", "refuge", "aerodrome"):
+                continue  # visibles dans « Toutes les offres », pas des suggestions d'étape
+            if categorie in ("gare", "aeroport") and not extremite:
+                continue
+            candidats = []
+            for x in par_etape.get(eid, []):
+                if x.get("categorie") != categorie or _est_l_etape_elle_meme(x, etape.get("nom")):
+                    continue
+                if categorie in ("gare", "aeroport"):
+                    d_s = x.get("duree_pied_secondes") if mode != "driving-car" else x.get("duree_voiture_secondes")
+                    if (d_s is not None and float(d_s) > 1200) or (d_s is None and float(x.get("distance_metres") or 0) > 3000):
+                        continue
+                x["score_personnalise"] = _profil_score_offre(x, categorie, budget_level, accessibilite, mode, extremite)
+                candidats.append(x)
+            if not candidats:
+                continue
+            meilleur = max(candidats, key=lambda x: x["score_personnalise"])
+            if meilleur["score_personnalise"] < seuil:
+                continue
+            rec = dict(meilleur)
+            rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom"), mode, accessibilite)
+            rec["action_url"] = rec.get("site_web") or None
+            rec["action_label"] = "Voir / réserver" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
+            propositions.append(rec)
+        propositions.sort(key=lambda x: x["score_personnalise"], reverse=True)
+        resultat[eid] = propositions[:max_par_etape]
+    return resultat
 
 
 def _optimiser_etapes_approx(etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart):
@@ -2079,7 +2155,8 @@ async def parcours_enrichi(request: Request, response: Response):
         SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
                distance_metres, adresse, telephone, site_web,
                horaires, photo_url, tarif_min, tarif_max, devise,
-               capacite,
+               capacite, description, note_etoiles, equipements,
+               labels_qualite, lien_accessibilite, langues_parlees,
                distance_pied_metres, duree_pied_secondes,
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache
@@ -2134,30 +2211,17 @@ async def parcours_enrichi(request: Request, response: Response):
     if categories_interet:
         categories = {k: v for k, v in categories.items() if k in categories_interet}
 
-    recommandations_par_etape = {}
     for categorie, items in categories.items():
         for item in items:
-            item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite)
+            item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite, mode)
         items.sort(key=lambda x: (x.get("score_personnalise", 0), -(x.get("meilleure_distance_metres") or 10**9)), reverse=True)
         categories[categorie] = items[:limite]
 
-    # Recommandations individualisées : une proposition par étape et catégorie
-    # utile, sans inventer de lien de réservation.
-    for etape in etapes:
-        eid = int(etape["id"])
-        recommandations_par_etape[str(eid)] = []
-        for categorie, items in categories.items():
-            candidats = [x for x in par_etape.get(str(eid), []) if x.get("categorie") == categorie]
-            if not candidats:
-                continue
-            for item in candidats:
-                item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite)
-            meilleur = max(candidats, key=lambda x: x.get("score_personnalise", 0))
-            rec = dict(meilleur)
-            rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom") or "cette étape")
-            rec["action_url"] = rec.get("site_web") or None
-            rec["action_label"] = "Voir / réserver" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
-            recommandations_par_etape[str(eid)].append(rec)
+    # Recommandations individualisées : score par étape, sans inventer de
+    # lien de réservation.
+    recommandations_par_etape = _recommandations_par_etape(
+        etapes, categories, par_etape, budget_level, accessibilite, mode
+    )
 
     # Réduire également le détail par étape afin de ne pas envoyer une
     # réponse inutilement volumineuse au navigateur.
@@ -2224,6 +2288,12 @@ async def parcours_enrichi(request: Request, response: Response):
                 "attente_minutes": attente, "creneau_respecte": guide_feasible,
                 "lien": guide.get("lien"),
             })
+
+    # Seules les visites guidées réellement placées dans le planning comptent.
+    duree_visites_guidees = sum(
+        int(x.get("temps_visite_minutes") or 0)
+        for x in planning_horaire if x.get("type") == "visite_guidee"
+    )
 
     # Calcul final après construction du planning.
     attente_visites_guidees_minutes = sum(

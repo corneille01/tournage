@@ -346,32 +346,47 @@ async function calculerMonParcoursGlobal(){
 function _minutesDepuisMinuit(hhmm){const [h,m]=String(hhmm||'00:00').split(':').map(Number);return (h||0)*60+(m||0);}
 function _hhmmClient(minutes){minutes=Math.round(Number(minutes)||0);minutes=((minutes%(24*60))+24*60)%(24*60);return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}`;}
 function construireScenarioCinetouristique(data){
-  const planning=data.planning_horaire||[];
+  // Retourne des lignes {icone, texte} : le texte est du texte brut (échappé au
+  // rendu) ; l'icône est une classe Font Awesome fixe, jamais du HTML.
   const guidesDisponibles=data.visites_guidees_disponibles||[];
   const guidesPlanifies=data.visites_guidees_planifiees||[];
   const tempsBase=Number(data.temps_disponible_minutes||0);
   const tempsUtilise=Number(data.duree_totale_estimee_secondes||0)/60;
   const scenario=[];
-  if(data.date_sortie) scenario.push(`<i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Sortie prévue le ${new Date(data.date_sortie+'T12:00:00').toLocaleDateString('fr-FR')}, à partir de ${data.heure_depart||'09:00'}.`);
-  if(data.scenario_recommande?.message) scenario.push(`<i class="fa-solid fa-bullseye" aria-hidden="true"></i> ${data.scenario_recommande.message}`);
+  const ajoute=(icone,texte)=>scenario.push({icone,texte});
+  if(data.date_sortie) ajoute('fa-calendar-days',`Sortie prévue le ${new Date(data.date_sortie+'T12:00:00').toLocaleDateString('fr-FR')}, à partir de ${data.heure_depart||'09:00'}.`);
+  if(data.scenario_recommande?.message) ajoute('fa-bullseye',data.scenario_recommande.message);
   if(guidesPlanifies.length){
     const g=guidesPlanifies[0];
-    scenario.push(`<i class="fa-solid fa-ticket" aria-hidden="true"></i> ${g.nom} est le rendez-vous guidé le plus directement intégrable à vos critères pour cette date.`);
-    if(g.heure_debut) scenario.push(`Pelify vous conseille de viser le créneau ${g.heure_debut}–${g.heure_fin||''}. L'étape concernée est placée en priorité dans le scénario.`);
-    if(g.lien) scenario.push(`Réservation obligatoire ou recommandée : vérifiez le créneau sur la page officielle avant de partir.`);
+    ajoute('fa-ticket',`${g.nom} est le rendez-vous guidé le plus directement intégrable à vos critères pour cette date.`);
+    if(g.heure_debut) ajoute('fa-clock',`Pelify vous conseille de viser le créneau ${g.heure_debut}–${g.heure_fin||''}. L'étape concernée est placée en priorité dans le scénario.`);
+    if(g.lien) ajoute('fa-circle-info',`Réservation obligatoire ou recommandée : vérifiez le créneau sur la page officielle avant de partir.`);
   } else if(guidesDisponibles.length){
-    scenario.push(`<i class="fa-solid fa-ticket" aria-hidden="true"></i> ${guidesDisponibles.length} créneau(x) de visite guidée sont référencés pour cette date. Pelify peut les afficher, mais ne confirme jamais une disponibilité de réservation.`);
+    ajoute('fa-ticket',`${guidesDisponibles.length} créneau(x) de visite guidée sont référencés pour cette date. Pelify peut les afficher, mais ne confirme jamais une disponibilité de réservation.`);
   } else if(data.inclure_visites_guidees!==false){
-    scenario.push(`<i class="fa-solid fa-ticket" aria-hidden="true"></i> Aucune disponibilité datée n'est connue dans le référentiel Pelify pour cette date ; les visites éventuellement proposées restent consultables via leurs pages officielles.`);
+    ajoute('fa-ticket',`Aucune disponibilité datée n'est connue dans le référentiel Pelify pour cette date ; les visites éventuellement proposées restent consultables via leurs pages officielles.`);
   }
   if(tempsBase){
     const marge=Math.round(tempsBase-tempsUtilise);
-    scenario.push(marge>=0?`<i class="fa-solid fa-circle-check" aria-hidden="true"></i> Avec vos critères, il resterait environ ${marge} min de marge estimée.`:`<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Votre sélection dépasse votre créneau d’environ ${Math.abs(marge)} min.`);
+    const fmt=m=>{m=Math.abs(m);const h=Math.floor(m/60),r=m%60;return h?`${h} h${r?String(r).padStart(2,'0'):''}`:`${r} min`;};
+    if(marge>=0) ajoute('fa-circle-check',`Avec vos critères, il resterait environ ${fmt(marge)} de marge estimée.`);
+    else ajoute('fa-triangle-exclamation',`Votre sélection dépasse votre créneau d’environ ${fmt(marge)}.`);
   }
+  // Meilleure suggestion (score le plus élevé) parmi toutes les étapes.
   const reco=data.recommandations_par_etape||{};
+  let meilleur=null;
   for(const etape of (data.etapes||[])){
-    const r=(reco[String(etape.id)]||[])[0];
-    if(r){scenario.push(`<i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Pour « ${etape.nom||'votre étape'} », Pelify vous suggère ${r.nom||'une offre à proximité'} : ${r.raison||'elle correspond à vos critères'}.`);break;}
+    for(const r of (reco[String(etape.id)]||[])){
+      if(!meilleur||(r.score_personnalise||0)>(meilleur.r.score_personnalise||0)) meilleur={etape,r};
+    }
+  }
+  if(meilleur) ajoute('fa-lightbulb',`Pour « ${meilleur.etape.nom||'votre étape'} », Pelify vous suggère ${meilleur.r.nom||'une offre à proximité'} — ${meilleur.r.raison||'elle correspond à vos critères'}.`);
+  const guidesReco=data.guides_recommandes||[];
+  if(guidesReco.length){
+    const g=guidesReco[0];
+    ajoute('fa-microphone-lines',g.hors_zone
+      ?`Aucun guide de l'annuaire n'est basé sur votre parcours. Le plus proche est ${g.nom} (à ${Math.round((g.distance_metres||0)/1000)} km) : contactez-le pour savoir s'il peut se déplacer.`
+      :`Pour aller plus loin, ${g.nom} peut vous accompagner sur ce parcours (voir « Guides et médiateurs » ci-dessous).`);
   }
   return {guides:guidesDisponibles,texte:scenario,tempsUtilise};
 }
@@ -434,13 +449,13 @@ function afficherResultatMonParcours(data){
   // score chiffré, et ne prétend jamais qu'un guide est réservable ici :
   // le contact se fait via le lien fourni sur la fiche.
   const guidesRecommandes=data.guides_recommandes||[];
-  const guidesHtml=guidesRecommandes.length?`<section class="mp-visites-guidees mp-guides"><h3><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Guides et médiateurs pertinents</h3>${guidesRecommandes.map(g=>{
+  const guidesHtml=guidesRecommandes.length?`<section class="mp-visites-guidees mp-guides"><h3><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> ${guidesRecommandes.every(g=>g.hors_zone)?'Guides les plus proches (hors de leur zone habituelle)':'Guides et médiateurs pertinents'}</h3>${guidesRecommandes.map(g=>{
     const meta=[(g.specialites||[]).join(' · ')||g.type_guide,g.tarif_indicatif].filter(Boolean).join(' · ');
     const lien=g.site_web||g.lien_contact;
     return `<article class="mp-visite-card"><div><b>${escapeHtml(g.nom)}</b><small>${escapeHtml(meta)}</small><small class="mp-guide-correspondance"><i class="fa-solid fa-check" aria-hidden="true"></i> ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
   }).join('')}<p class="mp-guides-inscription"><a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
 
-  const conseil=scenario.texte.length?`<section class="mp-scenario"><h3><i class="fa-solid fa-film" aria-hidden="true"></i> Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p>${escapeHtml(x)}</p>`).join('')}</section>`:'';
+  const conseil=scenario.texte.length?`<section class="mp-scenario"><h3><i class="fa-solid fa-film" aria-hidden="true"></i> Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p><i class="fa-solid ${escapeAttr(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('')}</section>`:'';
   const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>Calculé uniquement à partir des tarifs disponibles ; carburant et dépenses sans tarif renseigné ne sont pas inclus.</span></div>`:'';
   const planning=(data.planning_horaire||[]).map(x=>`<div class="mp-planning-row"><b>${escapeHtml(x.heure_arrivee)}</b><span>${escapeHtml(x.nom||'Étape')}${x.film_titre?` · <i class="fa-solid fa-film" aria-hidden="true"></i> ${escapeHtml(x.film_titre)}`:''} · fin estimée ${escapeHtml(x.heure_fin_visite)}</span></div>`).join('');
 

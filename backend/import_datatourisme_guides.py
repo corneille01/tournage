@@ -1,8 +1,10 @@
 """Import des guides DATAtourisme vers la table guides.
 
 - Une requête par type (ProfessionalTourGuide, TourGuideAgency ; greeters en option).
-- Les fiches importées sont créées en 'en_attente' : validation humaine via
-  PATCH /api/guides/{id}/statut. Une fiche déjà importée n'a jamais son statut écrasé.
+- Les fiches importées de l'API sont créées en 'actif' (option --statut pour changer).
+  Les fiches saisies via le formulaire du site restent 'en_attente' (validation à la main).
+  Une fiche déjà importée n'a jamais son statut écrasé (un guide désactivé le reste).
+- Toutes les pages sont parcourues en suivant meta.next.
 - Aucune photo n'est stockée (droits réservés / CC BY-NC-ND, personnes identifiables).
 - L'API n'expose plus les e-mails : contact = site web, sinon téléphone.
 
@@ -41,6 +43,7 @@ TYPES = {
     "VolunteerTourGuideOrGreeter": "autre",
 }
 RESEAUX = ("facebook.", "instagram.", "twitter.", "x.com", "linkedin.", "youtube.", "tiktok.")
+STATUT = "actif"
 ERREURS: list[tuple[str, str]] = []
 FIELDS = "uuid,uri,label,type,isLocatedAt,hasDescription,hasContact,hasBeenCreatedBy,lastUpdate,lastUpdateDatatourisme"
 
@@ -224,7 +227,7 @@ async def fetch_type(client, api_key, typ, mode, france, limit, dry_run) -> tupl
             print(f"  {g['nom']} | {g['uuid']}")
             if not dry_run:
                 try:
-                    await upsert(g)
+                    await upsert(g, STATUT)
                 except Exception as e:  # une fiche défectueuse ne doit pas bloquer les autres
                     ERREURS.append((g["uuid"], repr(e)))
                     print(f"  !! ERREUR sur {g['uuid']} : {e!r}")
@@ -238,7 +241,7 @@ async def fetch_type(client, api_key, typ, mode, france, limit, dry_run) -> tupl
     return lus, gardes
 
 
-async def upsert(g: dict) -> None:
+async def upsert(g: dict, statut: str = "actif") -> None:
     await execute("""
         INSERT INTO guides (
             nom, type_guide, bio, specialites, langues, publics, mobilite,
@@ -247,7 +250,7 @@ async def upsert(g: dict) -> None:
             datatourisme_type, datatourisme_creator, datatourisme_last_update
         ) VALUES (
             %s, %s, %s, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[],
-            %s, %s, 30, NULL, %s, %s, 'en_attente', 'datatourisme', %s, %s, %s, %s
+            %s, %s, 30, NULL, %s, %s, %s, 'datatourisme', %s, %s, %s, %s
         )
         ON CONFLICT (datatourisme_uuid) WHERE datatourisme_uuid IS NOT NULL
         DO UPDATE SET
@@ -259,7 +262,7 @@ async def upsert(g: dict) -> None:
             datatourisme_last_update = EXCLUDED.datatourisme_last_update
         WHERE guides.source_donnee = 'datatourisme'
     """, (g["nom"], g["type_guide"], g["bio"], g["latitude"], g["longitude"], g["site_web"],
-          g["lien_contact"], g["uuid"], g["datatourisme_type"], g["createur"], g["last_update"]))
+          g["lien_contact"], statut, g["uuid"], g["datatourisme_type"], g["createur"], g["last_update"]))
 
 
 async def main() -> None:
@@ -270,8 +273,12 @@ async def main() -> None:
     p.add_argument("--rectangle-seul", action="store_true",
                    help="geo_bounding + filtre local lat/lon, sans filtre département (si le filtre renvoie 0)")
     p.add_argument("--avec-greeters", action="store_true")
+    p.add_argument("--statut", choices=["actif", "en_attente", "inactif"], default="actif",
+                   help="statut des NOUVELLES fiches importées (défaut : actif)")
     p.add_argument("--limit", type=int, help="nombre max de fiches retenues par type")
     args = p.parse_args()
+    global STATUT
+    STATUT = args.statut
 
     api_key = os.getenv("DATATOURISME_API_KEY")
     if not api_key:

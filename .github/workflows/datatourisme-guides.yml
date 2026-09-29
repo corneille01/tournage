@@ -15,6 +15,10 @@ on:
         description: "Inclure les greeters bénévoles"
         type: boolean
         default: false
+      france:
+        description: "Toute la France au lieu de l'Occitanie"
+        type: boolean
+        default: false
   schedule:
     - cron: "17 3 * * 1"
 
@@ -54,6 +58,7 @@ jobs:
             [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
             [ "${{ inputs.rectangle_seul }}" = "true" ] && ARGS="$ARGS --rectangle-seul"
             [ "${{ inputs.avec_greeters }}" = "true" ] && ARGS="$ARGS --avec-greeters"
+            [ "${{ inputs.france }}" = "true" ] && ARGS="$ARGS --france"
           fi
           echo "Arguments : $ARGS"
           python import_datatourisme_guides.py $ARGS

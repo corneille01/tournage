@@ -845,11 +845,73 @@ function afficherLieuxSurCarte(film, lieux) {
 // par pertinence), tronqué à 5 au total.
 const PRIORITE_PLATEFORMES = ["amazon prime", "prime video", "rakuten", "netflix"];
 
-function _lienPlateforme(plateforme, titreFilm) {
-  const nom = plateforme.nom.toLowerCase();
+// ── Liens DIRECTS vers les plateformes (sans passer par TMDB/JustWatch) ──
+// Les liens TMDB « où regarder » renvoient vers JustWatch : la commission
+// (utm_source=justwatch, at=…, ct=tmdb_tv…) profite alors à eux, pas à toi.
+// Ici on construit nous-mêmes l'URL de la plateforme, puis on y ajoute TON
+// identifiant d'affiliation. Ne JAMAIS recopier les paramètres utm/at/ct
+// vus dans les liens JustWatch.
+const AFFILIATION = {
+  awinAffId: "",   // ton identifiant éditeur Awin (nombre) — commun à tous les annonceurs Awin
+  appleAt: "",     // token affilié Apple (paramètre "at")
+  appleCt: "pelify", // campagne Apple (paramètre "ct"), libre
+};
+
+function _slug(t) {
+  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/&/g, " et ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// match : fragments du nom TMDB du provider (minuscules) — le premier qui correspond gagne.
+// url(titre, film) : URL directe (null/absent = repli sur le lien TMDB existant).
+// awinmid : identifiant annonceur Awin (à renseigner APRÈS validation du programme, sinon lien non affilié).
+// apple : true = ajoute at/ct Apple si appleAt est renseigné.
+const PLATEFORMES_DIRECTES = [
+  { match: ["netflix"],
+    url: (t) => `https://www.netflix.com/search?q=${encodeURIComponent(t)}` },
+  { match: ["apple tv", "itunes"], apple: true,
+    url: (t) => `https://tv.apple.com/fr/search?term=${encodeURIComponent(t)}` },
+  { match: ["google play"],
+    url: (t) => `https://play.google.com/store/search?q=${encodeURIComponent(t)}&c=movies&hl=fr&gl=FR` },
+  { match: ["youtube"],
+    url: (t) => `https://www.youtube.com/results?search_query=${encodeURIComponent(t + " film")}` },
+  { match: ["rakuten"], awinmid: null,
+    url: (t, f) => `https://www.rakuten.tv/fr/${f.media_type === "movie" ? "movies" : "tvshows"}/${_slug(t)}` },
+  { match: ["canal"], awinmid: null,
+    url: (t) => `https://www.canalplus.com/recherche/?q=${encodeURIComponent(t)}` },
+  // À compléter : ouvre le site du service, fais une recherche à la main, copie le motif d'URL,
+  // remplace le titre par ${encodeURIComponent(t)}, puis décommente.
+  // { match: ["orange"],        awinmid: null, url: (t) => `https://…${encodeURIComponent(t)}` },
+  // { match: ["pathé", "pathe"], awinmid: null, url: (t) => `https://…${encodeURIComponent(t)}` },
+];
+
+function _avecAffiliation(url, cfg) {
+  try {
+    if (cfg.awinmid && AFFILIATION.awinAffId) {
+      return `https://www.awin1.com/cread.php?awinmid=${encodeURIComponent(cfg.awinmid)}`
+        + `&awinaffid=${encodeURIComponent(AFFILIATION.awinAffId)}&ued=${encodeURIComponent(url)}`;
+    }
+    if (cfg.apple && AFFILIATION.appleAt) {
+      const u = new URL(url);
+      u.searchParams.set("at", AFFILIATION.appleAt);
+      u.searchParams.set("ct", AFFILIATION.appleCt);
+      return u.toString();
+    }
+  } catch (e) { /* URL invalide : on renvoie le lien brut */ }
+  return url;
+}
+
+function _lienPlateforme(plateforme, film) {
+  const titre = film?.titre || "";
+  const nom = String(plateforme.nom || "").toLowerCase();
   if (nom.includes("amazon") || nom.includes("prime video")) {
-    return getAmazonSearch(titreFilm);
+    return getAmazonSearch(titre);
   }
+  const cfg = PLATEFORMES_DIRECTES.find((c) => c.match.some((m) => nom.includes(m)));
+  if (cfg && titre) {
+    return _avecAffiliation(cfg.url(titre, film || {}), cfg);
+  }
+  // Plateforme inconnue : repli sur le lien TMDB/JustWatch pour ne jamais casser le bouton
   return plateforme.lien_affilie || plateforme.lien_repli || "#";
 }
 
@@ -999,8 +1061,8 @@ function ouvrirPopupLieu(film, lieu) {
   conteneurPlateformes.innerHTML = plateformesTriees.length ? (
     `<p class="plateformes-intro">Disponible sur :</p>` +
     plateformesTriees.map((p) => `
-      <a class="plateforme-logo" href="${_lienPlateforme(p, film.titre)}" target="_blank" rel="noopener sponsored">
-        <img src="${p.logo_url}" alt="${p.nom}"> ${p.nom}
+      <a class="plateforme-logo" href="${escapeAttr(_lienPlateforme(p, film))}" target="_blank" rel="noopener sponsored">
+        <img src="${escapeAttr(p.logo_url)}" alt="${escapeAttr(p.nom)}"> ${escapeHtml(p.nom)}
       </a>
     `).join("")
   ) : "";

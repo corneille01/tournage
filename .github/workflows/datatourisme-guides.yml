@@ -2,6 +2,19 @@ name: Import guides DATAtourisme
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simulation (n'écrit rien en base)"
+        type: boolean
+        default: true
+      rectangle_seul:
+        description: "Sans filtre département (rectangle Occitanie seul)"
+        type: boolean
+        default: false
+      avec_greeters:
+        description: "Inclure les greeters bénévoles"
+        type: boolean
+        default: false
   schedule:
     - cron: "17 3 * * 1"
 
@@ -16,6 +29,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install asyncpg httpx python-dotenv
       - name: Migration
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run == false }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -30,7 +44,16 @@ jobs:
           asyncio.run(main())
           PY
       - name: Import DATAtourisme
+        working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DATATOURISME_API_KEY: ${{ secrets.DATATOURISME_API_KEY }}
-        run: python backend/import_datatourisme_guides.py
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+            [ "${{ inputs.rectangle_seul }}" = "true" ] && ARGS="$ARGS --rectangle-seul"
+            [ "${{ inputs.avec_greeters }}" = "true" ] && ARGS="$ARGS --avec-greeters"
+          fi
+          echo "Arguments : $ARGS"
+          python import_datatourisme_guides.py $ARGS

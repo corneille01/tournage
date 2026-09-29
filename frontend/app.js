@@ -901,6 +901,18 @@ function _avecAffiliation(url, cfg) {
   return url;
 }
 
+// Vrai seulement si le lien final porte TON identifiant d'affiliation.
+// Amazon : tag toujours présent. Autres : uniquement si l'identifiant est renseigné dans AFFILIATION.
+function _lienAffilie(plateforme) {
+  const nom = String(plateforme.nom || "").toLowerCase();
+  if (nom.includes("amazon") || nom.includes("prime video")) return true;
+  const cfg = PLATEFORMES_DIRECTES.find((c) => c.match.some((m) => nom.includes(m)));
+  if (!cfg) return false;
+  if (cfg.awinmid && AFFILIATION.awinAffId) return true;
+  if (cfg.apple && AFFILIATION.appleAt) return true;
+  return false;
+}
+
 function _lienPlateforme(plateforme, film) {
   const titre = film?.titre || "";
   const nom = String(plateforme.nom || "").toLowerCase();
@@ -1057,7 +1069,7 @@ function ouvrirPopupLieu(film, lieu) {
   // Netflix (partenariats affiliation les plus probables), puis le
   // reste, limité à 5 au total pour ne pas surcharger le popup.
   const conteneurPlateformes = document.getElementById("popup-plateformes");
-  const plateformesTriees = _trierEtLimiterPlateformes(state.plateformesCourantes || []);
+  const plateformesTriees = _trierEtLimiterPlateformes((state.plateformesCourantes || []).filter(_lienAffilie));
   conteneurPlateformes.innerHTML = plateformesTriees.length ? (
     `<p class="plateformes-intro">Disponible sur :</p>` +
     plateformesTriees.map((p) => `

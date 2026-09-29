@@ -20,6 +20,7 @@
 
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#0f1115" />
+    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css" />
     <link rel="stylesheet" href="/style.css" />
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.css" />
@@ -31,9 +32,9 @@
   <body>
     <div id="app">
       <!-- ═══ SIDEBAR GAUCHE : en-tête fixe + recherche + type + cartes ═══ -->
-      <button id="btn-hamburger" aria-label="Ouvrir/fermer le menu">☰</button>
+      <button id="btn-hamburger" aria-label="Ouvrir/fermer le menu"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
       <aside id="sidebar">
-        <button id="btn-fermer-sidebar" aria-label="Fermer le menu">✕</button>
+        <button id="btn-fermer-sidebar" aria-label="Fermer le menu"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         <header id="sidebar-header">
           <h1>
             <a href="https://pelify.app" class="lien-pelify">Pelify</a>
@@ -62,35 +63,29 @@
             </button>
             <button
               id="filtre-visites-toggle"
-              class="filtre-btn filtre-independant"
-              data-i18n="Avec visite guidée"
-            >
-              🎟️ Avec visite guidée
+              class="filtre-btn filtre-independant">
+              <i class="fa-solid fa-ticket" aria-hidden="true"></i> <span data-i18n="Avec visite guidée">Avec visite guidée</span>
             </button>
           </div>
 
-          <button id="btn-mon-parcours" class="btn-mon-parcours" type="button">
-            🗺️ Personnaliser ma visite <span id="mon-parcours-compteur">0</span>
-          </button>
-          <a href="/dashboard.html" id="pelify-espace-link"
-            >👤 Historique des visites
-            <span id="pelify-historique-compteur">0</span></a
-          >
-
-          <a href="/analyse.html" id="stats-toggle"
-            >📊
-            <span data-i18n="analyseComplete"
-              >Analyse territoriale complète</span
-            ></a
-          >
-
-          <a href="/paysages.html" id="landscape-studio-link"
-            >🎬 Landscape Studio</a
-          >
-
-          <a href="/devenir-guide.html" id="devenir-guide-link"
-            >🎙️ Devenir guide référencé</a
-          >
+          <div class="sidebar-actions">
+            <button id="btn-mon-parcours" class="btn-mon-parcours" type="button">
+              <i class="fa-solid fa-map" aria-hidden="true"></i> Personnaliser ma visite <span id="mon-parcours-compteur">0</span>
+            </button>
+            <a href="/dashboard.html" id="pelify-espace-link">
+              <i class="fa-solid fa-user" aria-hidden="true"></i> Historique des visites
+              <span id="pelify-historique-compteur">0</span>
+            </a>
+            <a href="/analyse.html" id="stats-toggle">
+              <i class="fa-solid fa-chart-column" aria-hidden="true"></i> <span data-i18n="analyseComplete">Analyse territoriale complète</span>
+            </a>
+            <a href="/paysages.html" id="landscape-studio-link">
+              <i class="fa-solid fa-film" aria-hidden="true"></i> Landscape Studio
+            </a>
+            <a href="/devenir-guide.html" id="devenir-guide-link">
+              <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Devenir guide référencé
+            </a>
+          </div>
 
           <div class="liens-legaux">
             <a href="/mentions-legales.html">Mentions légales</a> ·
@@ -128,7 +123,7 @@
             <option value="">Nationalité</option>
           </select>
           <button id="filtre-notoriete" data-tri="titre">
-            ⭐ <span data-i18n="plusConnus">Les plus connus</span>
+            <i class="fa-solid fa-star" aria-hidden="true"></i> <span data-i18n="plusConnus">Les plus connus</span>
           </button>
         </div>
 
@@ -143,15 +138,15 @@
         <div id="panneau-navigation" class="hidden">
           <div class="nav-instruction">—</div>
           <div class="nav-distance"></div>
-          <button id="btn-arreter-navigation">✕ Arrêter la navigation</button>
+          <button id="btn-arreter-navigation"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Arrêter la navigation</button>
         </div>
 
         <div id="calques-carte">
           <button id="btn-choroplethe" data-actif="false">
-            🗺️ <span data-i18n="departements">Départements</span>
+            <i class="fa-solid fa-map" aria-hidden="true"></i> <span data-i18n="departements">Départements</span>
           </button>
           <button id="btn-chaleur" data-actif="false">
-            🔥 <span data-i18n="carteChaleur">Carte de chaleur</span>
+            <i class="fa-solid fa-fire" aria-hidden="true"></i> <span data-i18n="carteChaleur">Carte de chaleur</span>
           </button>
         </div>
 
@@ -169,7 +164,7 @@
       >
         <div class="mon-parcours-header">
           <div>
-            <h2 id="mon-parcours-titre">🗺️ Mon parcours</h2>
+            <h2 id="mon-parcours-titre"><i class="fa-solid fa-map" aria-hidden="true"></i> Mon parcours</h2>
             <p>
               Construisez votre visite à partir des lieux que vous choisissez.
             </p>
@@ -179,7 +174,7 @@
             type="button"
             aria-label="Fermer"
           >
-            ✕
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
           </button>
         </div>
         <div id="mon-parcours-contenu"></div>
@@ -189,7 +184,7 @@
     <!-- ═══ POPUP LIEU DE TOURNAGE ═══ -->
     <div id="popup-overlay" class="hidden">
       <div id="popup-lieu">
-        <button id="popup-fermer" aria-label="Fermer">✕</button>
+        <button id="popup-fermer" aria-label="Fermer"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
         <img id="popup-poster" src="" alt="" />
         <div id="popup-contenu">
           <h2 id="popup-titre"></h2>
@@ -209,14 +204,14 @@
               class="btn-itineraire"
               id="btn-nav-directe-pied"
             >
-              🚶 Itinéraire depuis ma position
+              <i class="fa-solid fa-person-walking" aria-hidden="true"></i> Itinéraire depuis ma position
             </button>
             <button
               type="button"
               class="btn-itineraire"
               id="btn-nav-directe-voiture"
             >
-              🚗 Itinéraire depuis ma position
+              <i class="fa-solid fa-car" aria-hidden="true"></i> Itinéraire depuis ma position
             </button>
           </div>
 
@@ -255,7 +250,7 @@
           <section id="bloc-accessibilite" class="bloc-accessibilite">
             <div class="accessibilite-header">
               <div>
-                <h3>🗺️ Accessibilité du lieu</h3>
+                <h3><i class="fa-solid fa-map" aria-hidden="true"></i> Accessibilité du lieu</h3>
                 <p>Jusqu'où peut-on accéder depuis ce lieu de tournage ?</p>
               </div>
             </div>
@@ -271,7 +266,7 @@
                     class="iso-mode-btn actif"
                     data-mode="driving-car"
                   >
-                    🚗 Voiture
+                    <i class="fa-solid fa-car" aria-hidden="true"></i> Voiture
                   </button>
 
                   <button
@@ -279,7 +274,7 @@
                     class="iso-mode-btn"
                     data-mode="foot-walking"
                   >
-                    🚶 À pied
+                    <i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied
                   </button>
                 </div>
               </div>
@@ -317,7 +312,7 @@
             </div>
 
             <div id="isochrone-legende" class="isochrone-legende">
-              <span> 🟢 Zone accessible </span>
+              <span> <i class="fa-solid fa-circle fa-c-vert" aria-hidden="true"></i> Zone accessible </span>
 
               <span id="isochrone-source"> Géoplateforme IGN </span>
             </div>
@@ -325,7 +320,7 @@
 
           <div id="popup-actions-globales">
             <button id="btn-trace">
-              🎬
+              <i class="fa-solid fa-film" aria-hidden="true"></i>
               <span data-i18n="surLesTraces">Sur les traces de ce film…</span>
             </button>
             <div id="resultat-trace"><!-- rempli au clic --></div>

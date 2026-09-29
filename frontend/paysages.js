@@ -47,29 +47,29 @@ function droitsBadge(p) {
   if (p.usage_commercial === true) {
     if (p.verification_statut === "droits_confirmes") {
       return `<span class="ls-badge ok">
-        🟢 Droits confirmés
+        <i class="fa-solid fa-circle fa-c-vert" aria-hidden="true"></i> Droits confirmés
       </span>`;
     }
 
     return `<span class="ls-badge ok">
-      🟢 Compatible commercial
+      <i class="fa-solid fa-circle fa-c-vert" aria-hidden="true"></i> Compatible commercial
     </span>`;
   }
 
   if (p.usage_commercial === false) {
     return `<span class="ls-badge risk">
-      🔴 Non commercial
+      <i class="fa-solid fa-circle fa-c-rouge" aria-hidden="true"></i> Non commercial
     </span>`;
   }
 
   if (p.statut_droits === "a_negocier") {
     return `<span class="ls-badge warn">
-      🟠 À négocier
+      <i class="fa-solid fa-circle fa-c-orange" aria-hidden="true"></i> À négocier
     </span>`;
   }
 
   return `<span class="ls-badge warn">
-    🟠 Licence à vérifier
+    <i class="fa-solid fa-circle fa-c-orange" aria-hidden="true"></i> Licence à vérifier
   </span>`;
 }
 
@@ -88,23 +88,23 @@ function informationsLicence(p) {
       </div>
 
       ${p.usage_commercial === true ? `
-        <div>💼 Usage commercial : <strong>oui</strong></div>
+        <div><i class="fa-solid fa-briefcase" aria-hidden="true"></i> Usage commercial : <strong>oui</strong></div>
       ` : ""}
 
       ${p.usage_commercial === false ? `
-        <div>💼 Usage commercial : <strong>non</strong></div>
+        <div><i class="fa-solid fa-briefcase" aria-hidden="true"></i> Usage commercial : <strong>non</strong></div>
       ` : ""}
 
       ${p.modification_autorisee === true ? `
-        <div>✏️ Modification : <strong>autorisée</strong></div>
+        <div><i class="fa-solid fa-pen" aria-hidden="true"></i> Modification : <strong>autorisée</strong></div>
       ` : ""}
 
       ${p.modification_autorisee === false ? `
-        <div>✏️ Modification : <strong>non autorisée</strong></div>
+        <div><i class="fa-solid fa-pen" aria-hidden="true"></i> Modification : <strong>non autorisée</strong></div>
       ` : ""}
 
       ${p.attribution_requise === true ? `
-        <div>👤 Attribution : <strong>requise</strong></div>
+        <div><i class="fa-solid fa-user" aria-hidden="true"></i> Attribution : <strong>requise</strong></div>
       ` : ""}
 
       ${p.licence_url ? `
@@ -184,7 +184,7 @@ async function ouvrirEditionPaysage(paysageId, onSauvegarde) {
   } catch (e) { return alert("Erreur : " + e.message); }
 
   ouvrirModal(`
-    <h3>✏️ Modifier « ${esc(p.nom)} »</h3>
+    <h3><i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier « ${esc(p.nom)} »</h3>
     <div class="ls-form" style="max-width:none;border:none;padding:0;margin:0">
       <input type="text" id="e-nom" placeholder="Nom" value="${esc(p.nom || "")}">
       <div class="ls-form-row">
@@ -256,7 +256,7 @@ async function chargerProjets() {
     if (!projets.length) { el.innerHTML = `<p class="ls-empty">Aucun projet pour l'instant. Créez-en un pour commencer.</p>`; return; }
     el.innerHTML = projets.map(p => `
       <div class="ls-card" data-id="${p.id}">
-        <div class="ls-card-noimg">📁</div>
+        <div class="ls-card-noimg"><i class="fa-solid fa-folder" aria-hidden="true"></i></div>
         <div class="ls-card-body">
           <b>${esc(p.nom)}</b>
           <span>${esc(p.description || "Pas de description")}</span>
@@ -305,7 +305,7 @@ async function chargerProjetDetail() {
     const p = await api(`/api/paysages/projets/${projetCourantId}`);
     $("projet-detail-head").innerHTML = `
       <div class="ls-detail-head">
-        <h2>📁 ${esc(p.nom)}</h2>
+        <h2><i class="fa-solid fa-folder" aria-hidden="true"></i> ${esc(p.nom)}</h2>
         <p>${esc(p.description || "Pas de description")}</p>
       </div>`;
     if (!p.scenes.length) {
@@ -314,7 +314,7 @@ async function chargerProjetDetail() {
     }
     $("liste-scenes").innerHTML = p.scenes.map(s => `
       <div class="ls-card" data-id="${s.id}">
-        <div class="ls-card-noimg">🎬</div>
+        <div class="ls-card-noimg"><i class="fa-solid fa-film" aria-hidden="true"></i></div>
         <div class="ls-card-body">
           <b>${s.numero != null ? `#${s.numero} — ` : ""}${esc(s.titre || "Scène sans titre")}</b>
           <span>${esc(s.ambiance || "")}</span>
@@ -377,7 +377,7 @@ function carteLienPaysage(l) {
   const badgeClass = DROITS_CLASS[l.statut_droits] || "";
   return `
     <div class="ls-card" data-paysage-id="${l.id}">
-      ${l.thumbnail_url ? `<img src="${esc(l.thumbnail_url)}" alt="${esc(l.nom)}">` : `<div class="ls-card-noimg">🖼️</div>`}
+      ${l.thumbnail_url ? `<img src="${esc(l.thumbnail_url)}" alt="${esc(l.nom)}">` : `<div class="ls-card-noimg"><i class="fa-solid fa-image" aria-hidden="true"></i></div>`}
       <div class="ls-card-body">
         <b>${esc(l.nom)}</b>
         <span>${esc(l.ambiance || "")}</span>
@@ -389,7 +389,7 @@ function carteLienPaysage(l) {
           ${Object.entries(STATUT_LIEN_LABELS).map(([v, label]) =>
             `<option value="${v}" ${v === l.statut ? "selected" : ""}>${label}</option>`).join("")}
         </select>
-        <button class="ls-card-edit-btn" data-editer="${l.id}">✏️ Modifier ce paysage</button>
+        <button class="ls-card-edit-btn" data-editer="${l.id}"><i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier ce paysage</button>
       </div>
     </div>`;
 }
@@ -401,7 +401,7 @@ async function chargerSceneDetail() {
     const s = await api(`/api/paysages/scenes/${sceneCouranteId}`);
     $("scene-detail-head").innerHTML = `
       <div class="ls-detail-head">
-        <h2>🎬 ${s.numero != null ? `#${s.numero} — ` : ""}${esc(s.titre || "Scène sans titre")}</h2>
+        <h2><i class="fa-solid fa-film" aria-hidden="true"></i> ${s.numero != null ? `#${s.numero} — ` : ""}${esc(s.titre || "Scène sans titre")}</h2>
         <p>${esc(s.description || "")}</p>
         <p>${esc(s.ambiance || "")}${s.environnement ? " · " + esc(s.environnement) : ""}${s.epoque ? " · " + esc(s.epoque) : ""}</p>
         <p>${esc(s.intention_artistique || "")}</p>
@@ -441,7 +441,7 @@ $("lier-rechercher-btn").addEventListener("click", async () => {
     if (!resultats.length) { el.innerHTML = `<p class="ls-empty">Aucun résultat. Essayez un autre terme, ou ajoutez un paysage dans la bibliothèque.</p>`; return; }
     el.innerHTML = resultats.map(p => `
       <div class="ls-card" data-id="${p.id}">
-        ${p.thumbnail_url ? `<img src="${esc(p.thumbnail_url)}" alt="${esc(p.nom)}">` : `<div class="ls-card-noimg">🖼️</div>`}
+        ${p.thumbnail_url ? `<img src="${esc(p.thumbnail_url)}" alt="${esc(p.nom)}">` : `<div class="ls-card-noimg"><i class="fa-solid fa-image" aria-hidden="true"></i></div>`}
         <div class="ls-card-body">
           <b>${esc(p.nom)}</b>
           <span>${esc(p.ambiance || p.type || "")}</span>
@@ -482,7 +482,7 @@ function carteResultatPaysage(p) {
             >
           `
           : `
-            <div class="ls-card-noimg">🖼️</div>
+            <div class="ls-card-noimg"><i class="fa-solid fa-image" aria-hidden="true"></i></div>
           `
       }
 
@@ -497,13 +497,13 @@ function carteResultatPaysage(p) {
 
         ${
           p.auteur
-            ? `<span>📷 ${esc(p.auteur)}</span>`
+            ? `<span><i class="fa-solid fa-camera" aria-hidden="true"></i> ${esc(p.auteur)}</span>`
             : ""
         }
 
         ${
           p.distance_km != null
-            ? `<span>📍 ${p.distance_km} km</span>`
+            ? `<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> ${p.distance_km} km</span>`
             : ""
         }
 
@@ -539,7 +539,7 @@ function carteResultatPaysage(p) {
                 class="ls-btn"
                 data-demander-droits="${p.id}"
               >
-                🔐 Demander les droits
+                <i class="fa-solid fa-lock" aria-hidden="true"></i> Demander les droits
               </button>
             `
             : ""
@@ -549,7 +549,7 @@ function carteResultatPaysage(p) {
           class="ls-card-edit-btn"
           data-editer="${p.id}"
         >
-          ✏️ Modifier
+          <i class="fa-solid fa-pen" aria-hidden="true"></i> Modifier
         </button>
 
       </div>
@@ -774,7 +774,7 @@ Cordialement,
 L'équipe du projet via Pelify`;
 
   ouvrirModal(`
-    <h3>🔐 Demander les droits</h3>
+    <h3><i class="fa-solid fa-lock" aria-hidden="true"></i> Demander les droits</h3>
     <p class="ls-modal-note">Cette demande sera enregistrée dans Pelify et un lien sécurisé permettra au photographe de répondre sans créer de compte.</p>
     <div class="ls-form" style="max-width:none;border:none;padding:0;margin:0">
       <input type="text" id="dd-nom" placeholder="Nom du photographe" value="${esc(auteur)}">

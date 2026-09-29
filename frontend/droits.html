@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pelify — Demande de droits</title>
+<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css" />
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/paysages.css">
 </head>
@@ -11,7 +12,7 @@
 <main class="ls-app">
   <header class="ls-top">
     <div class="ls-title">
-      <h1>🔐 Pelify — Demande de droits</h1>
+      <h1><i class="fa-solid fa-lock" aria-hidden="true"></i> Pelify — Demande de droits</h1>
       <p>Échange sécurisé entre un porteur de projet et un photographe.</p>
     </div>
     <a class="ls-back" href="/paysages.html">← Retour à Landscape Studio</a>
@@ -75,9 +76,9 @@ function afficherConversation(data, mode) {
         <h3>Votre réponse</h3>
         <textarea id="rep-contenu" rows="7" placeholder="Écrivez votre réponse…"></textarea>
         <div class="ls-form-row">
-          <button class="ls-btn ls-btn-accent" data-type="acceptee">✓ J'accepte</button>
-          <button class="ls-btn" data-type="a_discuter">💬 Je souhaite discuter</button>
-          <button class="ls-btn" data-type="refusee">✕ Je refuse</button>
+          <button class="ls-btn ls-btn-accent" data-type="acceptee"><i class="fa-solid fa-check" aria-hidden="true"></i> J'accepte</button>
+          <button class="ls-btn" data-type="a_discuter"><i class="fa-solid fa-comment" aria-hidden="true"></i> Je souhaite discuter</button>
+          <button class="ls-btn" data-type="refusee"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Je refuse</button>
         </div>
         <button class="ls-btn" data-type="message">Envoyer un message</button>
         <p class="ls-modal-note">Votre réponse sera transmise au demandeur. Elle ne constitue pas, à elle seule, une validation juridique automatique dans Pelify.</p>

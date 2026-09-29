@@ -1422,3 +1422,26 @@ body.page-film-ssr {
 .mp-tous-candidats{margin-top:10px;border-top:1px solid rgba(255,255,255,.08);padding-top:9px}
 .mp-tous-candidats summary{cursor:pointer;font-size:.7rem;color:var(--couleur-texte-muted)}
 .mp-candidats-liste{margin-top:7px;max-height:280px;overflow:auto}
+/* ═══ Barre d'actions de la sidebar (5 boutons côte à côte, retour à la ligne sur mobile) ═══ */
+.sidebar-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+#sidebar-header .sidebar-actions > a,
+#sidebar-header .sidebar-actions > button {
+  flex: 1 1 auto; width: auto; margin: 0; padding: 7px 10px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 0.72rem; line-height: 1.2; white-space: nowrap; text-align: center;
+  border: 1px solid #343842; border-radius: 9px; background: transparent;
+  color: var(--couleur-texte); text-decoration: none; cursor: pointer;
+}
+#sidebar-header .sidebar-actions > a:hover { border-color: var(--couleur-accent); }
+#sidebar-header .sidebar-actions > .btn-mon-parcours {
+  border-color: var(--couleur-accent); background: rgba(230, 57, 70, 0.12); font-weight: 700;
+}
+#sidebar-header .sidebar-actions > #stats-toggle {
+  background: var(--couleur-accent); border-color: var(--couleur-accent); color: #fff;
+}
+#sidebar-header .sidebar-actions > #devenir-guide-link { border-color: #2a9d8f; }
+
+/* ═══ Font Awesome ═══ */
+i.fa-solid, i.fa-regular { line-height: 1; }
+.fa-c-vert { color: #3ddc84; } .fa-c-orange { color: #ff9f1c; } .fa-c-rouge { color: #e63946; }
+.icone-commodite i, .marqueur-depart i { pointer-events: none; }

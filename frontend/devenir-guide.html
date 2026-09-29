@@ -12,10 +12,36 @@
     <link rel="stylesheet" href="/style.css" />
     <style>
       /* style.css bloque le scroll du body (carte plein écran) : on le rétablit ici */
-      html, body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-      .dg-topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; padding: 10px 16px; background: var(--couleur-fond); border-bottom: 1px solid #2a2d35; }
-      .dg-topbar a { display: inline-flex; align-items: center; gap: 8px; color: var(--couleur-texte); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
-      .dg-topbar a:hover { color: var(--couleur-accent); }
+      html,
+      body {
+        height: auto;
+        min-height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .dg-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        padding: 10px 16px;
+        background: var(--couleur-fond);
+        border-bottom: 1px solid #2a2d35;
+      }
+      .dg-topbar a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--couleur-texte);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+      .dg-topbar a:hover {
+        color: var(--couleur-accent);
+      }
       .dg-wrap {
         max-width: 640px;
         margin: 0 auto;
@@ -159,9 +185,17 @@
     </style>
   </head>
   <body>
-    <nav class="dg-topbar"><a href="/" aria-label="Retour à la carte"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Retour à la carte</a></nav>
+    <nav class="dg-topbar">
+      <a href="/" aria-label="Retour à la carte"
+        ><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Retour à la
+        carte</a
+      >
+    </nav>
     <main class="dg-wrap">
-      <h1><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Devenir guide référencé sur Pelify</h1>
+      <h1>
+        <i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Devenir
+        guide référencé sur Pelify
+      </h1>
       <p class="dg-intro">
         Vous êtes guide-conférencier, médiateur culturel, accompagnateur ou
         simplement passionné de cinéma et vous proposez des visites autour des
@@ -224,38 +258,73 @@
           <label>Spécialités</label>
           <div class="dg-cases" id="dg-specialites">
             <label class="dg-case"
-              ><input type="checkbox" value="cinema" /><i class="fa-solid fa-film" aria-hidden="true"></i> Cinéma</label
+              ><input type="checkbox" value="cinema" /><i
+                class="fa-solid fa-film"
+                aria-hidden="true"
+              ></i>
+              Cinéma</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="series" /><i class="fa-solid fa-tv" aria-hidden="true"></i> Séries</label
+              ><input type="checkbox" value="series" /><i
+                class="fa-solid fa-tv"
+                aria-hidden="true"
+              ></i>
+              Séries</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="histoire" /><i class="fa-solid fa-scroll" aria-hidden="true"></i> Histoire</label
+              ><input type="checkbox" value="histoire" /><i
+                class="fa-solid fa-scroll"
+                aria-hidden="true"
+              ></i>
+              Histoire</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="architecture" /><i class="fa-solid fa-landmark" aria-hidden="true"></i>
+              ><input type="checkbox" value="architecture" /><i
+                class="fa-solid fa-landmark"
+                aria-hidden="true"
+              ></i>
               Architecture</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="patrimoine" /><i class="fa-solid fa-chess-rook" aria-hidden="true"></i> Patrimoine</label
+              ><input type="checkbox" value="patrimoine" /><i
+                class="fa-solid fa-chess-rook"
+                aria-hidden="true"
+              ></i>
+              Patrimoine</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="paysage" /><i class="fa-solid fa-mountain-sun" aria-hidden="true"></i> Paysage</label
+              ><input type="checkbox" value="paysage" /><i
+                class="fa-solid fa-mountain-sun"
+                aria-hidden="true"
+              ></i>
+              Paysage</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="culture_populaire" /><i class="fa-solid fa-masks-theater" aria-hidden="true"></i> Culture
-              populaire</label
+              ><input type="checkbox" value="culture_populaire" /><i
+                class="fa-solid fa-masks-theater"
+                aria-hidden="true"
+              ></i>
+              Culture populaire</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="production_audiovisuelle" /><i class="fa-solid fa-video" aria-hidden="true"></i>
+              ><input type="checkbox" value="production_audiovisuelle" /><i
+                class="fa-solid fa-video"
+                aria-hidden="true"
+              ></i>
               Production audiovisuelle</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="photographie" /><i class="fa-solid fa-camera-retro" aria-hidden="true"></i>
+              ><input type="checkbox" value="photographie" /><i
+                class="fa-solid fa-camera-retro"
+                aria-hidden="true"
+              ></i>
               Photographie</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="gastronomie" /><i class="fa-solid fa-utensils" aria-hidden="true"></i>
+              ><input type="checkbox" value="gastronomie" /><i
+                class="fa-solid fa-utensils"
+                aria-hidden="true"
+              ></i>
               Gastronomie</label
             >
           </div>
@@ -269,17 +338,32 @@
           <label>Mode(s) de déplacement proposés</label>
           <div class="dg-cases" id="dg-mobilite">
             <label class="dg-case"
-              ><input type="checkbox" value="pied" /><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</label
+              ><input type="checkbox" value="pied" /><i
+                class="fa-solid fa-person-walking"
+                aria-hidden="true"
+              ></i>
+              À pied</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="velo" /><i class="fa-solid fa-bicycle" aria-hidden="true"></i> Vélo</label
+              ><input type="checkbox" value="velo" /><i
+                class="fa-solid fa-bicycle"
+                aria-hidden="true"
+              ></i>
+              Vélo</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="voiture" /><i class="fa-solid fa-car" aria-hidden="true"></i> Voiture</label
+              ><input type="checkbox" value="voiture" /><i
+                class="fa-solid fa-car"
+                aria-hidden="true"
+              ></i>
+              Voiture</label
             >
             <label class="dg-case"
-              ><input type="checkbox" value="transport_collectif" /><i class="fa-solid fa-bus" aria-hidden="true"></i> Transport
-              collectif</label
+              ><input type="checkbox" value="transport_collectif" /><i
+                class="fa-solid fa-bus"
+                aria-hidden="true"
+              ></i>
+              Transport collectif</label
             >
           </div>
         </div>
@@ -346,6 +430,20 @@
       let zoneChoisie = null; // {latitude, longitude, label}
       let rechercheTimer = null;
 
+      function escapeHtml(s) {
+        return String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      }
+
       const champAdresse = document.getElementById("dg-adresse");
       const suggestionsEl = document.getElementById("dg-adresse-suggestions");
       const zoneConfirmeeEl = document.getElementById("dg-zone-confirmee");
@@ -369,7 +467,7 @@
             suggestionsEl.innerHTML = resultats
               .map(
                 (r, i) =>
-                  `<button type="button" data-i="${i}">${r.label}</button>`,
+                  `<button type="button" data-i="${i}">${escapeHtml(r.label)}</button>`,
               )
               .join("");
             suggestionsEl.querySelectorAll("button").forEach((btn, i) => {
@@ -382,7 +480,7 @@
                 };
                 champAdresse.value = r.label;
                 suggestionsEl.innerHTML = "";
-                zoneConfirmeeEl.textContent = `<i class="fa-solid fa-check" aria-hidden="true"></i> Zone centrée sur : ${r.label}`;
+                zoneConfirmeeEl.innerHTML = `<i class="fa-solid fa-check" aria-hidden="true"></i> Zone centrée sur : ${escapeHtml(r.label)}`;
               });
             });
           } catch (e) {

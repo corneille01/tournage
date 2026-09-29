@@ -174,10 +174,19 @@ body {
 }
 
 /* Icône pancarte de tournage sur la carte */
-.icone-tournage {
-  font-size: 28px;
-  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+/* Pastille ronde : fond coloré + pictogramme blanc + liseré blanc = lisible sur toute tuile */
+.icone-tournage,
+.icone-commodite,
+.marqueur-depart {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%; box-sizing: border-box;
+  border-radius: 50%; color: #fff;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.55);
+  font-size: 16px; line-height: 1;
 }
+.icone-tournage { background: #e63946; font-size: 17px; }
+.marqueur-depart { background: #2563eb; font-size: 17px; }
 
 /* ═══ POPUP LIEU ═══ */
 #popup-overlay {
@@ -659,7 +668,11 @@ body.page-film-ssr {
 }
 
 /* ── Icônes "activité" sur la carte, distinctes des lieux de tournage ── */
-.icone-commodite { font-size: 22px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+.icone-commodite { font-size: 14px; }
+.icone-commodite.plus-proche {
+  color: #1a1a1a; font-size: 18px;
+  box-shadow: 0 0 0 3px rgba(255,214,10,0.6), 0 2px 8px rgba(0,0,0,0.6);
+}
 
 /* ── Mobile : filtres flottants passent en pleine largeur ── */
 @media (max-width: 600px) {
@@ -1444,4 +1457,4 @@ body.page-film-ssr {
 /* ═══ Font Awesome ═══ */
 i.fa-solid, i.fa-regular { line-height: 1; }
 .fa-c-vert { color: #3ddc84; } .fa-c-orange { color: #ff9f1c; } .fa-c-rouge { color: #e63946; }
-.icone-commodite i, .marqueur-depart i { pointer-events: none; }
+.icone-tournage i, .icone-commodite i, .marqueur-depart i { pointer-events: none; }

@@ -826,8 +826,8 @@ function afficherLieuxSurCarte(film, lieux) {
     const icone = L.divIcon({
       html: '<div class="icone-tournage"><i class="fa-solid fa-film" aria-hidden="true"></i></div>',
       className: "",
-      iconSize: [32, 32],
-      iconAnchor: [16, 30],
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
     });
     const marker = L.marker([lieu.latitude, lieu.longitude], { icon: icone });
     marker.on("click", () => ouvrirPopupLieu(film, lieu));
@@ -1753,8 +1753,8 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
     const estPlusProche = index === 0;
     const couleurIcone = estPlusProche ? "#ffd60a" : (infoCategorie.couleur || "#e63946");
     const icone = L.divIcon({
-      html: `<div class="icone-commodite" style="color:${couleurIcone};${estPlusProche ? "font-size:30px;filter:drop-shadow(0 0 4px #ffd60a);" : ""}">${infoCategorie.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}</div>`,
-      className: "", iconSize: estPlusProche ? [32, 32] : [24, 24], iconAnchor: estPlusProche ? [16, 30] : [12, 22],
+      html: `<div class="icone-commodite${estPlusProche ? " plus-proche" : ""}" style="background:${couleurIcone};">${infoCategorie.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}</div>`,
+      className: "", iconSize: estPlusProche ? [40, 40] : [32, 32], iconAnchor: estPlusProche ? [20, 20] : [16, 16],
     });
     const idPopupItineraire = `itin-carte-${categorie}-${index}`;
     const texteDistance = _texteDistanceDynamique(item, modeTri);
@@ -2132,8 +2132,8 @@ function afficherAmenitiesParcoursV4(categories) {
     const info = ICONES_CATEGORIE[categorie] || {};
     const marker = L.marker([lat, lon], {
       icon: L.divIcon({
-        html: `<div class="icone-commodite" style="color:${info.couleur || "#e63946"};">${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}</div>`,
-        className: "", iconSize: [26, 26], iconAnchor: [13, 24],
+        html: `<div class="icone-commodite" style="background:${info.couleur || "#e63946"};">${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}</div>`,
+        className: "", iconSize: [32, 32], iconAnchor: [16, 16],
       }),
     }).bindPopup(`
       <b>${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"} ${escapeHtml(item.nom || "")}</b><br>
@@ -2450,7 +2450,7 @@ indexEtapeCourante = 0;
     coucheMarqueurDepart = L.marker([departLat, departLon], {
       icon: L.divIcon({
         html: '<div class="marqueur-depart"><i class="fa-solid fa-location-dot" aria-hidden="true"></i></div>',
-        className: "", iconSize: [30, 30], iconAnchor: [15, 28],
+        className: "", iconSize: [36, 36], iconAnchor: [18, 18],
       }),
     }).bindPopup("Votre point de départ").addTo(map);
 

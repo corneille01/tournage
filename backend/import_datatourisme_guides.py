@@ -17,6 +17,8 @@ import argparse
 import asyncio
 import json
 import os
+import sys
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin
 
@@ -39,6 +41,7 @@ TYPES = {
     "VolunteerTourGuideOrGreeter": "autre",
 }
 RESEAUX = ("facebook.", "instagram.", "twitter.", "x.com", "linkedin.", "youtube.", "tiktok.")
+ERREURS: list[tuple[str, str]] = []
 FIELDS = "uuid,uri,label,type,isLocatedAt,hasDescription,hasContact,hasBeenCreatedBy,lastUpdate,lastUpdateDatatourisme"
 
 
@@ -134,17 +137,36 @@ def extract(item: dict) -> dict | None:
     createur = item.get("hasBeenCreatedBy")
     return {
         "uuid": str(uuid),
-        "nom": _text(item.get("label")) or "Guide DATAtourisme",
+        "nom": _cut(_text(item.get("label")) or "Guide DATAtourisme", 255),
         "type_guide": TYPES[type_name],
         "datatourisme_type": type_name,
         "bio": _text(item.get("hasDescription")),
         "latitude": lat,
         "longitude": lon,
-        "site_web": site,
-        "lien_contact": None if site else (f"tel:{tel.replace(' ', '')}" if tel else None),
+        "site_web": _cut(site, 500),
+        "lien_contact": None if site else _cut(f"tel:{tel.replace(' ', '')}" if tel else None, 500),
         "createur": _text(createur.get("legalName")) if isinstance(createur, dict) else None,
-        "last_update": item.get("lastUpdateDatatourisme") or item.get("lastUpdate"),
+        "last_update": _date(item.get("lastUpdateDatatourisme") or item.get("lastUpdate")),
     }
+
+
+def _date(value: Any) -> datetime | None:
+    """asyncpg exige un datetime (pas une chaîne) pour une colonne TIMESTAMPTZ."""
+    s = _text(value)
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            d = datetime.fromisoformat(s[:10])
+        except ValueError:
+            return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _cut(value: str | None, n: int) -> str | None:
+    return value[:n] if value else value
 
 
 def _dans_occitanie(g: dict) -> bool:
@@ -201,7 +223,11 @@ async def fetch_type(client, api_key, typ, mode, france, limit, dry_run) -> tupl
             gardes += 1
             print(f"  {g['nom']} | {g['uuid']}")
             if not dry_run:
-                await upsert(g)
+                try:
+                    await upsert(g)
+                except Exception as e:  # une fiche défectueuse ne doit pas bloquer les autres
+                    ERREURS.append((g["uuid"], repr(e)))
+                    print(f"  !! ERREUR sur {g['uuid']} : {e!r}")
             if limit and gardes >= limit:
                 return lus, gardes
         suivant = meta.get("next")
@@ -265,6 +291,10 @@ async def main() -> None:
                 tot_lus += lus
                 tot_gardes += gardes
             print(f"Total reçus : {tot_lus} | retenus : {tot_gardes}{' (simulation)' if args.dry_run else ''}")
+            if ERREURS:
+                print(f"{len(ERREURS)} fiche(s) en erreur, premières : {ERREURS[:3]}")
+                if len(ERREURS) >= tot_gardes:
+                    sys.exit(1)
     finally:
         if not args.dry_run:
             await close_db_pool()

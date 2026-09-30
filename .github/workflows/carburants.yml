@@ -8,11 +8,11 @@ on:
         type: boolean
         default: true
       departements:
-        description: "Départements à importer, séparés par des virgules (vide = toute l'Occitanie)"
+        description: "Départements à importer, séparés par des virgules (vide = Occitanie + départements limitrophes)"
         type: string
         default: ""
       france:
-        description: "Toute la France au lieu de l'Occitanie"
+        description: "Toute la France au lieu de l'Occitanie et de ses départements limitrophes"
         type: boolean
         default: false
   schedule:
@@ -39,8 +39,9 @@ jobs:
           async def main():
               dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
               conn = await asyncpg.connect(dsn)
-              with open("backend/migration_v29.sql", encoding="utf-8") as f:
-                  await conn.execute(f.read())
+              for fichier in ("backend/migration_v29.sql", "backend/migration_v30.sql"):
+                  with open(fichier, encoding="utf-8") as f:
+                      await conn.execute(f.read())
               await conn.close()
           asyncio.run(main())
           PY

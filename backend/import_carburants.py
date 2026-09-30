@@ -4,8 +4,15 @@ Source : data.economie.gouv.fr, jeu « Prix des carburants en France - Flux
 instantané - v2 » (API Opendatasoft Explore v2.1, Licence Ouverte 2.0).
 Une ligne = un point de vente, avec tous ses carburants et prix en colonnes.
 
-Périmètre : Occitanie par défaut (mêmes 13 départements que l'import des
-guides). L'option --france élargit à tout le territoire.
+Périmètre : Occitanie + départements limitrophes par défaut. Les lieux de
+tournage proches d'une frontière régionale ont ainsi leurs vraies stations les
+plus proches, même situées de l'autre côté de la limite. L'option
+--occitanie-seule restreint aux 13 départements d'Occitanie ; --france élargit
+à tout le territoire.
+
+Champs conservés : tous ceux de l'API (identité, adresse, code INSEE, EPCI,
+département, région, autoroute/route, automate 24/24, horaires, carburants
+proposés et en rupture, prix, date de mise à jour, services).
 
 Dates de mise à jour : chaque station porte la date de dernière mise à jour de
 ses prix (champ « update »). Elle est stockée dans maj_prix. Si l'API expose en
@@ -35,6 +42,7 @@ Usage :
     python import_carburants.py --dry-run
     python import_carburants.py
     python import_carburants.py --departements 11,30,31,34
+    python import_carburants.py --occitanie-seule
     python import_carburants.py --france
 """
 from __future__ import annotations
@@ -58,11 +66,15 @@ PAGE_SIZE = 100            # maximum autorisé par l'API sur /records
 OFFSET_MAX = 10_000        # offset + limit doit rester sous cette borne
 PAUSE_ENTRE_REQUETES_S = 0.15
 SEUIL_HISTORIQUE = 60_000  # au-delà : ce n'est pas le flux instantané
-SEUIL_PURGE_MIN_OCCITANIE = 300   # l'Occitanie compte environ 1 000 stations
+SEUIL_PURGE_MIN_OCCITANIE = 300   # Occitanie seule : environ 1 000 stations, environ 1 800 avec les limitrophes
 SEUIL_PURGE_MIN_FRANCE = 5_000
 SOURCE_FIGEE_JOURS = 7
 
 DEPARTEMENTS_OCCITANIE = ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
+# Départements qui touchent l'Occitanie : Ardèche, Bouches-du-Rhône, Cantal, Corrèze,
+# Dordogne, Landes, Haute-Loire, Lot-et-Garonne, Pyrénées-Atlantiques, Vaucluse.
+DEPARTEMENTS_LIMITROPHES = ["07", "13", "15", "19", "24", "40", "43", "47", "64", "84"]
+DEPARTEMENTS_PAR_DEFAUT = DEPARTEMENTS_OCCITANIE + DEPARTEMENTS_LIMITROPHES
 DEPARTEMENTS_FRANCE = (
     [f"{i:02d}" for i in range(1, 96) if i != 20]
     + ["2A", "2B", "971", "972", "973", "974", "976"]
@@ -137,11 +149,15 @@ def normaliser(rec: dict) -> dict | None:
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         return None
     automate = {"oui": True, "non": False}.get(str(rec.get("automate_24_24") or "").strip().lower())
+    par_carburant = _dates_par_carburant(rec)
     return {
         "id": ident, "latitude": lat, "longitude": lon,
         "nom": (rec.get("name") or None), "marque": (rec.get("brand") or None),
         "adresse": (rec.get("address") or None), "code_postal": (rec.get("cp") or None),
         "commune": (rec.get("com_arm_name") or None),
+        "code_insee": (rec.get("com_arm_code") or None),
+        "epci_code": (rec.get("epci_code") or None), "epci_nom": (rec.get("epci_name") or None),
+        "region_code": (rec.get("reg_code") or None),
         "dep_code": (rec.get("dep_code") or None), "dep_nom": (rec.get("dep_name") or None),
         "region": (rec.get("reg_name") or None),
         "type_route": (str(rec.get("pop") or "")[:1].upper() or None),
@@ -151,7 +167,7 @@ def normaliser(rec: dict) -> dict | None:
         "sp98": _prix(rec.get("price_sp98")), "e10": _prix(rec.get("price_e10")),
         "e85": _prix(rec.get("price_e85")), "gplc": _prix(rec.get("price_gplc")),
         "maj": _date(rec.get("update")), "services": _liste(rec.get("services")),
-        "maj_carburants": json.dumps(_dates_par_carburant(rec)) if _dates_par_carburant(rec) else None,
+        "maj_carburants": json.dumps(par_carburant) if par_carburant else None,
     }
 
 
@@ -192,56 +208,64 @@ async def fetch_partition(client: httpx.AsyncClient, where: str) -> list[dict]:
     return lignes
 
 
-UPSERT = """
-INSERT INTO stations_carburant (
-    id, latitude, longitude, nom, marque, adresse, code_postal, commune,
-    dep_code, dep_nom, region, type_route, automate_24_24, horaires,
-    carburants_dispo, carburants_rupture,
-    prix_gazole, prix_sp95, prix_sp98, prix_e10, prix_e85, prix_gplc,
-    maj_prix, maj_carburants, services, synchro_at
-) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
-ON CONFLICT (id) DO UPDATE SET
-    latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude,
-    nom = EXCLUDED.nom, marque = EXCLUDED.marque, adresse = EXCLUDED.adresse,
-    code_postal = EXCLUDED.code_postal, commune = EXCLUDED.commune,
-    dep_code = EXCLUDED.dep_code, dep_nom = EXCLUDED.dep_nom, region = EXCLUDED.region,
-    type_route = EXCLUDED.type_route, automate_24_24 = EXCLUDED.automate_24_24,
-    horaires = EXCLUDED.horaires,
-    carburants_dispo = EXCLUDED.carburants_dispo, carburants_rupture = EXCLUDED.carburants_rupture,
-    prix_gazole = EXCLUDED.prix_gazole, prix_sp95 = EXCLUDED.prix_sp95,
-    prix_sp98 = EXCLUDED.prix_sp98, prix_e10 = EXCLUDED.prix_e10,
-    prix_e85 = EXCLUDED.prix_e85, prix_gplc = EXCLUDED.prix_gplc,
-    maj_prix = EXCLUDED.maj_prix, maj_carburants = EXCLUDED.maj_carburants,
-    services = EXCLUDED.services,
-    synchro_at = EXCLUDED.synchro_at
-"""
+# (colonne SQL, clé du dict normalisé, conversion SQL éventuelle). Une seule liste
+# alimente l'INSERT, le UPDATE et les paramètres : impossible de les désaligner.
+CHAMPS = [
+    ("id", "id", ""), ("latitude", "latitude", ""), ("longitude", "longitude", ""),
+    ("nom", "nom", ""), ("marque", "marque", ""), ("adresse", "adresse", ""),
+    ("code_postal", "code_postal", ""), ("commune", "commune", ""), ("code_insee", "code_insee", ""),
+    ("dep_code", "dep_code", ""), ("dep_nom", "dep_nom", ""),
+    ("region", "region", ""), ("region_code", "region_code", ""),
+    ("epci_code", "epci_code", ""), ("epci_nom", "epci_nom", ""),
+    ("type_route", "type_route", ""), ("automate_24_24", "automate", ""),
+    ("horaires", "horaires", "::jsonb"),
+    ("carburants_dispo", "dispo", ""), ("carburants_rupture", "rupture", ""),
+    ("prix_gazole", "gazole", ""), ("prix_sp95", "sp95", ""), ("prix_sp98", "sp98", ""),
+    ("prix_e10", "e10", ""), ("prix_e85", "e85", ""), ("prix_gplc", "gplc", ""),
+    ("maj_prix", "maj", ""), ("maj_carburants", "maj_carburants", "::jsonb"),
+    ("services", "services", ""),
+]
+_COLONNES_SQL = ", ".join(c for c, _, _ in CHAMPS) + ", synchro_at"
+_VALEURS_SQL = ", ".join("%s" + cast for _, _, cast in CHAMPS) + ", %s"
+_MAJ_SQL = ",\n    ".join(f"{c} = EXCLUDED.{c}" for c, _, _ in CHAMPS if c != "id") + ",\n    synchro_at = EXCLUDED.synchro_at"
+UPSERT = (
+    f"INSERT INTO stations_carburant ({_COLONNES_SQL})\nVALUES ({_VALEURS_SQL})\n"
+    f"ON CONFLICT (id) DO UPDATE SET\n    {_MAJ_SQL}"
+)
 
 
 def _params(s: dict, synchro: datetime) -> tuple:
-    return (
-        s["id"], s["latitude"], s["longitude"], s["nom"], s["marque"], s["adresse"],
-        s["code_postal"], s["commune"], s["dep_code"], s["dep_nom"], s["region"],
-        s["type_route"], s["automate"], s["horaires"], s["dispo"], s["rupture"],
-        s["gazole"], s["sp95"], s["sp98"], s["e10"], s["e85"], s["gplc"],
-        s["maj"], s["maj_carburants"], s["services"], synchro,
-    )
+    return tuple(s[cle] for _, cle, _ in CHAMPS) + (synchro,)
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="n'écrit rien en base")
     parser.add_argument("--departements", default="", help="liste séparée par des virgules (ex. 11,34)")
-    parser.add_argument("--france", action="store_true", help="toute la France au lieu de l'Occitanie")
+    parser.add_argument("--france", action="store_true", help="toute la France au lieu de l'Occitanie et de ses limitrophes")
+    parser.add_argument("--occitanie-seule", action="store_true", help="les 13 départements d'Occitanie, sans les limitrophes")
     parser.add_argument("--force", action="store_true", help="ignore le garde-fou « jeu trop volumineux »")
     args = parser.parse_args()
     load_dotenv()
 
     debut = datetime.now(timezone.utc)
     demandes = [d.strip().upper() for d in args.departements.split(",") if d.strip()]
-    perimetre = DEPARTEMENTS_FRANCE if args.france else DEPARTEMENTS_OCCITANIE
+    perimetre = (
+        DEPARTEMENTS_FRANCE if args.france
+        else DEPARTEMENTS_OCCITANIE if args.occitanie_seule
+        else DEPARTEMENTS_PAR_DEFAUT
+    )
     cibles = demandes or perimetre
     partitions = [(d, f'dep_code="{d}" AND geo_point IS NOT NULL') for d in cibles]
-    print(f"Périmètre : {'France entière' if args.france and not demandes else 'Occitanie' if not demandes else 'départements ' + ','.join(demandes)}")
+    if demandes:
+        libelle_perimetre = "départements " + ",".join(demandes)
+    elif args.france:
+        libelle_perimetre = "France entière"
+    elif args.occitanie_seule:
+        libelle_perimetre = "Occitanie"
+    else:
+        libelle_perimetre = "Occitanie + départements limitrophes"
+    print(f"Périmètre : {libelle_perimetre}")
 
     async with httpx.AsyncClient(timeout=60, headers={"User-Agent": "Pelify/1.0 (import carburants)"}) as client:
         sonde = await _get(client, {"limit": 1, "select": "id"})

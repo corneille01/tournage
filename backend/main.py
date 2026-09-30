@@ -41,7 +41,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
-from carburants import plan_carburant, stations_autour, normaliser_carburant, CARBURANTS
+from carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
 from guides import guides_recommandes, exiger_admin, SPECIALITES_VALIDES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES
 from paysages import router as paysages_router
 from droits import router as droits_router
@@ -1063,6 +1063,17 @@ async def amenities_proches(lieu_id: int):
             if item["duree_voiture_secondes"] is not None else None
         )
         amenities_par_categorie.setdefault(item["categorie"], []).append(item)
+
+    # Stations-service : on joint la fiche complète (prix, ruptures, horaires, services...)
+    # lue dans stations_carburant. En cas de souci (migration pas encore jouée...), le reste
+    # des commodités du lieu reste servi normalement.
+    if amenities_par_categorie.get("station_service"):
+        try:
+            fiches = await fiches_stations_du_lieu(lieu_id)
+            for item in amenities_par_categorie["station_service"]:
+                item["station"] = fiches.get(int(item["rang"]))
+        except Exception:
+            logging.getLogger(__name__).exception("Fiches stations-service indisponibles")
 
     return {"lieu": lieu, "amenities": amenities_par_categorie}
 
@@ -2240,6 +2251,7 @@ async def parcours_enrichi(request: Request, response: Response):
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache
         WHERE lieu_tournage_id IN ({placeholders})
+          AND categorie <> 'station_service'   -- les stations ont leur propre volet « carburants »
         ORDER BY lieu_tournage_id, categorie, distance_metres ASC
         """,
         tuple(lieu_ids),

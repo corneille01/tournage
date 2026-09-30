@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import statistics
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from db import fetch_all, fetch_one
@@ -373,3 +374,171 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
         "maj_donnees": plus_recent.isoformat() if plus_recent else None,
         "source": "prix-carburants.gouv.fr via data.economie.gouv.fr (Licence Ouverte 2.0)",
     }
+
+
+# ── Fiche complète d'une station (commodité « station_service ») ─────────────
+# Sert /api/lieux/{id}/amenities. Ne contient aucune notion d'heure courante :
+# cette route est mise en cache 1 h par le CDN, l'état « ouvert maintenant » et
+# l'âge des prix sont donc calculés côté navigateur à partir des données brutes
+# ci-dessous (horaires de la semaine, dates de mise à jour).
+
+_ORDRE_CARBURANTS = ("gazole", "e10", "sp95", "sp98", "e85", "gplc")
+
+# (mot-clé sans accent, icône FontAwesome 6, groupe). Le premier mot-clé trouvé gagne ;
+# l'ordre des groupes définit l'ordre d'affichage.
+_GROUPES_SERVICES = ("confort", "boutique", "auto", "energie", "poids_lourds", "paiement", "autre")
+_SERVICES_ICONES = (
+    ("toilette", "fa-restroom", "confort"),
+    ("douche", "fa-shower", "confort"),
+    ("espace bebe", "fa-baby", "confort"),
+    ("wifi", "fa-wifi", "confort"),
+    ("boutique alimentaire", "fa-basket-shopping", "boutique"),
+    ("boutique non alimentaire", "fa-store", "boutique"),
+    ("restauration sur place", "fa-utensils", "boutique"),
+    ("restauration a emporter", "fa-burger", "boutique"),
+    ("relais colis", "fa-box", "boutique"),
+    ("laverie", "fa-jug-detergent", "boutique"),
+    ("gonflage", "fa-wind", "auto"),
+    ("lavage", "fa-soap", "auto"),
+    ("reparation", "fa-wrench", "auto"),
+    ("location de vehicule", "fa-car", "auto"),
+    ("additif", "fa-droplet", "auto"),
+    ("carburant additive", "fa-droplet", "auto"),
+    ("borne", "fa-charging-station", "energie"),
+    ("gaz domestique", "fa-fire-flame-simple", "energie"),
+    ("petrole lampant", "fa-oil-can", "energie"),
+    ("fioul", "fa-oil-can", "energie"),
+    ("piste poids lourds", "fa-truck", "poids_lourds"),
+    ("dab", "fa-money-bill-1", "paiement"),
+    ("automate cb", "fa-credit-card", "paiement"),
+)
+
+
+def _sans_accents(texte) -> str:
+    t = unicodedata.normalize("NFD", str(texte or "").lower())
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
+def _nettoyer_services(services) -> list[str]:
+    """La source découpe certains libellés sur « / » et « , » :
+    « Automate CB 24/24 » devient « Automate CB 24 » + « 24 », et
+    « Services réparation, entretien » devient deux entrées. On les recolle."""
+    brut = [str(x).strip() for x in (services or []) if str(x).strip()]
+    bas = [_sans_accents(x) for x in brut]
+    resultat: list[str] = []
+    for i, (txt, b) in enumerate(zip(brut, bas)):
+        if b == "24" and any(y.startswith("automate cb") for y in bas):
+            continue
+        if b == "entretien" and any(y == "services reparation" for y in bas):
+            continue
+        if b.startswith("automate cb") and b.endswith("24") and "24" in bas[i + 1:i + 2]:
+            txt = "Automate CB 24/24"
+        elif b == "services reparation" and "entretien" in bas[i + 1:i + 2]:
+            txt = "Services réparation, entretien"
+        if txt not in resultat:
+            resultat.append(txt)
+    return resultat
+
+
+def _services_detailles(services) -> list[dict]:
+    """[{libelle, icone, groupe}] triés par groupe puis par ordre d'origine."""
+    sortie = []
+    for txt in _nettoyer_services(services):
+        b = _sans_accents(txt)
+        icone, groupe = "fa-circle-check", "autre"
+        for mot, ic, gr in _SERVICES_ICONES:
+            if mot in b:
+                icone, groupe = ic, gr
+                break
+        sortie.append({"libelle": txt, "icone": icone, "groupe": groupe})
+    sortie.sort(key=lambda x: _GROUPES_SERVICES.index(x["groupe"]))
+    return sortie
+
+
+def _hhmm(valeur) -> str | None:
+    m = _minutes(valeur)
+    return None if m is None else f"{m // 60:02d}:{m % 60:02d}"
+
+
+def horaires_semaine(valeur, automate=None) -> list[dict] | None:
+    """Horaires structurés du lundi au dimanche :
+    [{jour, ouvert(True/False/None), ouverture('HH:MM'), fermeture('HH:MM'), tout_le_jour}].
+    Renvoie None si la source ne donne aucun horaire exploitable."""
+    h = _horaires_dict(valeur)
+    if not h:
+        return None
+    jours = []
+    for nom in _JOURS:
+        j = h.get(nom)
+        if not isinstance(j, dict):
+            jours.append({"jour": nom, "ouvert": None, "ouverture": None, "fermeture": None, "tout_le_jour": False})
+            continue
+        ouvert_brut = str(j.get("ouvert"))
+        ouvert = False if ouvert_brut in ("0", "False", "false") else (True if ouvert_brut in ("1", "True", "true") else None)
+        o, f = _hhmm(j.get("ouverture")), _hhmm(j.get("fermeture"))
+        tout = bool(ouvert and o == "00:00" and f in ("23:59", "00:00"))
+        jours.append({"jour": nom, "ouvert": ouvert, "ouverture": o, "fermeture": f, "tout_le_jour": tout})
+    return jours
+
+
+def fiche_station(s: dict) -> dict:
+    """Toutes les informations utiles à un conducteur, à partir d'une ligne de
+    stations_carburant : identité, territoire, type de voie, automate 24/24,
+    horaires, carburants (prix, rupture, date), services."""
+    dispo = set(s.get("carburants_dispo") or [])
+    rupture = set(s.get("carburants_rupture") or [])
+    carburants = []
+    for cle in _ORDRE_CARBURANTS:
+        libelle, col, code = CARBURANTS[cle]
+        prix = s.get(col)
+        prix = float(prix) if prix is not None else None
+        en_rupture = code in rupture
+        # Le champ « fuel » de la source est parfois incomplet alors que le prix existe :
+        # un prix connu ou une rupture signalée suffit à dire que le carburant est proposé.
+        if prix is None and code not in dispo and not en_rupture:
+            continue
+        maj = _date_maj(s, cle)
+        carburants.append({
+            "cle": cle, "libelle": libelle, "prix": prix, "rupture": en_rupture,
+            "maj": maj.isoformat() if maj else None,
+        })
+    maj_station = s.get("maj_prix")
+    return {
+        "id": s.get("id"),
+        "marque": s.get("marque"),
+        "nom": _nom_station(s),
+        "adresse_complete": _adresse(s),
+        "commune": (s.get("commune") or "").title() or None,
+        "code_postal": s.get("code_postal"),
+        "code_insee": s.get("code_insee"),
+        "epci": s.get("epci_nom"),
+        "departement": s.get("dep_nom"),
+        "dep_code": s.get("dep_code"),
+        "region": s.get("region"),
+        "autoroute": s.get("type_route") == "A",
+        "automate_24_24": s.get("automate_24_24"),
+        "horaires": horaires_semaine(s.get("horaires"), s.get("automate_24_24")),
+        "carburants": carburants,
+        "services": _services_detailles(s.get("services")),
+        "maj_prix": maj_station.isoformat() if maj_station else None,
+    }
+
+
+async def fiches_stations_du_lieu(lieu_id: int) -> dict[int, dict]:
+    """{rang: fiche} pour les stations précalculées d'un lieu (categorie 'station_service').
+    Le rang sert de clé de rapprochement avec les lignes d'amenity_cache."""
+    lignes = await fetch_all(
+        """
+        SELECT ac.rang,
+               s.id, s.nom, s.marque, s.adresse, s.code_postal, s.commune, s.code_insee,
+               s.epci_nom, s.dep_code, s.dep_nom, s.region, s.type_route, s.automate_24_24,
+               s.horaires, s.carburants_dispo, s.carburants_rupture,
+               s.prix_gazole, s.prix_sp95, s.prix_sp98, s.prix_e10, s.prix_e85, s.prix_gplc,
+               s.maj_prix, s.maj_carburants, s.services
+        FROM amenity_cache ac
+        JOIN stations_carburant s ON s.id = ac.station_id
+        WHERE ac.lieu_tournage_id = %s AND ac.categorie = 'station_service'
+        """,
+        (lieu_id,),
+    )
+    return {int(l["rang"]): fiche_station(l) for l in lignes}

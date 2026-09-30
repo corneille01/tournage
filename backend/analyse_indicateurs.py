@@ -489,6 +489,7 @@ async def _charger_equipements(
             distance_metres
         FROM amenity_cache
         WHERE lieu_tournage_id = ANY(%s)
+          AND categorie <> 'station_service'
         """,
         (lieu_ids,),
     )
@@ -641,6 +642,7 @@ async def _charger_durees_routieres(
                 duree_voiture_secondes
             FROM amenity_cache
             WHERE lieu_tournage_id = ANY(%s)
+              AND categorie <> 'station_service'
               AND (
                     duree_pied_secondes IS NOT NULL
                  OR duree_voiture_secondes IS NOT NULL

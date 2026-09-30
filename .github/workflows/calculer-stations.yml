@@ -1,0 +1,53 @@
+name: Calcul stations-service proches des lieux de tournage
+
+# 100 % SQL local, aucun appel réseau. Quotidien, après l'import des prix (05h23 UTC).
+# Les distances à pied / en voiture (Géoplateforme IGN) sont ensuite calculées par
+# "Précalcul distances piéton/voiture" (06h59), qui traite toute ligne d'amenity_cache
+# dont les distances sont vides, stations comprises.
+on:
+  workflow_dispatch:
+    inputs:
+      lieu_id:
+        description: "ID d'un seul lieu à tester (laisser vide pour tous)"
+        required: false
+        default: ""
+  schedule:
+    - cron: "40 5 * * *" # tous les jours à 05h40 UTC, après l'import des prix carburants (05h23)
+
+jobs:
+  calcul-stations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install asyncpg python-dotenv
+      - name: Migration
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import asyncio, os, asyncpg
+          async def main():
+              dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
+              conn = await asyncpg.connect(dsn)
+              for fichier in ("migration_v29.sql", "migration_v30.sql"):
+                  with open(fichier, encoding="utf-8") as f:
+                      await conn.execute(f.read())
+              await conn.close()
+          asyncio.run(main())
+          PY
+      - name: Calculer les stations proches de chaque lieu
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "${{ github.event.inputs.lieu_id }}" ]; then
+            python calculer_stations_carburant.py --lieu-id ${{ github.event.inputs.lieu_id }}
+          else
+            python calculer_stations_carburant.py
+          fi

@@ -4,42 +4,31 @@ Source : data.economie.gouv.fr, jeu « Prix des carburants en France - Flux
 instantané - v2 » (API Opendatasoft Explore v2.1, Licence Ouverte 2.0).
 Une ligne = un point de vente, avec tous ses carburants et prix en colonnes.
 
-Périmètre : Occitanie + départements limitrophes par défaut. Les lieux de
-tournage proches d'une frontière régionale ont ainsi leurs vraies stations les
-plus proches, même situées de l'autre côté de la limite. L'option
---occitanie-seule restreint aux 13 départements d'Occitanie ; --france élargit
-à tout le territoire.
+CORRECTIF (erreur HTTP 400 du run #1)
+-------------------------------------
+L'ancienne version interrogeait des champs qui n'existent pas dans ce jeu
+(geo_point, dep_code, price_gazole, update, name, brand, com_arm_*, epci_*…).
+Le jeu v2 utilise notamment : geom, code_departement / departement,
+<carburant>_prix, <carburant>_maj, carburants_disponibles, ville, adresse…
+Opendatasoft répond 400 dès qu'un champ inconnu apparaît dans « where ».
 
-Champs conservés : tous ceux de l'API (identité, adresse, code INSEE, EPCI,
-département, région, autoroute/route, automate 24/24, horaires, carburants
-proposés et en rupture, prix, date de mise à jour, services).
+Cette version :
+- détecte les noms de champs à partir d'un enregistrement réel (sonde) et
+  accepte les deux vocabulaires (v2 « colonnes par carburant » et l'ancien) ;
+- n'utilise plus qu'UN seul champ dans « where » (le département) ;
+- filtre les coordonnées côté Python (plus de « geo_point IS NOT NULL ») ;
+- ne réessaie plus un 400 (erreur déterministe) et AFFICHE le message de l'API,
+  qui nomme le champ fautif ;
+- refuse d'écrire en base si aucun prix n'a pu être lu (évite de purger ou
+  de remplir la table avec des lignes vides) ;
+- déduit la date de mise à jour de la station du max des <carburant>_maj.
 
-Dates de mise à jour : chaque station porte la date de dernière mise à jour de
-ses prix (champ « update »). Elle est stockée dans maj_prix. Si l'API expose en
-plus une date par carburant (champ contenant le nom du carburant et une date),
-elle est stockée dans maj_carburants. Le serveur s'en sert pour écarter les prix
-périmés et afficher l'âge de chaque prix. L'import signale aussi une source
-figée (aucune mise à jour récente).
-
-Pagination :
-- l'endpoint /records est limité à 100 lignes par requête (limit=100) et à
-  offset + limit <= 10 000 ;
-- on découpe donc par département (dep_code), chacun tenant largement sous
-  10 000 lignes, puis on pagine par pas de 100 ;
-- les stations sans coordonnées sont ignorées (inutilisables pour une
-  recherche de proximité) ;
-- aucun « select » : on récupère tous les champs, ce qui évite de deviner leurs
-  noms exacts et permet de repérer les dates par carburant si elles existent.
-
-Sécurités :
-- si le jeu interrogé dépasse 60 000 lignes, il s'agit d'un historique et non
-  du flux instantané : l'import s'arrête (option --force pour passer outre) ;
-- les stations absentes de la synchro ne sont supprimées que si l'import couvre
-  tout le périmètre (pas d'option --departements) et atteint un volume minimal ;
-  seuls les départements du périmètre sont concernés.
+Pagination : /records est limité à 100 lignes par requête et à
+offset + limit <= 10 000 ; on découpe donc par département.
 
 Usage :
     python import_carburants.py --dry-run
+    python import_carburants.py --dry-run --diagnostic   # liste les champs reçus
     python import_carburants.py
     python import_carburants.py --departements 11,30,31,34
     python import_carburants.py --occitanie-seule
@@ -66,13 +55,13 @@ PAGE_SIZE = 100            # maximum autorisé par l'API sur /records
 OFFSET_MAX = 10_000        # offset + limit doit rester sous cette borne
 PAUSE_ENTRE_REQUETES_S = 0.15
 SEUIL_HISTORIQUE = 60_000  # au-delà : ce n'est pas le flux instantané
-SEUIL_PURGE_MIN_OCCITANIE = 300   # Occitanie seule : environ 1 000 stations, environ 1 800 avec les limitrophes
+SEUIL_PURGE_MIN_OCCITANIE = 300
 SEUIL_PURGE_MIN_FRANCE = 5_000
 SOURCE_FIGEE_JOURS = 7
 
 DEPARTEMENTS_OCCITANIE = ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
-# Départements qui touchent l'Occitanie : Ardèche, Bouches-du-Rhône, Cantal, Corrèze,
-# Dordogne, Landes, Haute-Loire, Lot-et-Garonne, Pyrénées-Atlantiques, Vaucluse.
+# Ardèche, Bouches-du-Rhône, Cantal, Corrèze, Dordogne, Landes, Haute-Loire,
+# Lot-et-Garonne, Pyrénées-Atlantiques, Vaucluse.
 DEPARTEMENTS_LIMITROPHES = ["07", "13", "15", "19", "24", "40", "43", "47", "64", "84"]
 DEPARTEMENTS_PAR_DEFAUT = DEPARTEMENTS_OCCITANIE + DEPARTEMENTS_LIMITROPHES
 DEPARTEMENTS_FRANCE = (
@@ -82,6 +71,21 @@ DEPARTEMENTS_FRANCE = (
 
 CARBURANTS_CLES = ("gazole", "sp95", "sp98", "e10", "e85", "gplc")
 PRIX_MIN, PRIX_MAX = 0.3, 6.0   # bornes de vraisemblance en EUR/L
+
+# Noms de champ possibles, dans l'ordre de préférence (v2 d'abord).
+CHAMPS_DEPARTEMENT = ("code_departement", "dep_code")
+CHAMPS_GEO = ("geom", "geo_point")
+
+
+# ─────────────────────────── utilitaires ───────────────────────────
+
+def _premier(rec: dict, *cles: str) -> Any:
+    """Première valeur non vide parmi plusieurs noms de champ possibles."""
+    for cle in cles:
+        v = rec.get(cle)
+        if v not in (None, "", [], {}):
+            return v
+    return None
 
 
 def _prix(valeur: Any) -> float | None:
@@ -96,7 +100,11 @@ def _liste(valeur: Any) -> list[str]:
     if not valeur:
         return []
     if isinstance(valeur, str):
-        return [valeur]
+        # Certains exports renvoient « Gazole;SP95 » ou « Gazole,SP95 ».
+        for sep in (";", ","):
+            if sep in valeur:
+                return [x.strip() for x in valeur.split(sep) if x.strip()]
+        return [valeur.strip()] if valeur.strip() else []
     return [str(x).strip() for x in valeur if str(x).strip()]
 
 
@@ -110,25 +118,38 @@ def _date(valeur: Any) -> datetime | None:
         return None
 
 
+def _code_dep(valeur: Any) -> str | None:
+    """'9' -> '09', ' 2a ' -> '2A'. Garantit le même format que les listes de départements."""
+    if valeur in (None, ""):
+        return None
+    s = str(valeur).strip().upper()
+    return s.zfill(2) if s.isdigit() and len(s) < 2 else s
+
+
+def _bool_oui_non(valeur: Any) -> bool | None:
+    if isinstance(valeur, bool):
+        return valeur
+    return {"oui": True, "non": False, "1": True, "0": False, "true": True, "false": False}.get(
+        str(valeur if valeur is not None else "").strip().lower()
+    )
+
+
 def _dates_par_carburant(rec: dict) -> dict[str, str]:
-    """Dates de mise à jour propres à un carburant, si l'API en fournit
-    (champ texte dont le nom contient un carburant et dont la valeur est une
-    date, hors champs de prix). Renvoie {carburant: date ISO}."""
+    """Dates de mise à jour par carburant : champs « <carburant>_maj » (v2).
+
+    On n'accepte QUE les noms finissant par « _maj » : l'ancienne détection
+    par sous-chaîne aurait pris « gazole_rupture_debut » pour une date de prix.
+    """
     trouvees: dict[str, str] = {}
-    for cle, valeur in rec.items():
-        nom = str(cle).lower()
-        if nom.startswith("price_") or not isinstance(valeur, str):
-            continue
-        for carburant in CARBURANTS_CLES:
-            if carburant in nom:
-                d = _date(valeur)
-                if d:
-                    trouvees[carburant] = d.isoformat()
+    for carburant in CARBURANTS_CLES:
+        d = _date(rec.get(f"{carburant}_maj"))
+        if d:
+            trouvees[carburant] = d.isoformat()
     return trouvees
 
 
 def _horaires(valeur: Any) -> str | None:
-    """Le champ timetable arrive sous forme de chaîne JSON (ou déjà de dict)."""
+    """Le champ horaires arrive sous forme de chaîne JSON (ou déjà de dict)."""
     if not valeur:
         return None
     if isinstance(valeur, str):
@@ -139,36 +160,82 @@ def _horaires(valeur: Any) -> str | None:
     return json.dumps(valeur, ensure_ascii=False) if isinstance(valeur, dict) else None
 
 
-def normaliser(rec: dict) -> dict | None:
-    geo = rec.get("geo_point") or {}
+def _coordonnees(rec: dict) -> tuple[float, float] | None:
+    """(lat, lon) depuis geom / geo_point ; à défaut depuis latitude / longitude."""
+    for champ in CHAMPS_GEO:
+        geo = rec.get(champ)
+        if isinstance(geo, dict):
+            try:
+                if "lat" in geo and "lon" in geo:
+                    return float(geo["lat"]), float(geo["lon"])
+                coords = geo.get("coordinates") or (geo.get("geometry") or {}).get("coordinates")
+                if coords:                       # GeoJSON : [lon, lat]
+                    return float(coords[1]), float(coords[0])
+            except (TypeError, ValueError, IndexError):
+                pass
     try:
-        lat, lon = float(geo["lat"]), float(geo["lon"])
+        lat, lon = float(rec["latitude"]), float(rec["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    # Ancien format : degrés × 100 000 (ex. 4620114 -> 46.20114).
+    if abs(lat) > 90 or abs(lon) > 180:
+        lat, lon = lat / 100_000, lon / 100_000
+    return lat, lon
+
+
+def normaliser(rec: dict) -> dict | None:
+    coord = _coordonnees(rec)
+    try:
         ident = int(rec["id"])
     except (KeyError, TypeError, ValueError):
         return None
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+    if coord is None:
         return None
-    automate = {"oui": True, "non": False}.get(str(rec.get("automate_24_24") or "").strip().lower())
+    lat, lon = coord
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):
+        return None
+
     par_carburant = _dates_par_carburant(rec)
+    maj_station = _date(rec.get("update")) or (
+        max((_date(v) for v in par_carburant.values()), default=None)
+    )
+
+    prix = {c: _prix(_premier(rec, f"{c}_prix", f"price_{c}")) for c in CARBURANTS_CLES}
+    rupture = _liste(_premier(rec, "carburants_rupture_temporaire", "shortage")) + _liste(
+        rec.get("carburants_rupture_definitive")
+    )
+    if not rupture:
+        rupture = _liste(rec.get("carburants_indisponibles"))
+
     return {
         "id": ident, "latitude": lat, "longitude": lon,
-        "nom": (rec.get("name") or None), "marque": (rec.get("brand") or None),
-        "adresse": (rec.get("address") or None), "code_postal": (rec.get("cp") or None),
-        "commune": (rec.get("com_arm_name") or None),
-        "code_insee": (rec.get("com_arm_code") or None),
-        "epci_code": (rec.get("epci_code") or None), "epci_nom": (rec.get("epci_name") or None),
-        "region_code": (rec.get("reg_code") or None),
-        "dep_code": (rec.get("dep_code") or None), "dep_nom": (rec.get("dep_name") or None),
-        "region": (rec.get("reg_name") or None),
+        "nom": _premier(rec, "name", "nom"), "marque": _premier(rec, "brand", "marque"),
+        "adresse": _premier(rec, "adresse", "address"),
+        "code_postal": _premier(rec, "cp"),
+        "commune": _premier(rec, "ville", "com_arm_name"),
+        "code_insee": _premier(rec, "com_arm_code"),
+        "epci_code": _premier(rec, "epci_code"), "epci_nom": _premier(rec, "epci_name"),
+        "region_code": _premier(rec, "code_region", "reg_code"),
+        "dep_code": _code_dep(_premier(rec, *CHAMPS_DEPARTEMENT)),
+        "dep_nom": _premier(rec, "departement", "dep_name"),
+        "region": _premier(rec, "region", "reg_name"),
         "type_route": (str(rec.get("pop") or "")[:1].upper() or None),
-        "automate": automate, "horaires": _horaires(rec.get("timetable")),
-        "dispo": _liste(rec.get("fuel")), "rupture": _liste(rec.get("shortage")),
-        "gazole": _prix(rec.get("price_gazole")), "sp95": _prix(rec.get("price_sp95")),
-        "sp98": _prix(rec.get("price_sp98")), "e10": _prix(rec.get("price_e10")),
-        "e85": _prix(rec.get("price_e85")), "gplc": _prix(rec.get("price_gplc")),
-        "maj": _date(rec.get("update")), "services": _liste(rec.get("services")),
+        "automate": _bool_oui_non(_premier(rec, "horaires_automate_24_24", "automate_24_24")),
+        "horaires": _horaires(_premier(rec, "horaires", "timetable")),
+        "dispo": _liste(_premier(rec, "carburants_disponibles", "fuel")),
+        "rupture": list(dict.fromkeys(rupture)),
+        "gazole": prix["gazole"], "sp95": prix["sp95"], "sp98": prix["sp98"],
+        "e10": prix["e10"], "e85": prix["e85"], "gplc": prix["gplc"],
+        "maj": maj_station,
+        "services": _liste(_premier(rec, "services_service", "services")),
         "maj_carburants": json.dumps(par_carburant) if par_carburant else None,
     }
+
+
+# ─────────────────────────── accès API ───────────────────────────
+
+class ErreurRequete(RuntimeError):
+    """Erreur 4xx non répétable : le message de l'API est inclus."""
 
 
 async def _get(client: httpx.AsyncClient, params: dict) -> dict:
@@ -176,10 +243,18 @@ async def _get(client: httpx.AsyncClient, params: dict) -> dict:
     for tentative in range(5):
         try:
             r = await client.get(API_URL, params=params)
+            if 400 <= r.status_code < 500 and r.status_code != 429:
+                # Erreur de requête : inutile de réessayer, et le corps de la
+                # réponse dit précisément ce qui est refusé (champ inconnu…).
+                raise ErreurRequete(
+                    f"HTTP {r.status_code} sur {r.request.url}\n  Réponse de l'API : {r.text[:600]}"
+                )
             if r.status_code in (429, 500, 502, 503, 504):
                 raise httpx.HTTPStatusError(f"HTTP {r.status_code}", request=r.request, response=r)
             r.raise_for_status()
             return r.json()
+        except ErreurRequete:
+            raise
         except (httpx.HTTPError, ValueError) as exc:
             derniere = exc
             await asyncio.sleep(2 ** tentative)
@@ -206,6 +281,16 @@ async def fetch_partition(client: httpx.AsyncClient, where: str) -> list[dict]:
             break
         await asyncio.sleep(PAUSE_ENTRE_REQUETES_S)
     return lignes
+
+
+async def fetch_departement(client: httpx.AsyncClient, champ: str, code: str) -> list[dict]:
+    """Essaie « 09 » puis « 9 » : selon le jeu, le code n'est pas toujours zéro-complété."""
+    variantes = [code] + ([code.lstrip("0")] if code.startswith("0") and code.lstrip("0") else [])
+    for valeur in variantes:
+        lignes = await fetch_partition(client, f'{champ}="{valeur}"')
+        if lignes:
+            return lignes
+    return []
 
 
 # (colonne SQL, clé du dict normalisé, conversion SQL éventuelle). Une seule liste
@@ -241,6 +326,7 @@ def _params(s: dict, synchro: datetime) -> tuple:
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="n'écrit rien en base")
+    parser.add_argument("--diagnostic", action="store_true", help="affiche les champs d'un enregistrement réel puis s'arrête")
     parser.add_argument("--departements", default="", help="liste séparée par des virgules (ex. 11,34)")
     parser.add_argument("--france", action="store_true", help="toute la France au lieu de l'Occitanie et de ses limitrophes")
     parser.add_argument("--occitanie-seule", action="store_true", help="les 13 départements d'Occitanie, sans les limitrophes")
@@ -249,14 +335,13 @@ async def main() -> int:
     load_dotenv()
 
     debut = datetime.now(timezone.utc)
-    demandes = [d.strip().upper() for d in args.departements.split(",") if d.strip()]
+    demandes = [_code_dep(d) for d in args.departements.split(",") if d.strip()]
     perimetre = (
         DEPARTEMENTS_FRANCE if args.france
         else DEPARTEMENTS_OCCITANIE if args.occitanie_seule
         else DEPARTEMENTS_PAR_DEFAUT
     )
     cibles = demandes or perimetre
-    partitions = [(d, f'dep_code="{d}" AND geo_point IS NOT NULL') for d in cibles]
     if demandes:
         libelle_perimetre = "départements " + ",".join(demandes)
     elif args.france:
@@ -268,9 +353,31 @@ async def main() -> int:
     print(f"Périmètre : {libelle_perimetre}")
 
     async with httpx.AsyncClient(timeout=60, headers={"User-Agent": "Pelify/1.0 (import carburants)"}) as client:
-        sonde = await _get(client, {"limit": 1, "select": "id"})
+        # Sonde : UN enregistrement réel, sans « select » ni « where » → aucun risque de 400
+        # lié à un nom de champ, et on apprend le vrai vocabulaire du jeu.
+        sonde = await _get(client, {"limit": 1})
         total_jeu = int(sonde.get("total_count") or 0)
         print(f"Jeu {DATASET} : {total_jeu} lignes")
+        exemples = sonde.get("results") or []
+        if not exemples:
+            print("Arrêt : le jeu ne renvoie aucun enregistrement.")
+            return 1
+        champs_recus = sorted(exemples[0].keys())
+        print(f"Champs reçus ({len(champs_recus)}) : {', '.join(champs_recus)}")
+        if args.diagnostic:
+            print(json.dumps(exemples[0], ensure_ascii=False, indent=2, default=str)[:4000])
+            return 0
+
+        champ_dep = next((c for c in CHAMPS_DEPARTEMENT if c in champs_recus), None)
+        if champ_dep is None:
+            print(
+                "Arrêt : aucun champ département reconnu "
+                f"(attendu : {', '.join(CHAMPS_DEPARTEMENT)}). Relancez avec --diagnostic "
+                "et ajoutez le bon nom dans CHAMPS_DEPARTEMENT."
+            )
+            return 3
+        print(f"Champ département utilisé : {champ_dep}")
+
         if total_jeu > SEUIL_HISTORIQUE and not args.force:
             print(
                 f"Arrêt : {total_jeu} lignes, c'est un historique et non le flux instantané "
@@ -280,8 +387,8 @@ async def main() -> int:
 
         stations: dict[int, dict] = {}
         ignorees = 0
-        for code, where in partitions:
-            lignes = await fetch_partition(client, where)
+        for code in cibles:
+            lignes = await fetch_departement(client, champ_dep, code)
             for rec in lignes:
                 s = normaliser(rec)
                 if s is None:
@@ -292,6 +399,14 @@ async def main() -> int:
             await asyncio.sleep(PAUSE_ENTRE_REQUETES_S)
 
     print(f"Total : {len(stations)} stations retenues, {ignorees} ignorées (sans coordonnées valides).")
+
+    avec_prix = sum(1 for s in stations.values() if any(s[c] is not None for c in CARBURANTS_CLES))
+    print(f"Stations avec au moins un prix lisible : {avec_prix}")
+    if stations and avec_prix == 0:
+        print("::error::Aucun prix lisible : les champs de prix ne sont pas reconnus "
+              "(attendu : <carburant>_prix). Relancez avec --diagnostic. Aucune écriture.")
+        return 4
+
     dates = sorted(s["maj"] for s in stations.values() if s["maj"])
     plus_recente = dates[-1] if dates else None
     print(f"Mise à jour la plus récente côté source : {plus_recente}")
@@ -300,8 +415,8 @@ async def main() -> int:
         vieux = sum(1 for d in dates if (debut - d).days > 30)
         print(f"Date médiane des prix : {mediane:%Y-%m-%d} ; {vieux} station(s) avec des prix de plus de 30 jours.")
     if plus_recente is None or (debut - plus_recente).days > SOURCE_FIGEE_JOURS:
-        print(f"::warning::Source possiblement figée : aucune mise à jour depuis plus de {SOURCE_FIGEE_JOURS} jours "
-              f"(dernière : {plus_recente}). Vérifiez le jeu de données interrogé.")
+        print(f"::warning::Source possiblement figée ou dates non lues : aucune mise à jour depuis plus de "
+              f"{SOURCE_FIGEE_JOURS} jours (dernière : {plus_recente}). Vérifiez les champs <carburant>_maj.")
     if args.dry_run or not stations:
         print("Simulation : aucune écriture." if args.dry_run else "Rien à écrire.")
         return 0 if stations else 1

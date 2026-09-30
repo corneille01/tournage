@@ -41,6 +41,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
+from carburants import plan_carburant, stations_autour, normaliser_carburant, CARBURANTS
 from guides import guides_recommandes, exiger_admin, SPECIALITES_VALIDES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES
 from paysages import router as paysages_router
 from droits import router as droits_router
@@ -1423,6 +1424,50 @@ def _adresse_complete(lieu: dict) -> str:
 
 
 
+# tarif_min (DATAtourisme) est le prix le plus BAS de toute la fiche : il peut
+# correspondre à une taxe de séjour, un menu enfant ou une option. En dessous
+# de ces seuils on le juge peu fiable et on ne l'utilise ni pour le score, ni
+# pour le budget, ni pour l'affichage.
+_SEUIL_TARIF_MIN_FIABLE = {"hebergement": 15.0, "restaurant": 5.0}
+_LABELS_CATEGORIE_SINGULIER = {
+    "restaurant": "restaurant", "hebergement": "hébergement", "activite": "activité",
+    "office_tourisme": "office de tourisme", "parking": "parking", "gare": "gare",
+    "aeroport": "aéroport", "refuge": "refuge", "arret_bus": "arrêt de bus",
+    "fetes_manifestations": "événement",
+}
+
+
+def _nombre(valeur):
+    try:
+        return float(valeur) if valeur is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _tarif_fiable(item, categorie):
+    mn = _nombre(item.get("tarif_min"))
+    if mn is None or mn <= 0:
+        return None
+    return mn if mn >= _SEUIL_TARIF_MIN_FIABLE.get(categorie, 0.0) else None
+
+
+def _fmt_eur(valeur):
+    txt = f"{valeur:.2f}".rstrip("0").rstrip(".")
+    return txt.replace(".", ",") + " €"
+
+
+def _libelle_tarif(item, categorie):
+    """Texte de prix honnête : dit ce que représente le chiffre affiché."""
+    mn, mx = _tarif_fiable(item, categorie), _nombre(item.get("tarif_max"))
+    if mn is not None:
+        if mx and mx > mn * 1.05:
+            return f"Tarifs relevés : de {_fmt_eur(mn)} à {_fmt_eur(mx)}"
+        return f"À partir de {_fmt_eur(mn)}"
+    if categorie == "restaurant" and mx:
+        return f"Tarifs relevés jusqu'à {_fmt_eur(mx)}"
+    return None
+
+
 _CATEGORIES_TRANSPORT = {"gare", "aeroport", "aerodrome", "arret_bus", "refuge"}
 _MOTS_VIDES = {"de", "du", "des", "la", "le", "les", "et", "en", "au", "aux", "sur", "sous", "dans", "pour", "par", "the", "of"}
 
@@ -1464,11 +1509,7 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
     if note is not None:
         score += min(25.0, max(0.0, note * 5.0))
 
-    tarif = item.get("tarif_min")
-    try:
-        tarif = float(tarif) if tarif is not None else None
-    except (TypeError, ValueError):
-        tarif = None
+    tarif = _tarif_fiable(item, categorie)
     if tarif is not None:
         if budget_level == "economique":
             score += max(0.0, 28.0 - min(tarif, 100.0) * 0.35)
@@ -1491,28 +1532,34 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
     return round(score, 2)
 
 
-def _phrase_recommandation_offre(item, categorie, profil, etape_nom, mode="driving-car", accessibilite=False):
-    """Fragment de raison, sans répéter le nom de l'étape ni celui de l'offre
-    (le front les affiche déjà). Ex. : « À 4 min à pied · à partir de 2 € »."""
-    raisons = []
+def _phrase_recommandation_offre(item, categorie, profil, etape_nom, mode="driving-car",
+                                 accessibilite=False, etape_ordre=None):
+    """Raison affichée sous la suggestion. Elle dit toujours de QUELLE étape
+    l'offre est proche (numéro et nom) et ce que représente chaque chiffre.
+    Ex. : « À 1 min en voiture de l'étape 3 - Sommières · Tarifs relevés jusqu'à 25,5 € »."""
     a_pied = mode != "driving-car"
     duree = item.get("duree_pied_secondes") if a_pied else item.get("duree_voiture_secondes")
     distance = item.get("meilleure_distance_metres") or item.get("distance_metres")
+    de_etape = ""
+    if etape_ordre:
+        de_etape = f" de l'étape {etape_ordre}" + (f" - {etape_nom}" if etape_nom else "")
+    elif etape_nom:
+        de_etape = f" de « {etape_nom} »"
+    raisons = []
     if duree is not None:
         mn = max(1, round(float(duree) / 60))
-        raisons.append(f"À {mn} min {'à pied' if a_pied else 'en voiture'}")
+        raisons.append(f"À {mn} min {'à pied' if a_pied else 'en voiture'}{de_etape}")
     elif distance is not None:
         d = float(distance)
-        raisons.append(f"À {round(d)} m" if d < 1000 else f"À {d / 1000:.1f} km")
+        raisons.append((f"À {round(d)} m" if d < 1000 else f"À {d / 1000:.1f} km".replace(".", ",")) + de_etape)
     else:
-        raisons.append("Proche de l'étape")
-    if item.get("tarif_min") is not None:
-        t = float(item["tarif_min"])
-        raisons.append("gratuit" if t == 0 else f"à partir de {t:g} €")
-        if profil == "economique":
-            raisons[-1] += " (adapté à un budget serré)"
-    if item.get("note_etoiles") is not None:
-        raisons.append(f"{float(item['note_etoiles']):g} étoile(s)")
+        raisons.append(f"Proche{de_etape}" if de_etape else "Proche de l'étape")
+    libelle = _libelle_tarif(item, categorie)
+    if libelle:
+        raisons.append(libelle + (" (budget serré)" if profil == "economique" and _tarif_fiable(item, categorie) else ""))
+    note = _nombre(item.get("note_etoiles"))
+    if note is not None:
+        raisons.append(f"{note:g} étoile(s)")
     texte_access = " ".join(str(item.get(k) or "") for k in ("equipements", "labels_qualite", "lien_accessibilite")).lower()
     if accessibilite and (item.get("lien_accessibilite") or any(x in texte_access for x in ("pmr", "accessible", "handicap"))):
         raisons.append("accessibilité renseignée")
@@ -1550,7 +1597,12 @@ def _recommandations_par_etape(etapes, categories, par_etape, budget_level, acce
             if meilleur["score_personnalise"] < seuil:
                 continue
             rec = dict(meilleur)
-            rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom"), mode, accessibilite)
+            rec["etape_id"] = int(etape["id"])
+            rec["etape_ordre"] = idx + 1
+            rec["etape_nom"] = etape.get("nom")
+            rec["categorie_label"] = _LABELS_CATEGORIE_SINGULIER.get(categorie, categorie)
+            rec["tarif_libelle"] = _libelle_tarif(rec, categorie)
+            rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom"), mode, accessibilite, idx + 1)
             rec["action_url"] = rec.get("site_web") or None
             rec["action_label"] = "Voir / réserver" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
             propositions.append(rec)
@@ -1814,6 +1866,30 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
 
 
 
+@app.get("/api/carburants/autour")
+async def api_carburants_autour(
+    lat: float = Query(..., ge=-90, le=90), lon: float = Query(..., ge=-180, le=180),
+    rayon_km: float = Query(10, gt=0, le=30), carburant: str = Query("e10"),
+    limite: int = Query(20, ge=1, le=50),
+):
+    """Stations les moins chères autour d'un point (données importées chaque jour)."""
+    cle = normaliser_carburant(carburant)
+    if not cle:
+        raise HTTPException(400, f"Carburant inconnu. Valeurs : {', '.join(CARBURANTS)}")
+    r = await stations_autour(lat, lon, rayon_km * 1000, cle)
+    stations = sorted(r["stations"], key=lambda x: (x["prix"], x["distance_m"]))[:limite]
+    return {
+        "carburant": cle, "nb_stations": r["nb_total"], "nb_rupture": r["nb_rupture"],
+        "stations": [{
+            "id": x["id"], "nom": x.get("nom") or x.get("marque"), "marque": x.get("marque"),
+            "adresse": x.get("adresse"), "commune": x.get("commune"),
+            "latitude": float(x["latitude"]), "longitude": float(x["longitude"]),
+            "prix": x["prix"], "distance_m": round(x["distance_m"]),
+            "maj_prix": x["maj_prix"].isoformat() if x.get("maj_prix") else None,
+        } for x in stations],
+    }
+
+
 @app.get("/api/geocodage")
 async def api_geocodage(q: str = Query(..., min_length=3, max_length=200)):
     """Recherche d'adresse via le service de géocodage IGN.
@@ -1995,6 +2071,9 @@ async def parcours_enrichi(request: Request, response: Response):
     date_sortie = str(body.get("date_sortie") or "")
     budget_max_euros = body.get("budget_max_euros")
     inclure_guides = bool(body.get("inclure_guides", True))
+    carburant = body.get("carburant") or "e10"          # "aucun" désactive le volet carburant
+    consommation_l_100km = body.get("consommation_l_100km")
+    inclure_carburant = bool(body.get("inclure_carburant", True))
     langue_guide = body.get("langue") or None
     if langue_guide is not None:
         langue_guide = str(langue_guide).strip()[:20] or None
@@ -2214,6 +2293,7 @@ async def parcours_enrichi(request: Request, response: Response):
     for categorie, items in categories.items():
         for item in items:
             item["score_personnalise"] = _profil_score_offre(item, categorie, budget_level, accessibilite, mode)
+            item["tarif_libelle"] = _libelle_tarif(item, categorie)
         items.sort(key=lambda x: (x.get("score_personnalise", 0), -(x.get("meilleure_distance_metres") or 10**9)), reverse=True)
         categories[categorie] = items[:limite]
 
@@ -2313,17 +2393,37 @@ async def parcours_enrichi(request: Request, response: Response):
         else duree_totale_estimee <= temps_disponible_minutes * 60
     )
 
-    # Budget indicatif : uniquement les tarifs minimum renseignés par les
-    # sources. Pelify ne transforme jamais une absence de tarif en prix inventé.
+    # Volet carburant : prix des stations autour du départ et de chaque étape.
+    carburants = None
+    if inclure_carburant and mode == "driving-car":
+        try:
+            carburants = await plan_carburant(
+                depart=depart_effectif, etapes=etapes, planning_horaire=planning_horaire,
+                distance_m=(resultat_route or {}).get("distance_metres"),
+                carburant=carburant, consommation=consommation_l_100km,
+                date_sortie=date_sortie, heure_depart=heure_depart, mode=mode,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("Volet carburant indisponible")
+            carburants = None
+
+    # Budget indicatif : offre la moins chère parmi celles dont le tarif est
+    # jugé fiable (voir _tarif_fiable), plus le carburant estimé. Pelify ne
+    # transforme jamais une absence de tarif en prix inventé.
     budget_items = []
     for categorie in ("restaurant", "activite", "hebergement"):
-        items = categories.get(categorie) or []
-        if items:
-            item = min(items, key=lambda x: float(x.get("tarif_min")) if x.get("tarif_min") is not None else 10**9)
-            if item.get("tarif_min") is not None:
-                try:
-                    budget_items.append({"categorie": categorie, "nom": item.get("nom"), "tarif_min": float(item.get("tarif_min")), "devise": item.get("devise") or "EUR"})
-                except (TypeError, ValueError): pass
+        candidats = [(_tarif_fiable(x, categorie), x) for x in (categories.get(categorie) or [])]
+        candidats = [(p, x) for p, x in candidats if p is not None]
+        if candidats:
+            prix, item = min(candidats, key=lambda t: t[0])
+            budget_items.append({"categorie": categorie, "nom": item.get("nom"), "tarif_min": prix,
+                                 "devise": item.get("devise") or "EUR"})
+    if carburants and carburants.get("actif") and carburants.get("cout_estime_eur") is not None:
+        budget_items.append({
+            "categorie": "carburant", "estimation": True, "devise": "EUR",
+            "nom": f"{carburants['carburant_libelle']}, {carburants['litres_estimes']} L estimés",
+            "tarif_min": float(carburants["cout_estime_eur"]),
+        })
     budget_estime_euros = round(sum(x["tarif_min"] for x in budget_items), 2) if budget_items else None
     budget_max_respecte = None if budget_max_euros is None or budget_estime_euros is None else budget_estime_euros <= budget_max_euros
 
@@ -2365,6 +2465,7 @@ async def parcours_enrichi(request: Request, response: Response):
         "amenities": categories,
         "amenities_par_etape": par_etape,
         "recommandations_par_etape": recommandations_par_etape,
+        "carburants": carburants,
         "labels_categories": _LABELS_CATEGORIE,
         "icones_categories": ICONES_CATEGORIE,
     }

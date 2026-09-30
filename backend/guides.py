@@ -1,10 +1,15 @@
-"""backend/guides.py — Annuaire des guides et médiateurs cinétouristiques."""
+"""backend/guides.py - Annuaire des guides et médiateurs cinétouristiques."""
 from __future__ import annotations
 
+import logging
 import os
+
+import httpx
 from fastapi import HTTPException, Request
-from db import fetch_all
+from db import execute, fetch_all
 from overpass import haversine_metres
+
+logger = logging.getLogger(__name__)
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 
@@ -18,6 +23,54 @@ TYPES_GUIDE_VALIDES = {
     "guide_conferencier", "mediateur_culturel", "accompagnateur",
     "historien", "passionne_cinema", "autre",
 }
+
+FONCTIONS_GUIDE = {
+    "guide_conferencier": "Guide-conférencier",
+    "mediateur_culturel": "Médiateur culturel",
+    "accompagnateur": "Accompagnateur",
+    "historien": "Historien",
+    "passionne_cinema": "Passionné de cinéma",
+    "autre": "Guide / agence de visites",
+}
+SPECIALITES_LIBELLES = {
+    "cinema": "Cinéma", "series": "Séries", "histoire": "Histoire", "architecture": "Architecture",
+    "patrimoine": "Patrimoine", "paysage": "Paysage", "culture_populaire": "Culture populaire",
+    "production_audiovisuelle": "Production audiovisuelle", "photographie": "Photographie",
+    "gastronomie": "Gastronomie",
+}
+GEOCODAGE_INVERSE_URL = "https://data.geopf.fr/geocodage/reverse"
+
+
+def fonction_guide(type_guide: str | None) -> str:
+    return FONCTIONS_GUIDE.get(str(type_guide or ""), "Guide / médiateur")
+
+
+async def _localiser(guide: dict) -> tuple[str | None, str | None]:
+    """Adresse et commune d'un guide. Lues en base si connues, sinon obtenues
+    une fois par géocodage inverse IGN puis mémorisées (le point est celui
+    déclaré par le guide : c'est son lieu d'activité, pas forcément son domicile)."""
+    if guide.get("adresse") or guide.get("commune"):
+        return guide.get("adresse"), guide.get("commune")
+    try:
+        async with httpx.AsyncClient(timeout=6) as client:
+            r = await client.get(GEOCODAGE_INVERSE_URL, params={
+                "lon": guide["longitude"], "lat": guide["latitude"], "index": "poi,address", "limit": 1})
+            r.raise_for_status()
+            props = ((r.json().get("features") or [{}])[0]).get("properties") or {}
+    except Exception:
+        logger.warning("Géocodage inverse indisponible pour le guide %s", guide.get("id"))
+        return None, None
+    commune = props.get("city") or props.get("municipality")
+    adresse = props.get("label") or None
+    if commune or adresse:
+        try:
+            await execute("UPDATE guides SET adresse = COALESCE(adresse, %s), commune = COALESCE(commune, %s), "
+                          "code_postal = COALESCE(code_postal, %s) WHERE id = %s",
+                          (adresse, commune, props.get("postcode"), guide["id"]))
+        except Exception:
+            logger.warning("Mémorisation de l'adresse impossible pour le guide %s", guide.get("id"))
+    return adresse, commune
+
 
 _MODE_VERS_MOBILITE = {
     "foot-walking": "pied",
@@ -75,14 +128,20 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
     if not etapes:
         return []
 
-    guides = await fetch_all("""
+    requete = """
         SELECT id, nom, type_guide, bio, specialites, langues, publics,
                mobilite, latitude, longitude, rayon_intervention_km,
                capacite_max, tarif_indicatif, site_web, lien_contact,
-               photo_url, source_donnee
+               photo_url, source_donnee{extra}
         FROM guides
         WHERE statut = 'actif'
-    """)
+    """
+    try:
+        guides = await fetch_all(requete.format(extra=", adresse, commune"))
+    except Exception:
+        # Migration v29 pas encore appliquée : on continue sans adresse en base.
+        logger.warning("Colonnes adresse/commune absentes de guides (migration v29 à appliquer)")
+        guides = await fetch_all(requete.format(extra=""))
     if not guides:
         return []
 
@@ -93,12 +152,15 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         except (TypeError, ValueError, KeyError):
             continue
 
-        distances = []
-        for etape in etapes:
+        distances, par_etape = [], []
+        for ordre, etape in enumerate(etapes, start=1):
             try:
-                distances.append(haversine_metres(glat, glon, float(etape["latitude"]), float(etape["longitude"])))
+                d = haversine_metres(glat, glon, float(etape["latitude"]), float(etape["longitude"]))
             except (TypeError, ValueError, KeyError):
                 continue
+            distances.append(d)
+            par_etape.append({"ordre": ordre, "nom": etape.get("nom"), "distance_metres": round(d),
+                              "distance_km": round(d / 1000.0, 1)})
         if not distances:
             continue
 
@@ -111,6 +173,12 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         score = _score_guide(guide, distance_min, mode, langue, nb_personnes)
         resultats.append({
             "id": guide["id"], "nom": guide["nom"], "type_guide": guide["type_guide"],
+            "fonction": fonction_guide(guide["type_guide"]),
+            "specialites_libelles": [SPECIALITES_LIBELLES.get(s, str(s).replace("_", " ").capitalize())
+                                     for s in (guide.get("specialites") or [])],
+            "adresse": guide.get("adresse"), "commune": guide.get("commune"),
+            "latitude": glat, "longitude": glon, "distances_etapes": par_etape,
+            "etape_la_plus_proche": min(par_etape, key=lambda x: x["distance_metres"]),
             "bio": guide.get("bio"), "specialites": guide.get("specialites") or [],
             "langues": guide.get("langues") or [], "publics": guide.get("publics") or [],
             "mobilite": guide.get("mobilite") or [], "tarif_indicatif": guide.get("tarif_indicatif"),
@@ -131,8 +199,10 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         resultats.sort(key=lambda x: (-x["_score"], x["distance_metres"], x["nom"].lower()))
     else:
         for r in resultats:
-            r["correspondance"] = "Le plus proche de votre parcours — hors de sa zone habituelle, à confirmer avec lui"
+            r["correspondance"] = "Le plus proche de votre parcours - hors de sa zone habituelle, à confirmer avec lui"
         resultats.sort(key=lambda x: (x["distance_metres"], x["nom"].lower()))
+    resultats = resultats[:limite]
     for resultat in resultats:
         resultat.pop("_score", None)
-    return resultats[:limite]
+        resultat["adresse"], resultat["commune"] = await _localiser(resultat)
+    return resultats

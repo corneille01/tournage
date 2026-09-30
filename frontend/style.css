@@ -1458,3 +1458,33 @@ body.page-film-ssr {
 i.fa-solid, i.fa-regular { line-height: 1; }
 .fa-c-vert { color: #3ddc84; } .fa-c-orange { color: #ff9f1c; } .fa-c-rouge { color: #e63946; }
 .icone-tournage i, .icone-commodite i, .marqueur-depart i { pointer-events: none; }
+/* ── Suggestions, carburant et départ sur la carte du parcours ── */
+.icone-commodite.recommande {
+  position: relative; background: #7c3aed; border: 3px solid #ffd60a;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.35), 0 3px 8px rgba(0,0,0,0.6);
+}
+.icone-commodite.recommande .badge-reco {
+  position: absolute; top: -9px; right: -9px; width: 17px; height: 17px;
+  border-radius: 50%; background: #ffd60a; color: #4c1d95; font-size: 9px;
+  display: flex; align-items: center; justify-content: center; border: 1px solid #fff;
+}
+.icone-commodite.carburant { background: #f97316; border-color: #fff; }
+.mp-pastille { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+.mp-pastille.reco { background: #7c3aed; box-shadow: 0 0 0 2px #ffd60a; }
+.mp-pastille.carburant { background: #f97316; }
+.mp-legende { font-size: 12px; opacity: .85; margin: 4px 0 8px; }
+.mp-reco-card.mp-reco-suggestion { border-left: 4px solid #7c3aed; }
+.mp-carburant { border-left: 4px solid #f97316; padding-left: 10px; margin: 14px 0; }
+.mp-carburant p { margin: 6px 0; }
+.mp-carburant-alerte { color: #b45309; }
+.mp-carburant-point h4 { margin: 10px 0 4px; font-size: 14px; }
+.mp-carburant-point h4 small { font-weight: 400; opacity: .8; }
+.mp-carburant-point ul { list-style: none; margin: 0; padding: 0; }
+.mp-carburant-point li { padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.25); }
+.mp-carburant-point li.meilleure b:first-child { color: #f97316; }
+.mp-carburant-point li small { display: block; opacity: .85; }
+.mp-prix { font-weight: 700; margin-left: 6px; }
+.mp-carburant-source { display: block; opacity: .7; margin-top: 8px; }
+.mp-guide-distances ul { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
+.mp-guide-distances summary { cursor: pointer; font-size: 12px; }
+.mp-carburant-bloc.hidden { display: none; }

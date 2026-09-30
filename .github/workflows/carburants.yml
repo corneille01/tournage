@@ -1,0 +1,59 @@
+name: Import prix des carburants
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Simulation (n'écrit rien en base)"
+        type: boolean
+        default: true
+      departements:
+        description: "Départements à importer, séparés par des virgules (vide = toute l'Occitanie)"
+        type: string
+        default: ""
+      france:
+        description: "Toute la France au lieu de l'Occitanie"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "23 5 * * *" # chaque jour à 05h23 UTC
+
+jobs:
+  import-carburants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install asyncpg httpx python-dotenv
+      - name: Migration
+        if: ${{ github.event_name == 'schedule' || inputs.dry_run == false }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import asyncio, os, asyncpg
+          async def main():
+              dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
+              conn = await asyncpg.connect(dsn)
+              with open("backend/migration_v29.sql", encoding="utf-8") as f:
+                  await conn.execute(f.read())
+              await conn.close()
+          asyncio.run(main())
+          PY
+      - name: Import carburants
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+            [ -n "${{ inputs.departements }}" ] && ARGS="$ARGS --departements ${{ inputs.departements }}"
+            [ "${{ inputs.france }}" = "true" ] && ARGS="$ARGS --france"
+          fi
+          echo "Arguments : $ARGS"
+          python import_carburants.py $ARGS

@@ -4,6 +4,7 @@
 const API_BASE = "";
 const MON_PARCOURS_STORAGE_KEY = "pelify_mon_parcours_v41";
 const MON_PARCOURS_OPTIONS_KEY = "pelify_mon_parcours_options_v43";
+let filtreBorneElectrique = false;     // true = n'afficher que les stations avec borne de recharge
 
 // Doit rester synchronisé avec ICONES_CATEGORIE dans backend/overpass.py
 // ════ AMAZON PAR MARCHÉ (détection navigateur) ════
@@ -1138,10 +1139,10 @@ function ouvrirPopupLieu(film, lieu) {
   // catégorie) - "activite" suit exactement les mêmes règles que les
   // autres (liste, plus proche en évidence, total dans le rayon) ; en
   // plus de la liste, elle affiche aussi les points sur la carte.
-  const conteneurBoutons = document.getElementById("popup-boutons");
+    const conteneurBoutons = document.getElementById("popup-boutons");
   conteneurBoutons.innerHTML = Object.entries(ICONES_CATEGORIE)
     .map(([cle, info]) => `
-      <button data-categorie="${cle}" style="border-color:${info.couleur}">
+      <button type="button" data-categorie="${cle}" aria-pressed="false" style="border-color:${info.couleur}">
         <span class="icone-btn">${info.emoji}</span> ${info.label}
       </button>
     `).join("");
@@ -1149,18 +1150,19 @@ function ouvrirPopupLieu(film, lieu) {
     btn.addEventListener("click", () => afficherCategorie(btn.dataset.categorie));
     if (memeLieu && btn.dataset.categorie === derniereCategorieAffichee) {
       btn.classList.add("actif");
+      btn.setAttribute("aria-pressed", "true");
     }
   });
 
   document.getElementById("popup-overlay").classList.remove("hidden");
   mettreAJourCompteurMonParcours();
   // Affichage automatique de l'isochrone par défaut :
-// voiture + 10 minutes.
-afficherIsochronePourLieu(
-  lieu.id,
-  modeIsochroneCourant,
-  minutesIsochroneCourantes
-);
+    // voiture + 10 minutes.
+        afficherIsochronePourLieu(
+      lieu.id,
+      modeIsochroneCourant,
+      minutesIsochroneCourantes
+    );
 }
 
 function fermerPopup() {
@@ -1184,6 +1186,14 @@ async function _recupererAmenities(lieuId) {
 // ── Clic sur un bouton catégorie (hébergement, resto, etc.) ──────
 let modeTriCourant = "pied"; // "pied", "voiture" - plus de vol d'oiseau
 let dernieresDonneesAmenities = null; // pour retrier sans refaire l'appel réseau
+// Fait défiler jusqu'au premier résultat de la catégorie (le plus proche, car la liste est triée)
+function _allerAuPremierResultat() {
+  const conteneur = document.getElementById("popup-resultats");
+  if (!conteneur) return;
+  const cible = conteneur.querySelector(".resultat-item") || conteneur;
+  cible.style.scrollMarginTop = "12px";
+  requestAnimationFrame(() => cible.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
 
 async function afficherCategorie(categorie) {
   const popupOverlay = document.getElementById("popup-overlay");
@@ -1194,6 +1204,7 @@ async function afficherCategorie(categorie) {
 
   modeTriCourant = "pied"; // repart du mode par défaut à chaque catégorie choisie
   triStation = "pied";
+  filtreBorneElectrique = false;
   if (categorie === "station_service" && !carburantStationInitialise) {
     // Par défaut, on reprend le carburant choisi dans le planificateur de parcours (s'il y en a un).
     carburantStationInitialise = true;
@@ -1204,16 +1215,22 @@ async function afficherCategorie(categorie) {
   effacerTrace();
 
   document.querySelectorAll("#popup-boutons button").forEach((bouton) => {
-    bouton.classList.toggle("actif", bouton.dataset.categorie === categorie);
+    const actif = bouton.dataset.categorie === categorie;
+    bouton.classList.toggle("actif", actif);
+    bouton.setAttribute("aria-pressed", String(actif));
   });
 
   const conteneur = document.getElementById("popup-resultats");
   conteneur.innerHTML = `<p style="color:#9a9ea8;">Chargement…</p>`;
-  conteneur.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
   const data = await _recupererAmenities(lieuId);
+
+  // Un autre bouton a été cliqué pendant le chargement : on abandonne ce rendu périmé
+  if (derniereCategorieAffichee !== categorie) return;
+
   if (!data) {
     conteneur.innerHTML = `<p style="color:#9a9ea8;">Données indisponibles pour ce lieu.</p>`;
+    _allerAuPremierResultat();
     return;
   }
 
@@ -1225,11 +1242,13 @@ async function afficherCategorie(categorie) {
     conteneur.innerHTML = categorie === "station_service"
       ? `<p style="color:#9a9ea8;">Aucune station-service n'est encore référencée autour de ce lieu.</p>`
       : `<p style="color:#9a9ea8;">Aucun résultat nommé trouvé à proximité.</p>`;
+    _allerAuPremierResultat();
     return;
   }
 
   dernieresDonneesAmenities = { categorie, items, stats, phrases };
   _rendreCategorie();
+  _allerAuPremierResultat();   // ← arrive sur le premier élément (ex. le premier logement)
 }
 
 // ── Stations-service : fiche détaillée (prix, ruptures, horaires, services) ──────────────
@@ -1342,10 +1361,44 @@ function _htmlServicesStation(st) {
       `<span class="station-service"><i class="fa-solid ${/^fa-[a-z0-9-]+$/.test(x.icone || "") ? x.icone : "fa-circle-check"}" aria-hidden="true"></i> ${escapeHtml(x.libelle)}</span>`).join("")}</div></div>`).join("");
   return `<details class="station-details"><summary>Services (${services.length})</summary>${blocs}</details>`;
 }
+function _aBorneElectrique(item) {
+  const st = item?.station;
+  if (!st) return false;
+  if (st.borne_electrique === true) return true;
+  return (st.services || []).some((x) =>
+    /(borne|recharge|irve).{0,25}(électrique|electrique|véhicule|vehicule)|^borne/i.test(String(x.libelle || ""))
+  );
+}
+
+const BADGE_PLUS_PROCHE = `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> La plus proche</span>`;
+
+function _plusProcheParMode(items, cleDistance) {
+  const valides = items.filter((i) => i[cleDistance] != null && Number.isFinite(Number(i[cleDistance])));
+  if (!valides.length) return null;
+  return valides.reduce((a, b) => (Number(b[cleDistance]) < Number(a[cleDistance]) ? b : a));
+}
+
+// Remplace la dépendance au backend (phrases_pied_voiture) : calculé depuis les items.
+function _htmlPhrasesPiedVoiture(items, phrases) {
+  const ligne = (icone, label, item, cleDist, cleDuree, texteServeur) => {
+    if (item) {
+      const duree = item[cleDuree] != null ? ` (${formatDuree(item[cleDuree])})` : "";
+      return `<p><b><i class="fa-solid ${icone}" aria-hidden="true"></i> ${label} :</b> ${escapeHtml(item.nom)} · ${formatDistance(item[cleDist])}${duree} ${BADGE_PLUS_PROCHE}</p>`;
+    }
+    if (texteServeur) return `<p><b><i class="fa-solid ${icone}" aria-hidden="true"></i> ${label} :</b> ${texteServeur}</p>`;
+    return "";
+  };
+  const html =
+    ligne("fa-person-walking", "À pied", _plusProcheParMode(items, "distance_pied_metres"), "distance_pied_metres", "duree_pied_secondes", phrases?.pied?.texte) +
+    ligne("fa-car", "En voiture", _plusProcheParMode(items, "distance_voiture_metres"), "distance_voiture_metres", "duree_voiture_secondes", phrases?.voiture?.texte);
+  return `<div class="phrase-recommandation phrases-pied-voiture">${
+    html || `<p class="station-note">Distances à pied et en voiture indisponibles pour le moment.</p>`
+  }</div>`;
+}
 
 function _rendreStations() {
   if (!dernieresDonneesAmenities) return;
-  const { items } = dernieresDonneesAmenities;
+  const { items, phrases } = dernieresDonneesAmenities;
   const conteneur = document.getElementById("popup-resultats");
   const couleur = ICONES_CATEGORIE.station_service.couleur;
   const cle = carburantStationChoisi;
@@ -1353,12 +1406,22 @@ function _rendreStations() {
   if (triStation === "prix" && !cle) triStation = "pied";
 
   const distanceDe = (it) => (triStation === "voiture" ? it.distance_voiture_metres : it.distance_pied_metres) ?? it.distance_metres ?? Infinity;
+
   let affiches = [...items];
   let masquees = 0;
-  if (cle) {
-    affiches = items.filter((it) => _vendEnStation(it, cle));
-    masquees = items.length - affiches.length;
+  let masqueesBorne = 0;
+
+  if (filtreBorneElectrique) {
+    const avant = affiches.length;
+    affiches = affiches.filter(_aBorneElectrique);
+    masqueesBorne = avant - affiches.length;
   }
+  if (cle) {
+    const avant = affiches.length;
+    affiches = affiches.filter((it) => _vendEnStation(it, cle));
+    masquees = avant - affiches.length;
+  }
+
   affiches.sort((a, b) => {
     if (triStation === "prix" && cle) {
       const pa = _carburantStation(a, cle).prix, pb = _carburantStation(b, cle).prix;
@@ -1367,6 +1430,7 @@ function _rendreStations() {
     const da = distanceDe(a), db = distanceDe(b);
     return da === db ? 0 : (da < db ? -1 : 1);
   });
+
   const prixMin = cle && affiches.length ? Math.min(...affiches.map((it) => _carburantStation(it, cle).prix)) : null;
   const modeCarte = triStation === "voiture" ? "voiture" : "pied";
 
@@ -1377,10 +1441,14 @@ function _rendreStations() {
     ["voiture", "Trier en voiture", "fa-car", false],
     ["prix", "Moins cher", "fa-euro-sign", !cle],
   ].map(([k, l, ic, off]) => `<button type="button" class="mode-btn ${triStation === k ? "actif" : ""}" data-tri-station="${k}" ${off ? 'disabled title="Choisissez d\'abord un carburant"' : ""}><i class="fa-solid ${ic}" aria-hidden="true"></i> ${l}</button>`).join("");
+  const boutonBorne = `<button type="button" class="mode-btn ${filtreBorneElectrique ? "actif" : ""}" data-filtre-borne="1" aria-pressed="${filtreBorneElectrique}"><i class="fa-solid fa-charging-station" aria-hidden="true"></i> Bornes électriques</button>`;
+
   const barre = `<div class="station-filtres">
       <span class="station-label">Carburant</span><div class="selecteur-mode">${chips}</div>
-      <span class="station-label">Tri</span><div class="selecteur-mode">${tris}</div>
+      <span class="station-label">Tri</span><div class="selecteur-mode">${tris}${boutonBorne}</div>
     </div>`;
+
+  const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
 
   const cartes = affiches.map((item, index) => {
     const st = item.station || null;
@@ -1389,8 +1457,9 @@ function _rendreStations() {
     const moinsCher = c && c.prix === prixMin && affiches.length > 1;
     const statut = _statutOuvertureStation(st);
     const badges = [
-      plusProche ? `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> La plus proche</span>` : "",
+      plusProche ? BADGE_PLUS_PROCHE : "",
       moinsCher ? `<span class="station-badge prix"><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Le moins cher de la liste</span>` : "",
+      _aBorneElectrique(item) ? `<span class="station-badge"><i class="fa-solid fa-charging-station" aria-hidden="true"></i> Borne électrique</span>` : "",
       st?.autoroute ? `<span class="station-badge">Autoroute</span>` : "",
       st?.automate_24_24 === true ? `<span class="station-badge"><i class="fa-solid fa-credit-card" aria-hidden="true"></i> Automate CB 24h/24</span>` : "",
       statut ? `<span class="station-badge ${statut.etat}">${escapeHtml(statut.texte)}</span>` : "",
@@ -1412,19 +1481,28 @@ function _rendreStations() {
         <div class="boutons-itineraire">
           <button class="btn-itineraire" data-mode="foot-walking" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
           <button class="btn-itineraire" data-mode="driving-car" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
-          <a class="station-lien-maps" href="https://www.google.com/maps/dir/?api=1&destination=${Number(item.latitude)},${Number(item.longitude)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-diamond-turn-right" aria-hidden="true"></i> Ouvrir dans Maps</a>
         </div>
         <div class="itineraire-resultat"></div>
       </div>`;
   }).join("");
 
-  const vide = !affiches.length
-    ? `<p class="station-note">Aucune station de cette liste ne propose du ${escapeHtml(libelleCarburant)} à ce jour. Essayez « Tous » ou un autre carburant.</p>`
-    : "";
-  const note = masquees ? `<p class="station-note">${masquees} station(s) masquée(s) : ${escapeHtml(libelleCarburant)} non proposé ou en rupture.</p>` : "";
+  let vide = "";
+  if (!affiches.length) {
+    if (filtreBorneElectrique && !items.some(_aBorneElectrique)) {
+      vide = `<p class="station-note">Aucune station de cette liste n'indique de borne de recharge électrique. Désactivez « Bornes électriques » pour revoir toutes les stations.</p>`;
+    } else if (cle) {
+      vide = `<p class="station-note">Aucune station de cette liste ne propose du ${escapeHtml(libelleCarburant)}${filtreBorneElectrique ? " avec borne électrique" : ""} à ce jour. Essayez « Tous » ou un autre carburant.</p>`;
+    } else {
+      vide = `<p class="station-note">Aucune station ne correspond à ces critères.</p>`;
+    }
+  }
+  const notes = [
+    masqueesBorne ? `<p class="station-note">${masqueesBorne} station(s) masquée(s) : pas de borne électrique indiquée.</p>` : "",
+    masquees ? `<p class="station-note">${masquees} station(s) masquée(s) : ${escapeHtml(libelleCarburant)} non proposé ou en rupture.</p>` : "",
+  ].join("");
   const source = `<small class="station-source">Prix relevés sur prix-carburants.gouv.fr (Licence Ouverte 2.0), mis à jour chaque jour : ils peuvent avoir changé à la pompe. Pour un carburant peu courant (E85, GPLc), une station plus éloignée peut être ajoutée à la liste.</small>`;
 
-  conteneur.innerHTML = barre + vide + note + cartes + source;
+  conteneur.innerHTML = barre + blocPhrases + vide + notes + cartes + source;
 
   conteneur.querySelectorAll("[data-carb]").forEach((b) => b.addEventListener("click", () => {
     carburantStationChoisi = b.dataset.carb || null;
@@ -1436,12 +1514,17 @@ function _rendreStations() {
     triStation = b.dataset.triStation;
     _rendreStations();
   }));
+  conteneur.querySelector("[data-filtre-borne]")?.addEventListener("click", () => {
+    filtreBorneElectrique = !filtreBorneElectrique;
+    _rendreStations();
+  });
   conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
     btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
   });
 
   afficherCommoditesSurCarte("station_service", affiches, null, modeCarte);
 }
+
 
 function _rendreCategorie() {
   if (!dernieresDonneesAmenities) return;
@@ -1452,15 +1535,9 @@ function _rendreCategorie() {
   const couleur = infoCategorie.couleur || "#e63946";
   const resume = creerResumeRecherche(stats, items.length);
 
-  // Les 2 phrases essentielles (à pied / en voiture), toujours visibles
-  const blocPhrases = `
-    <div class="phrase-recommandation phrases-pied-voiture">
-      ${phrases.pied ? `<p><b><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied :</b> ${phrases.pied.texte}</p>` : ""}
-      ${phrases.voiture ? `<p><b><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture :</b> ${phrases.voiture.texte}</p>` : ""}
-    </div>
-  `;
+  // Message pied / voiture : toujours affiché, calculé côté client
+  const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
 
-  // Boutons de tri groupé, juste après les phrases
   const selecteurTri = `
     <div class="selecteur-mode">
       <button class="mode-btn ${modeTriCourant === "pied" ? "actif" : ""}" data-mode="pied"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Trier à pied</button>
@@ -1468,7 +1545,6 @@ function _rendreCategorie() {
     </div>
   `;
 
-  // Tri selon le mode choisi (données déjà précalculées, aucun appel réseau)
   const cleDistance = modeTriCourant === "pied" ? "distance_pied_metres" : "distance_voiture_metres";
   const itemsTries = [...items].sort((a, b) => {
     const da = a[cleDistance] ?? Infinity;
@@ -1477,11 +1553,12 @@ function _rendreCategorie() {
   });
 
   const liste = itemsTries.map((item, index) => {
-    const estPlusProche = index === 0;
+    const estPlusProche = index === 0 && item[cleDistance] != null;
     return `
       <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
         ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
-        <div class="nom">${estPlusProche ? "<i class='fa-solid fa-star' aria-hidden='true'></i> " : ""}${item.nom}${item.note_etoiles ? ` <span class="etoiles">${"<i class='fa-solid fa-star' aria-hidden='true'></i>".repeat(Math.round(item.note_etoiles))}</span>` : ""}</div>
+        <div class="nom">${item.nom}${item.note_etoiles ? ` <span class="etoiles">${"<i class='fa-solid fa-star' aria-hidden='true'></i>".repeat(Math.round(item.note_etoiles))}</span>` : ""}</div>
+        ${estPlusProche ? `<div class="station-badges">${BADGE_PLUS_PROCHE}</div>` : ""}
         <div class="distance">${_texteDistanceDynamique(item, modeTriCourant)}</div>
         ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
         ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
@@ -1515,7 +1592,6 @@ function _rendreCategorie() {
 
   afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTriCourant);
 }
-
 let coucheItineraireCommodite = null;
 
 async function afficherItineraireVersCommodite(

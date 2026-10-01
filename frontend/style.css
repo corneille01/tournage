@@ -1488,3 +1488,33 @@ i.fa-solid, i.fa-regular { line-height: 1; }
 .mp-guide-distances ul { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
 .mp-guide-distances summary { cursor: pointer; font-size: 12px; }
 .mp-carburant-bloc.hidden { display: none; }
+
+/* ── Stations-service (fiche d'un lieu) ── */
+.station-filtres { margin-bottom: 10px; }
+.station-label { display: block; font-size: 0.72rem; color: var(--couleur-texte-muted); margin: 6px 0 4px; }
+.station-badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.station-badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 999px; background: rgba(128, 128, 128, 0.18); }
+.station-badge.proche { background: #ffd60a; color: #222; }
+.station-badge.prix { background: #16a34a; color: #fff; }
+.station-badge.ouverte { background: rgba(22, 163, 74, 0.25); }
+.station-badge.fermee { background: rgba(220, 38, 38, 0.25); }
+.station-prix-choisi { margin: 6px 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.station-prix-choisi b { font-size: 1.15rem; color: #f97316; }
+.station-prix-choisi small { font-size: 0.7rem; opacity: 0.85; }
+.station-ancien { color: #b45309; }
+.station-details { margin-top: 6px; font-size: 0.78rem; }
+.station-details summary { cursor: pointer; font-weight: 600; }
+.station-carburants, .station-horaires { list-style: none; margin: 6px 0 0; padding: 0; }
+.station-carburants li, .station-horaires li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
+.station-carburants li.choisi { background: rgba(249, 115, 22, 0.12); }
+.station-droite { display: flex; flex-direction: column; align-items: flex-end; }
+.station-droite small { font-size: 0.68rem; opacity: 0.85; }
+.station-rupture { color: #dc2626; }
+.station-horaires li.aujourdhui { font-weight: 700; }
+.station-services-groupe { margin-top: 6px; }
+.station-services-groupe small { display: block; opacity: 0.7; }
+.station-service { display: inline-block; margin: 2px 8px 2px 0; font-size: 0.74rem; }
+.station-note { font-size: 0.74rem; color: var(--couleur-texte-muted); margin: 6px 0; }
+.station-source { display: block; font-size: 0.68rem; opacity: 0.7; margin-top: 8px; }
+.station-lien-maps { font-size: 0.74rem; align-self: center; margin-left: auto; }
+.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }

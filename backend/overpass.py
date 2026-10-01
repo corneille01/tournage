@@ -185,6 +185,12 @@ ICONES_CATEGORIE = {
         "emoji": "🎉",
         "couleur": "#f15bb5",
     },
+
+    "station_service": {
+        "emoji": "⛽",
+        "couleur": "#f97316",
+    },
+
 }
 
 

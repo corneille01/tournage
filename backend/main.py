@@ -64,6 +64,7 @@ _LABELS_CATEGORIE = {
     "distributeur":    "Le distributeur",
     "activite":        "L'activité",
      "fetes_manifestations": "L'événement",
+    "station_service": "La station-service",
 }
 
 

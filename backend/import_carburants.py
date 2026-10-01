@@ -31,7 +31,6 @@ Usage :
     python import_carburants.py --dry-run --diagnostic   # liste les champs reçus
     python import_carburants.py
     python import_carburants.py --departements 11,30,31,34
-    python import_carburants.py --occitanie-seule
     python import_carburants.py --france
 """
 from __future__ import annotations
@@ -60,10 +59,7 @@ SEUIL_PURGE_MIN_FRANCE = 5_000
 SOURCE_FIGEE_JOURS = 7
 
 DEPARTEMENTS_OCCITANIE = ["09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
-# Ardèche, Bouches-du-Rhône, Cantal, Corrèze, Dordogne, Landes, Haute-Loire,
-# Lot-et-Garonne, Pyrénées-Atlantiques, Vaucluse.
-DEPARTEMENTS_LIMITROPHES = ["07", "13", "15", "19", "24", "40", "43", "47", "64", "84"]
-DEPARTEMENTS_PAR_DEFAUT = DEPARTEMENTS_OCCITANIE + DEPARTEMENTS_LIMITROPHES
+DEPARTEMENTS_PAR_DEFAUT = DEPARTEMENTS_OCCITANIE   # les 13 départements d'Occitanie, rien d'autre
 DEPARTEMENTS_FRANCE = (
     [f"{i:02d}" for i in range(1, 96) if i != 20]
     + ["2A", "2B", "971", "972", "973", "974", "976"]
@@ -200,6 +196,15 @@ def normaliser(rec: dict) -> dict | None:
         max((_date(v) for v in par_carburant.values()), default=None)
     )
 
+    horaires = _horaires(_premier(rec, "horaires", "timetable"))
+    automate = _bool_oui_non(_premier(rec, "horaires_automate_24_24", "automate_24_24"))
+    if automate is None and horaires:
+        # Selon les versions du jeu, l'information est dans le JSON des horaires.
+        try:
+            automate = _bool_oui_non(json.loads(horaires).get("automate-24-24"))
+        except (ValueError, AttributeError):
+            pass
+
     prix = {c: _prix(_premier(rec, f"{c}_prix", f"price_{c}")) for c in CARBURANTS_CLES}
     rupture = _liste(_premier(rec, "carburants_rupture_temporaire", "shortage")) + _liste(
         rec.get("carburants_rupture_definitive")
@@ -220,8 +225,8 @@ def normaliser(rec: dict) -> dict | None:
         "dep_nom": _premier(rec, "departement", "dep_name"),
         "region": _premier(rec, "region", "reg_name"),
         "type_route": (str(rec.get("pop") or "")[:1].upper() or None),
-        "automate": _bool_oui_non(_premier(rec, "horaires_automate_24_24", "automate_24_24")),
-        "horaires": _horaires(_premier(rec, "horaires", "timetable")),
+        "automate": automate,
+        "horaires": horaires,
         "dispo": _liste(_premier(rec, "carburants_disponibles", "fuel")),
         "rupture": list(dict.fromkeys(rupture)),
         "gazole": prix["gazole"], "sp95": prix["sp95"], "sp98": prix["sp98"],
@@ -328,8 +333,7 @@ async def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="n'écrit rien en base")
     parser.add_argument("--diagnostic", action="store_true", help="affiche les champs d'un enregistrement réel puis s'arrête")
     parser.add_argument("--departements", default="", help="liste séparée par des virgules (ex. 11,34)")
-    parser.add_argument("--france", action="store_true", help="toute la France au lieu de l'Occitanie et de ses limitrophes")
-    parser.add_argument("--occitanie-seule", action="store_true", help="les 13 départements d'Occitanie, sans les limitrophes")
+    parser.add_argument("--france", action="store_true", help="toute la France au lieu des 13 départements d'Occitanie")
     parser.add_argument("--force", action="store_true", help="ignore le garde-fou « jeu trop volumineux »")
     args = parser.parse_args()
     load_dotenv()
@@ -338,7 +342,6 @@ async def main() -> int:
     demandes = [_code_dep(d) for d in args.departements.split(",") if d.strip()]
     perimetre = (
         DEPARTEMENTS_FRANCE if args.france
-        else DEPARTEMENTS_OCCITANIE if args.occitanie_seule
         else DEPARTEMENTS_PAR_DEFAUT
     )
     cibles = demandes or perimetre
@@ -346,10 +349,8 @@ async def main() -> int:
         libelle_perimetre = "départements " + ",".join(demandes)
     elif args.france:
         libelle_perimetre = "France entière"
-    elif args.occitanie_seule:
-        libelle_perimetre = "Occitanie"
     else:
-        libelle_perimetre = "Occitanie + départements limitrophes"
+        libelle_perimetre = "Occitanie (13 départements)"
     print(f"Périmètre : {libelle_perimetre}")
 
     async with httpx.AsyncClient(timeout=60, headers={"User-Agent": "Pelify/1.0 (import carburants)"}) as client:

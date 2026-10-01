@@ -115,6 +115,12 @@ const ICONES_CATEGORIE = {
     emoji: "<i class='fa-solid fa-champagne-glasses' aria-hidden='true'></i>",
     couleur: "#f15bb5",
     label: "Fêtes et manifestations"
+  },
+
+  station_service: {
+    emoji: "<i class='fa-solid fa-gas-pump' aria-hidden='true'></i>",
+    couleur: "#f97316",
+    label: "Stations-service"
   }
 };
 
@@ -415,7 +421,7 @@ function construireCarburantsHtml(data){
   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
     const h=heure(p.passage);
-    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}à ${s.distance_m<1000?s.distance_m+' m':(s.distance_m/1000).toFixed(1).replace('.',',')+' km'} de ${p.role==='depart'?'votre départ':"l'étape "+p.ordre}${s.autoroute?' · autoroute':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}</small></li>`).join('');
+    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}à ${s.distance_m<1000?s.distance_m+' m':(s.distance_m/1000).toFixed(1).replace('.',',')+' km'} de ${p.role==='depart'?'votre départ':"l'étape "+p.ordre}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
     return `<div class="mp-carburant-point"><h4>${escapeHtml(titre)}${h?` <small>passage vers ${h}</small>`:''}</h4><ul>${lignes}</ul></div>`;
   }).join('');
   const maj=c.maj_donnees?new Date(c.maj_donnees).toLocaleDateString('fr-FR'):'';
@@ -1187,6 +1193,13 @@ async function afficherCategorie(categorie) {
   derniereCategorieAffichee = categorie;
 
   modeTriCourant = "pied"; // repart du mode par défaut à chaque catégorie choisie
+  triStation = "pied";
+  if (categorie === "station_service" && !carburantStationInitialise) {
+    // Par défaut, on reprend le carburant choisi dans le planificateur de parcours (s'il y en a un).
+    carburantStationInitialise = true;
+    const choisi = state.monParcoursOptions?.carburant;
+    if (CARBURANTS_STATION.some((c) => c[0] === choisi)) carburantStationChoisi = choisi;
+  }
   if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
   effacerTrace();
 
@@ -1209,7 +1222,9 @@ async function afficherCategorie(categorie) {
   const phrases = data.phrases_pied_voiture?.[categorie] || {};
 
   if (!items.length) {
-    conteneur.innerHTML = `<p style="color:#9a9ea8;">Aucun résultat nommé trouvé à proximité.</p>`;
+    conteneur.innerHTML = categorie === "station_service"
+      ? `<p style="color:#9a9ea8;">Aucune station-service n'est encore référencée autour de ce lieu.</p>`
+      : `<p style="color:#9a9ea8;">Aucun résultat nommé trouvé à proximité.</p>`;
     return;
   }
 
@@ -1217,9 +1232,221 @@ async function afficherCategorie(categorie) {
   _rendreCategorie();
 }
 
+// ── Stations-service : fiche détaillée (prix, ruptures, horaires, services) ──────────────
+// Les données viennent de /api/lieux/{id}/amenities : chaque item porte une « station »
+// (voir fiche_station dans backend/carburants.py). Tout texte provenant de la base est échappé.
+let triStation = "pied";               // "pied" | "voiture" | "prix"
+let carburantStationChoisi = null;     // gazole, e10, sp95, sp98, e85, gplc (null = tous)
+let carburantStationInitialise = false;
+const CARBURANTS_STATION = [
+  ["gazole", "Gazole"], ["e10", "SP95-E10"], ["sp95", "SP95"],
+  ["sp98", "SP98"], ["e85", "E85"], ["gplc", "GPLc"],
+];
+const GROUPES_SERVICES_STATION = {
+  confort: "Confort", boutique: "Boutique et restauration", auto: "Services auto",
+  energie: "Énergies", poids_lourds: "Poids lourds", paiement: "Paiement", autre: "Autres",
+};
+const JOURS_FR = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
+
+function _prixStation(v) { return Number(v).toFixed(3).replace(".", ","); }
+
+function _agePrixStation(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return { texte: "date du prix inconnue", ancien: true };
+  const jours = Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  const texte = jours === 0 ? "mis à jour aujourd'hui"
+    : jours === 1 ? "mis à jour hier"
+    : jours < 8 ? `mis à jour il y a ${jours} jours`
+    : `prix du ${d.toLocaleDateString("fr-FR")}`;
+  return { texte, ancien: jours >= 3 };   // même seuil « à vérifier » que le serveur
+}
+
+function _hhmmClient(min) { return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`; }
+
+function _minutesHHMM(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function _statutOuvertureStation(st) {
+  const jours = st?.horaires;
+  if (!Array.isArray(jours) || !jours.length) return null;
+  const maintenant = new Date();
+  const j = jours.find((x) => x.jour === JOURS_FR[maintenant.getDay()]);
+  if (!j) return null;
+  if (j.ouvert === false) return { etat: "fermee", texte: "Fermée aujourd'hui" };
+  if (j.tout_le_jour) return { etat: "ouverte", texte: "Ouverte toute la journée" };
+  const brutes = j.plages?.length ? j.plages : (j.ouverture && j.fermeture ? [`${j.ouverture}-${j.fermeture}`] : []);
+  const plages = brutes.map((p) => String(p).split("-").map(_minutesHHMM)).filter((p) => p[0] != null && p[1] != null);
+  if (!plages.length) return null;
+  const t = maintenant.getHours() * 60 + maintenant.getMinutes();
+  for (const [o, f] of plages) {
+    if (o <= f ? (t >= o && t <= f) : (t >= o || t <= f)) {
+      return { etat: "ouverte", texte: `Ouverte maintenant (jusqu'à ${_hhmmClient(f)})` };
+    }
+  }
+  return { etat: "fermee", texte: "Fermée actuellement" };
+}
+
+function _carburantStation(item, cle) {
+  return (item.station?.carburants || []).find((c) => c.cle === cle) || null;
+}
+function _vendEnStation(item, cle) {
+  const c = _carburantStation(item, cle);
+  return !!c && !c.rupture && c.prix != null;
+}
+
+function _htmlCarburantsStation(st, cle) {
+  const liste = st?.carburants || [];
+  if (!liste.length) return `<p class="station-note">Prix non disponibles pour cette station.</p>`;
+  const lignes = liste.map((c) => {
+    const age = _agePrixStation(c.maj);
+    let droite;
+    if (c.rupture) {
+      droite = `<span class="station-rupture"><i class="fa-solid fa-ban" aria-hidden="true"></i> Rupture signalée</span>`;
+    } else if (c.prix == null) {
+      droite = `<span class="station-note">Prix non renseigné</span>`;
+    } else {
+      droite = `<b class="station-prix">${_prixStation(c.prix)} €/L</b><small class="${age.ancien ? "station-ancien" : ""}">${escapeHtml(age.texte)}${age.ancien ? " · à vérifier" : ""}</small>`;
+    }
+    return `<li class="${cle && c.cle === cle ? "choisi" : ""}"><span>${escapeHtml(c.libelle)}</span><span class="station-droite">${droite}</span></li>`;
+  }).join("");
+  return `<ul class="station-carburants">${lignes}</ul>`;
+}
+
+function _htmlHorairesStation(st) {
+  const jours = st?.horaires;
+  if (!Array.isArray(jours) || !jours.length) {
+    return `<p class="station-note"><i class="fa-regular fa-clock" aria-hidden="true"></i> Horaires non renseignés : vérifiez avant de venir.</p>`;
+  }
+  const aujourdhui = JOURS_FR[new Date().getDay()];
+  const lignes = jours.map((j) => {
+    let txt;
+    if (j.ouvert === false) txt = "Fermée";
+    else if (j.tout_le_jour) txt = "Ouverte 24h/24";
+    else if (j.plages?.length) txt = j.plages.map((p) => String(p).replace("-", "–")).join(" · ");
+    else if (j.ouverture && j.fermeture) txt = `${j.ouverture}–${j.fermeture}`;
+    else txt = "Non précisé";
+    return `<li class="${j.jour === aujourdhui ? "aujourdhui" : ""}"><span>${escapeHtml(j.jour)}</span><span>${escapeHtml(txt)}</span></li>`;
+  }).join("");
+  return `<details class="station-details"><summary>Horaires d'ouverture</summary><ul class="station-horaires">${lignes}</ul></details>`;
+}
+
+function _htmlServicesStation(st) {
+  const services = st?.services || [];
+  if (!services.length) return "";
+  const groupes = {};
+  services.forEach((x) => { const g = GROUPES_SERVICES_STATION[x.groupe] ? x.groupe : "autre"; (groupes[g] = groupes[g] || []).push(x); });
+  const blocs = Object.keys(GROUPES_SERVICES_STATION).filter((g) => groupes[g]).map((g) => `
+    <div class="station-services-groupe"><small>${escapeHtml(GROUPES_SERVICES_STATION[g])}</small><div>${groupes[g].map((x) =>
+      `<span class="station-service"><i class="fa-solid ${/^fa-[a-z0-9-]+$/.test(x.icone || "") ? x.icone : "fa-circle-check"}" aria-hidden="true"></i> ${escapeHtml(x.libelle)}</span>`).join("")}</div></div>`).join("");
+  return `<details class="station-details"><summary>Services (${services.length})</summary>${blocs}</details>`;
+}
+
+function _rendreStations() {
+  if (!dernieresDonneesAmenities) return;
+  const { items } = dernieresDonneesAmenities;
+  const conteneur = document.getElementById("popup-resultats");
+  const couleur = ICONES_CATEGORIE.station_service.couleur;
+  const cle = carburantStationChoisi;
+  const libelleCarburant = (CARBURANTS_STATION.find((c) => c[0] === cle) || [])[1] || "";
+  if (triStation === "prix" && !cle) triStation = "pied";
+
+  const distanceDe = (it) => (triStation === "voiture" ? it.distance_voiture_metres : it.distance_pied_metres) ?? it.distance_metres ?? Infinity;
+  let affiches = [...items];
+  let masquees = 0;
+  if (cle) {
+    affiches = items.filter((it) => _vendEnStation(it, cle));
+    masquees = items.length - affiches.length;
+  }
+  affiches.sort((a, b) => {
+    if (triStation === "prix" && cle) {
+      const pa = _carburantStation(a, cle).prix, pb = _carburantStation(b, cle).prix;
+      if (pa !== pb) return pa - pb;
+    }
+    const da = distanceDe(a), db = distanceDe(b);
+    return da === db ? 0 : (da < db ? -1 : 1);
+  });
+  const prixMin = cle && affiches.length ? Math.min(...affiches.map((it) => _carburantStation(it, cle).prix)) : null;
+  const modeCarte = triStation === "voiture" ? "voiture" : "pied";
+
+  const chips = `<button type="button" class="mode-btn ${!cle ? "actif" : ""}" data-carb="">Tous</button>`
+    + CARBURANTS_STATION.map(([k, l]) => `<button type="button" class="mode-btn ${cle === k ? "actif" : ""}" data-carb="${k}">${escapeHtml(l)}</button>`).join("");
+  const tris = [
+    ["pied", "Trier à pied", "fa-person-walking", false],
+    ["voiture", "Trier en voiture", "fa-car", false],
+    ["prix", "Moins cher", "fa-euro-sign", !cle],
+  ].map(([k, l, ic, off]) => `<button type="button" class="mode-btn ${triStation === k ? "actif" : ""}" data-tri-station="${k}" ${off ? 'disabled title="Choisissez d\'abord un carburant"' : ""}><i class="fa-solid ${ic}" aria-hidden="true"></i> ${l}</button>`).join("");
+  const barre = `<div class="station-filtres">
+      <span class="station-label">Carburant</span><div class="selecteur-mode">${chips}</div>
+      <span class="station-label">Tri</span><div class="selecteur-mode">${tris}</div>
+    </div>`;
+
+  const cartes = affiches.map((item, index) => {
+    const st = item.station || null;
+    const plusProche = triStation !== "prix" && index === 0;
+    const c = cle ? _carburantStation(item, cle) : null;
+    const moinsCher = c && c.prix === prixMin && affiches.length > 1;
+    const statut = _statutOuvertureStation(st);
+    const badges = [
+      plusProche ? `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> La plus proche</span>` : "",
+      moinsCher ? `<span class="station-badge prix"><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Le moins cher de la liste</span>` : "",
+      st?.autoroute ? `<span class="station-badge">Autoroute</span>` : "",
+      st?.automate_24_24 === true ? `<span class="station-badge"><i class="fa-solid fa-credit-card" aria-hidden="true"></i> Automate CB 24h/24</span>` : "",
+      statut ? `<span class="station-badge ${statut.etat}">${escapeHtml(statut.texte)}</span>` : "",
+    ].join("");
+    const age = c ? _agePrixStation(c.maj) : null;
+    const prixGros = c ? `<div class="station-prix-choisi"><b>${_prixStation(c.prix)} €/L</b><span>${escapeHtml(libelleCarburant)}</span><small class="${age.ancien ? "station-ancien" : ""}">${escapeHtml(age.texte)}${age.ancien ? " · à vérifier" : ""}</small></div>` : "";
+    const adresse = st?.adresse_complete || item.adresse || "";
+    const detail = st
+      ? `<details class="station-details" ${cle ? "" : "open"}><summary>Carburants et prix</summary>${_htmlCarburantsStation(st, cle)}</details>${_htmlHorairesStation(st)}${_htmlServicesStation(st)}`
+      : `<p class="station-note">Détails de la station indisponibles pour le moment.</p>`;
+    return `
+      <div class="resultat-item station-card ${plusProche ? "plus-proche" : ""}" style="${plusProche ? `border-color:${couleur};` : ""}">
+        <div class="nom"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(item.nom)}</div>
+        <div class="station-badges">${badges}</div>
+        <div class="distance">${_texteDistanceDynamique(item, modeCarte)} du lieu de tournage</div>
+        ${adresse ? `<div class="adresse">${escapeHtml(adresse)}</div>` : ""}
+        ${prixGros}
+        ${detail}
+        <div class="boutons-itineraire">
+          <button class="btn-itineraire" data-mode="foot-walking" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
+          <button class="btn-itineraire" data-mode="driving-car" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+          <a class="station-lien-maps" href="https://www.google.com/maps/dir/?api=1&destination=${Number(item.latitude)},${Number(item.longitude)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-diamond-turn-right" aria-hidden="true"></i> Ouvrir dans Maps</a>
+        </div>
+        <div class="itineraire-resultat"></div>
+      </div>`;
+  }).join("");
+
+  const vide = !affiches.length
+    ? `<p class="station-note">Aucune station de cette liste ne propose du ${escapeHtml(libelleCarburant)} à ce jour. Essayez « Tous » ou un autre carburant.</p>`
+    : "";
+  const note = masquees ? `<p class="station-note">${masquees} station(s) masquée(s) : ${escapeHtml(libelleCarburant)} non proposé ou en rupture.</p>` : "";
+  const source = `<small class="station-source">Prix relevés sur prix-carburants.gouv.fr (Licence Ouverte 2.0), mis à jour chaque jour : ils peuvent avoir changé à la pompe. Pour un carburant peu courant (E85, GPLc), une station plus éloignée peut être ajoutée à la liste.</small>`;
+
+  conteneur.innerHTML = barre + vide + note + cartes + source;
+
+  conteneur.querySelectorAll("[data-carb]").forEach((b) => b.addEventListener("click", () => {
+    carburantStationChoisi = b.dataset.carb || null;
+    if (!carburantStationChoisi && triStation === "prix") triStation = "pied";
+    _rendreStations();
+  }));
+  conteneur.querySelectorAll("[data-tri-station]").forEach((b) => b.addEventListener("click", () => {
+    if (b.disabled) return;
+    triStation = b.dataset.triStation;
+    _rendreStations();
+  }));
+  conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
+    btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
+  });
+
+  afficherCommoditesSurCarte("station_service", affiches, null, modeCarte);
+}
+
 function _rendreCategorie() {
   if (!dernieresDonneesAmenities) return;
   const { categorie, items, stats, phrases } = dernieresDonneesAmenities;
+  if (categorie === "station_service") { _rendreStations(); return; }
   const conteneur = document.getElementById("popup-resultats");
   const infoCategorie = ICONES_CATEGORIE[categorie] || {};
   const couleur = infoCategorie.couleur || "#e63946";

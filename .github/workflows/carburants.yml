@@ -8,11 +8,11 @@ on:
         type: boolean
         default: true
       departements:
-        description: "Départements à importer, séparés par des virgules (vide = Occitanie + départements limitrophes)"
+        description: "Départements à importer, séparés par des virgules (vide = les 13 départements d'Occitanie)"
         type: string
         default: ""
       france:
-        description: "Toute la France au lieu de l'Occitanie et de ses départements limitrophes"
+        description: "Toute la France au lieu des 13 départements d'Occitanie"
         type: boolean
         default: false
   schedule:

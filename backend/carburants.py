@@ -110,13 +110,67 @@ def _minutes(valeur) -> int | None:
         return None
 
 
+def _plages_depuis(jour: dict) -> list[tuple[int, int]]:
+    """Plages d'ouverture d'un jour, en minutes : [(ouverture, fermeture), ...]."""
+    plages = []
+    for texte in jour.get("plages") or []:
+        try:
+            o, f = str(texte).split("-")
+        except ValueError:
+            continue
+        mo, mf = _minutes(o), _minutes(f)
+        if mo is not None and mf is not None:
+            plages.append((mo, mf))
+    if not plages:
+        mo, mf = _minutes(jour.get("ouverture")), _minutes(jour.get("fermeture"))
+        if mo is not None and mf is not None:
+            plages.append((mo, mf))
+    return plages
+
+
 def _horaires_dict(valeur):
+    """Horaires sous la forme {'Lundi': {ouvert, ouverture, fermeture, plages}, ...}.
+
+    Accepte deux formats de la source :
+      - ancien : {"Lundi": {"ouvert": "1", "ouverture": "08:00", "fermeture": "19:00"}, ...}
+      - v2     : {"jour": [{"nom": "Lundi", "ferme": "", "horaire": [{"ouverture": "06:00",
+                 "fermeture": "12:00"}, {"ouverture": "14:00", "fermeture": "20:00"}]}, ...]}
+    Plusieurs plages dans la journée (pause déjeuner) sont conservées dans « plages ».
+    """
     if isinstance(valeur, str):
         try:
             valeur = json.loads(valeur)
         except ValueError:
             return None
-    return valeur if isinstance(valeur, dict) else None
+    if not isinstance(valeur, dict):
+        return None
+    jours = valeur.get("jour")
+    if not isinstance(jours, list):
+        return valeur
+    sortie = {}
+    for j in jours:
+        if not isinstance(j, dict):
+            continue
+        nom = str(j.get("nom") or "").strip().capitalize()
+        if nom not in _JOURS:
+            continue
+        brut = j.get("horaire")
+        if isinstance(brut, dict):
+            brut = [brut]
+        plages = []
+        for h in brut or []:
+            if isinstance(h, dict):
+                o, f = _hhmm(h.get("ouverture")), _hhmm(h.get("fermeture"))
+                if o and f:
+                    plages.append(f"{o}-{f}")
+        ferme = str(j.get("ferme") or "").strip().lower() in ("1", "true", "oui")
+        sortie[nom] = {
+            "ouvert": "0" if ferme else ("1" if plages else None),
+            "ouverture": plages[0].split("-")[0] if plages else None,
+            "fermeture": plages[-1].split("-")[1] if plages else None,
+            "plages": plages,
+        }
+    return sortie or None
 
 
 def statut_ouverture(station: dict, quand: datetime | None) -> dict:
@@ -131,17 +185,17 @@ def statut_ouverture(station: dict, quand: datetime | None) -> dict:
         return {"etat": "inconnu", "libelle": "Horaires non précisés, à vérifier"}
     if str(jour.get("ouvert")) in ("0", "False", "false"):
         return {"etat": "fermee", "libelle": f"Fermée le {_JOURS[quand.weekday()].lower()}"}
-    o, f = _minutes(jour.get("ouverture")), _minutes(jour.get("fermeture"))
-    if o is None or f is None:
+    plages = _plages_depuis(jour)
+    if not plages:
         return {"etat": "inconnu", "libelle": "Horaires non précisés, à vérifier"}
-    t = quand.hour * 60 + quand.minute
-    ouverte = (o <= t <= f) if o <= f else (t >= o or t <= f)
-    fin = f"{f // 60:02d}:{f % 60:02d}"
-    if o == 0 and f >= 23 * 60 + 59:
+    if len(plages) == 1 and plages[0][0] == 0 and plages[0][1] >= 23 * 60 + 59:
         return {"etat": "ouverte", "libelle": "Ouverte toute la journée"}
-    if ouverte:
-        return {"etat": "ouverte", "libelle": f"Ouverte à votre passage (jusqu'à {fin})"}
-    return {"etat": "fermee", "libelle": f"Fermée à {quand:%H:%M} (horaires : {o // 60:02d}:{o % 60:02d}-{fin})"}
+    t = quand.hour * 60 + quand.minute
+    for o, f in plages:
+        if (o <= t <= f) if o <= f else (t >= o or t <= f):
+            return {"etat": "ouverte", "libelle": f"Ouverte à votre passage (jusqu'à {f // 60:02d}:{f % 60:02d})"}
+    texte = " · ".join(f"{o // 60:02d}:{o % 60:02d}-{f // 60:02d}:{f % 60:02d}" for o, f in plages)
+    return {"etat": "fermee", "libelle": f"Fermée à {quand:%H:%M} (horaires : {texte})"}
 
 
 async def stations_autour(lat: float, lon: float, rayon_m: float, cle: str) -> dict:
@@ -152,7 +206,7 @@ async def stations_autour(lat: float, lon: float, rayon_m: float, cle: str) -> d
     lignes = await fetch_all(
         f"""
         SELECT id, nom, marque, adresse, code_postal, commune, latitude, longitude,
-               type_route, automate_24_24, horaires, carburants_rupture,
+               type_route, automate_24_24, horaires, carburants_rupture, services,
                {col} AS prix, maj_prix, maj_carburants
         FROM stations_carburant
         WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
@@ -211,8 +265,13 @@ def _adresse(s: dict) -> str:
 
 
 def _nom_station(s: dict) -> str:
-    nom = s.get("nom") or s.get("marque") or "Station-service"
-    return nom.title() if nom.isupper() else nom
+    """Nom affiché. Le jeu v2 ne fournit ni nom ni marque : à défaut, « Station-service »
+    suivi de la commune, l'adresse exacte étant affichée à part."""
+    nom = (s.get("nom") or s.get("marque") or "").strip()
+    if nom:
+        return nom.title() if nom.isupper() else nom
+    commune = (s.get("commune") or "").strip().title()
+    return f"Station-service {commune}".strip() if commune else "Station-service"
 
 
 def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quand: datetime | None) -> dict:
@@ -229,7 +288,11 @@ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quan
         "latitude": float(s["latitude"]), "longitude": float(s["longitude"]),
         "prix": s["prix"], "distance_m": round(s["distance_m"]),
         "autoroute": s.get("type_route") == "A",
+        "automate_24_24": s.get("automate_24_24"),
         "ouverture": statut_ouverture(s, quand),
+        # Autres carburants signalés en rupture ici (le carburant demandé ne l'est jamais : filtré en amont).
+        "ruptures": [lib for _, (lib, _, code) in CARBURANTS.items() if code in (s.get("carburants_rupture") or [])],
+        "services_principaux": _nettoyer_services(s.get("services"))[:6],
         "maj_prix": maj.isoformat() if maj else None,
         "maj_libelle": _libelle_maj(maj),
         "age_jours": jours,
@@ -462,8 +525,8 @@ def _hhmm(valeur) -> str | None:
 
 def horaires_semaine(valeur, automate=None) -> list[dict] | None:
     """Horaires structurés du lundi au dimanche :
-    [{jour, ouvert(True/False/None), ouverture('HH:MM'), fermeture('HH:MM'), tout_le_jour}].
-    Renvoie None si la source ne donne aucun horaire exploitable."""
+    [{jour, ouvert(True/False/None), ouverture('HH:MM'), fermeture('HH:MM'), plages(['HH:MM-HH:MM']),
+      tout_le_jour}]. Renvoie None si la source ne donne aucun horaire exploitable."""
     h = _horaires_dict(valeur)
     if not h:
         return None
@@ -471,13 +534,16 @@ def horaires_semaine(valeur, automate=None) -> list[dict] | None:
     for nom in _JOURS:
         j = h.get(nom)
         if not isinstance(j, dict):
-            jours.append({"jour": nom, "ouvert": None, "ouverture": None, "fermeture": None, "tout_le_jour": False})
+            jours.append({"jour": nom, "ouvert": None, "ouverture": None, "fermeture": None,
+                          "plages": [], "tout_le_jour": False})
             continue
         ouvert_brut = str(j.get("ouvert"))
         ouvert = False if ouvert_brut in ("0", "False", "false") else (True if ouvert_brut in ("1", "True", "true") else None)
+        plages = [f"{o // 60:02d}:{o % 60:02d}-{f // 60:02d}:{f % 60:02d}" for o, f in _plages_depuis(j)]
         o, f = _hhmm(j.get("ouverture")), _hhmm(j.get("fermeture"))
-        tout = bool(ouvert and o == "00:00" and f in ("23:59", "00:00"))
-        jours.append({"jour": nom, "ouvert": ouvert, "ouverture": o, "fermeture": f, "tout_le_jour": tout})
+        tout = bool(ouvert and len(plages) <= 1 and o == "00:00" and f in ("23:59", "00:00"))
+        jours.append({"jour": nom, "ouvert": ouvert, "ouverture": o, "fermeture": f,
+                      "plages": plages, "tout_le_jour": tout})
     return jours
 
 

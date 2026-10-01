@@ -76,8 +76,13 @@ def _carburants_vendus(station: dict) -> set[str]:
 
 
 def _nom_station(s: dict) -> str:
-    nom = (s.get("nom") or s.get("marque") or "Station-service").strip()
-    return (nom.title() if nom.isupper() else nom)[:255]
+    """Nom affiché. Le jeu v2 ne fournit ni nom ni marque : à défaut, « Station-service »
+    suivi de la commune, l'adresse exacte étant affichée à part."""
+    nom = (s.get("nom") or s.get("marque") or "").strip()
+    if nom:
+        return nom.title() if nom.isupper() else nom
+    commune = (s.get("commune") or "").strip().title()
+    return (f"Station-service {commune}".strip() if commune else "Station-service")[:255]
 
 
 def _adresse(s: dict) -> str | None:

@@ -1187,10 +1187,10 @@ async function _recupererAmenities(lieuId) {
 let modeTriCourant = "pied"; // "pied", "voiture" - plus de vol d'oiseau
 let dernieresDonneesAmenities = null; // pour retrier sans refaire l'appel réseau
 // Fait défiler jusqu'au premier résultat de la catégorie (le plus proche, car la liste est triée)
-function _allerAuPremierResultat() {
+function _allerAuPremierResultat(selecteur = ".resultat-item") {
   const conteneur = document.getElementById("popup-resultats");
   if (!conteneur) return;
-  const cible = conteneur.querySelector(".resultat-item") || conteneur;
+  const cible = conteneur.querySelector(selecteur) || conteneur;
   cible.style.scrollMarginTop = "12px";
   requestAnimationFrame(() => cible.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
@@ -1246,9 +1246,10 @@ async function afficherCategorie(categorie) {
     return;
   }
 
-  dernieresDonneesAmenities = { categorie, items, stats, phrases };
+    dernieresDonneesAmenities = { categorie, items, stats, phrases };
   _rendreCategorie();
-  _allerAuPremierResultat();   // ← arrive sur le premier élément (ex. le premier logement)
+  // Stations : on arrive d'abord sur les filtres. Autres catégories : sur le premier résultat.
+  _allerAuPremierResultat(categorie === "station_service" ? ".station-filtres" : ".resultat-item");
 }
 
 // ── Stations-service : fiche détaillée (prix, ruptures, horaires, services) ──────────────
@@ -1361,13 +1362,19 @@ function _htmlServicesStation(st) {
       `<span class="station-service"><i class="fa-solid ${/^fa-[a-z0-9-]+$/.test(x.icone || "") ? x.icone : "fa-circle-check"}" aria-hidden="true"></i> ${escapeHtml(x.libelle)}</span>`).join("")}</div></div>`).join("");
   return `<details class="station-details"><summary>Services (${services.length})</summary>${blocs}</details>`;
 }
+
+function _normaliserTexte(s) {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 function _aBorneElectrique(item) {
   const st = item?.station;
-  if (!st) return false;
-  if (st.borne_electrique === true) return true;
-  return (st.services || []).some((x) =>
-    /(borne|recharge|irve).{0,25}(électrique|electrique|véhicule|vehicule)|^borne/i.test(String(x.libelle || ""))
-  );
+  if (st?.borne_electrique === true || item?.borne_electrique === true) return true;
+  const liste = [...(st?.services || []), ...(item?.services || [])];
+  return liste.some((x) => {
+    const libelle = typeof x === "string" ? x : (x?.libelle || x?.nom || x?.label || "");
+    return /\b(borne|bornes|recharge|irve)\b|vehicule electrique|charging/.test(_normaliserTexte(libelle));
+  });
 }
 
 const BADGE_PLUS_PROCHE = `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> La plus proche</span>`;
@@ -1508,15 +1515,18 @@ function _rendreStations() {
     carburantStationChoisi = b.dataset.carb || null;
     if (!carburantStationChoisi && triStation === "prix") triStation = "pied";
     _rendreStations();
+    _allerAuPremierResultat(".station-card");
   }));
   conteneur.querySelectorAll("[data-tri-station]").forEach((b) => b.addEventListener("click", () => {
     if (b.disabled) return;
     triStation = b.dataset.triStation;
     _rendreStations();
+    _allerAuPremierResultat(".station-card");
   }));
   conteneur.querySelector("[data-filtre-borne]")?.addEventListener("click", () => {
     filtreBorneElectrique = !filtreBorneElectrique;
     _rendreStations();
+    _allerAuPremierResultat(".station-card");
   });
   conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
     btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));

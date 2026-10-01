@@ -147,11 +147,16 @@ def _horaires_dict(valeur):
     jours = valeur.get("jour")
     if not isinstance(jours, list):
         return valeur
+
+    def lire(d, cle):
+        """La source est issue d'un XML : les attributs arrivent parfois préfixés par « @ »."""
+        return d.get(cle) if d.get(cle) is not None else d.get("@" + cle)
+
     sortie = {}
     for j in jours:
         if not isinstance(j, dict):
             continue
-        nom = str(j.get("nom") or "").strip().capitalize()
+        nom = str(lire(j, "nom") or "").strip().capitalize()
         if nom not in _JOURS:
             continue
         brut = j.get("horaire")
@@ -160,10 +165,13 @@ def _horaires_dict(valeur):
         plages = []
         for h in brut or []:
             if isinstance(h, dict):
-                o, f = _hhmm(h.get("ouverture")), _hhmm(h.get("fermeture"))
+                o, f = _hhmm(lire(h, "ouverture")), _hhmm(lire(h, "fermeture"))
                 if o and f:
                     plages.append(f"{o}-{f}")
-        ferme = str(j.get("ferme") or "").strip().lower() in ("1", "true", "oui")
+        ferme = str(lire(j, "ferme") or "").strip().lower() in ("1", "true", "oui")
+        # Jour fermé : la source met alors une plage factice (« 01.00-01.00 »), à ignorer.
+        if ferme:
+            plages = []
         sortie[nom] = {
             "ouvert": "0" if ferme else ("1" if plages else None),
             "ouverture": plages[0].split("-")[0] if plages else None,

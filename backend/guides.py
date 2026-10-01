@@ -1,6 +1,7 @@
 """backend/guides.py - Annuaire des guides et médiateurs cinétouristiques."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -206,3 +207,45 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         resultat.pop("_score", None)
         resultat["adresse"], resultat["commune"] = await _localiser(resultat)
     return resultats
+
+async def completer_localisation(guides: list[dict], max_appels: int = 30) -> None:
+    """Renseigne commune et code postal des guides qui n'en ont pas (annuaire public).
+
+    Géocodage inverse IGN, 5 appels en parallèle au plus, résultat mémorisé en base :
+    seules les premières consultations déclenchent des appels. Les guides sont modifiés
+    sur place ; en cas d'échec ils restent simplement sans commune. L'adresse postale
+    complète n'est volontairement pas rendue publique ici (point d'activité déclaré,
+    parfois confondu avec un domicile).
+    """
+    manquants = [g for g in guides
+                 if not (g.get("commune") and g.get("code_postal"))
+                 and g.get("latitude") is not None and g.get("longitude") is not None][:max_appels]
+    if not manquants:
+        return
+    limite = asyncio.Semaphore(5)
+
+    async def un(client: httpx.AsyncClient, guide: dict) -> None:
+        async with limite:
+            try:
+                r = await client.get(GEOCODAGE_INVERSE_URL, params={
+                    "lon": guide["longitude"], "lat": guide["latitude"], "index": "poi,address", "limit": 1})
+                r.raise_for_status()
+                props = ((r.json().get("features") or [{}])[0]).get("properties") or {}
+            except Exception:
+                logger.warning("Géocodage inverse indisponible pour le guide %s", guide.get("id"))
+                return
+            commune = props.get("city") or props.get("municipality")
+            postal = props.get("postcode")
+            if not (commune or postal):
+                return
+            guide["commune"] = guide.get("commune") or commune
+            guide["code_postal"] = guide.get("code_postal") or postal
+            try:
+                await execute(
+                    "UPDATE guides SET commune = COALESCE(commune, %s), code_postal = COALESCE(code_postal, %s) WHERE id = %s",
+                    (commune, postal, guide["id"]))
+            except Exception:
+                logger.warning("Mémorisation de la localisation impossible pour le guide %s", guide.get("id"))
+
+    async with httpx.AsyncClient(timeout=6) as client:
+        await asyncio.gather(*(un(client, g) for g in manquants))

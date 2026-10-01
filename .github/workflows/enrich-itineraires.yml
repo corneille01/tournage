@@ -1,4 +1,4 @@
-name: Précalcul distances piéton/voiture — Géoplateforme IGN
+name: Précalcul itinéraires piéton/voiture — Géoplateforme IGN
 
 on:
   workflow_dispatch:

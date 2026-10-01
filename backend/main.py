@@ -42,7 +42,8 @@ from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, 
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
 from carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
-from guides import guides_recommandes, exiger_admin, SPECIALITES_VALIDES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES
+from guides import (guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
+                    SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
 from paysages import router as paysages_router
 from droits import router as droits_router
 
@@ -2509,6 +2510,11 @@ async def liste_guides(statut: str = Query("actif")):
     fiches publiées ; `statut=tous` permet à l'admin de voir aussi les
     fiches en_attente/inactives (pas de données sensibles dans cette
     table, donc pas besoin de protéger la lecture elle-même).
+
+    Chaque fiche porte en plus : `fonction` et `specialites_libelles` (libellés prêts à
+    afficher), `commune`, `code_postal` et `departement` (déduit du code postal). L'adresse
+    postale n'est pas exposée. Commune et code postal manquants sont complétés une fois par
+    géocodage inverse puis mémorisés.
     """
     if statut == "tous":
         where, params = "", ()
@@ -2516,18 +2522,29 @@ async def liste_guides(statut: str = Query("actif")):
         if statut not in {"actif", "inactif", "en_attente"}:
             raise HTTPException(400, "statut invalide")
         where, params = "WHERE statut = %s", (statut,)
-    lignes = await fetch_all(
-        f"""
+    requete = f"""
         SELECT id, nom, type_guide, bio, specialites, langues, publics,
                mobilite, latitude, longitude, rayon_intervention_km,
                capacite_max, tarif_indicatif, site_web, lien_contact,
-               photo_url, statut, date_creation
+               photo_url, statut, date_creation{{extra}}
         FROM guides
         {where}
         ORDER BY date_creation DESC
-        """,
-        params,
-    )
+        """
+    try:
+        lignes = await fetch_all(requete.format(extra=", commune, code_postal"), params)
+    except Exception:
+        # Colonnes commune/code_postal absentes (migration v29 pas encore appliquée).
+        logging.getLogger(__name__).warning("Colonnes commune/code_postal absentes de guides")
+        lignes = await fetch_all(requete.format(extra=""), params)
+    lignes = [dict(g) for g in lignes]
+    if lignes and "commune" in lignes[0]:
+        await completer_localisation(lignes)
+    for g in lignes:
+        g["fonction"] = fonction_guide(g.get("type_guide"))
+        g["specialites_libelles"] = [SPECIALITES_LIBELLES.get(x, x) for x in (g.get("specialites") or [])]
+        cp = str(g.get("code_postal") or "").strip()
+        g["departement"] = cp[:2] if len(cp) == 5 and cp.isdigit() else None
     return {"guides": lignes, "total": len(lignes)}
 
 

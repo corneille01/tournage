@@ -66,6 +66,7 @@ DEPARTEMENTS_FRANCE = (
 )
 
 CARBURANTS_CLES = ("gazole", "sp95", "sp98", "e10", "e85", "gplc")
+LIBELLES_CARBURANTS = {"gazole": "Gazole", "sp95": "SP95", "sp98": "SP98", "e10": "E10", "e85": "E85", "gplc": "GPLc"}
 PRIX_MIN, PRIX_MAX = 0.3, 6.0   # bornes de vraisemblance en EUR/L
 
 # Noms de champ possibles, dans l'ordre de préférence (v2 d'abord).
@@ -201,16 +202,21 @@ def normaliser(rec: dict) -> dict | None:
     if automate is None and horaires:
         # Selon les versions du jeu, l'information est dans le JSON des horaires.
         try:
-            automate = _bool_oui_non(json.loads(horaires).get("automate-24-24"))
+            h = json.loads(horaires)
+            automate = _bool_oui_non(h.get("automate-24-24", h.get("@automate-24-24")))
         except (ValueError, AttributeError):
             pass
 
     prix = {c: _prix(_premier(rec, f"{c}_prix", f"price_{c}")) for c in CARBURANTS_CLES}
+    # Ruptures réelles uniquement. Le champ « carburants_indisponibles » liste les carburants que la
+    # station NE VEND PAS (constaté sur les données : aucun prix pour ces carburants, 1 091 stations
+    # sur 1 109 concernées) : l'utiliser affichait « rupture » partout. On ne l'utilise donc plus.
     rupture = _liste(_premier(rec, "carburants_rupture_temporaire", "shortage")) + _liste(
         rec.get("carburants_rupture_definitive")
     )
-    if not rupture:
-        rupture = _liste(rec.get("carburants_indisponibles"))
+    for cle, libelle in LIBELLES_CARBURANTS.items():
+        if rec.get(f"{cle}_rupture_type") or rec.get(f"{cle}_rupture_debut"):
+            rupture.append(libelle)
 
     return {
         "id": ident, "latitude": lat, "longitude": lon,

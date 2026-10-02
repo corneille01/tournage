@@ -1304,14 +1304,26 @@ function fermerPopup() {
 }
 
 async function _recupererAmenities(lieuId) {
-  if (!state.amenitiesParLieu[lieuId]) {
-    const res = await fetch(`${API_BASE}/api/lieux/${lieuId}/amenities`);
-    if (!res.ok) return null;
-    state.amenitiesParLieu[lieuId] = await res.json();
-  }
-  return state.amenitiesParLieu[lieuId];
-}
+  if (state.amenitiesParLieu[lieuId]) return state.amenitiesParLieu[lieuId];
 
+  // Timeout de 15 s : sans ça, une API qui ne répond pas laisse « Chargement… » indéfiniment
+  const controleur = new AbortController();
+  const minuteur = setTimeout(() => controleur.abort(), 15000);
+  try {
+    const res = await fetch(`${API_BASE}/api/lieux/${lieuId}/amenities`, { signal: controleur.signal });
+    if (!res.ok) {
+      console.error("amenities : réponse HTTP", res.status);
+      return null;
+    }
+    state.amenitiesParLieu[lieuId] = await res.json();
+    return state.amenitiesParLieu[lieuId];
+  } catch (err) {
+    console.error("amenities : échec", err);   // réseau coupé, timeout, JSON invalide…
+    return null;
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
 // ── Clic sur un bouton catégorie (hébergement, resto, etc.) ──────
 let modeTriCourant = "pied"; // "pied", "voiture" - plus de vol d'oiseau
 let dernieresDonneesAmenities = null; // pour retrier sans refaire l'appel réseau
@@ -1352,7 +1364,12 @@ async function afficherCategorie(categorie) {
   const conteneur = document.getElementById("popup-resultats");
   conteneur.innerHTML = `<p style="color:#9a9ea8;">Chargement…</p>`;
 
-  const data = await _recupererAmenities(lieuId);
+  let data = null;
+  try {
+    data = await _recupererAmenities(lieuId);
+  } catch (err) {
+    console.error(err);
+  }
 
   // Un autre bouton a été cliqué pendant le chargement : on abandonne ce rendu périmé
   if (derniereCategorieAffichee !== categorie) return;
@@ -1375,10 +1392,15 @@ async function afficherCategorie(categorie) {
     return;
   }
 
-    dernieresDonneesAmenities = { categorie, items, stats, phrases };
-  _rendreCategorie();
-  // Stations : on arrive d'abord sur les filtres. Autres catégories : sur le premier résultat.
-  _allerAuPremierResultat(categorie === "station_service" ? ".station-filtres" : ".resultat-item");
+  dernieresDonneesAmenities = { categorie, items, stats, phrases };
+  try {
+    _rendreCategorie();
+    // Stations : on arrive d'abord sur les filtres. Autres catégories : sur le premier résultat.
+    _allerAuPremierResultat(categorie === "station_service" ? ".station-filtres" : ".resultat-item");
+  } catch (err) {
+    console.error(err);
+    conteneur.innerHTML = `<p style="color:#9a9ea8;">Impossible d'afficher ces résultats pour le moment.</p>`;
+  }
 }
 
 // ── Stations-service : fiche détaillée (prix, ruptures, horaires, services) ──────────────
@@ -1584,7 +1606,7 @@ function _rendreStations() {
       <span class="station-label">Tri</span><div class="selecteur-mode">${tris}${boutonBorne}</div>
     </div>`;
 
-    conteneur.innerHTML = barre + vide + notes + cartes + source;
+    
 
   const cartes = affiches.map((item, index) => {
     const st = item.station || null;
@@ -1637,7 +1659,7 @@ function _rendreStations() {
     masquees ? `<p class="station-note">${masquees} station(s) masquée(s) : ${escapeHtml(libelleCarburant)} non proposé ou en rupture.</p>` : "",
   ].join("");
   const source = `<small class="station-source">Prix relevés sur prix-carburants.gouv.fr (Licence Ouverte 2.0), mis à jour chaque jour : ils peuvent avoir changé à la pompe. Pour un carburant peu courant (E85, GPLc), une station plus éloignée peut être ajoutée à la liste.</small>`;
-
+    const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
   conteneur.innerHTML = barre + blocPhrases + vide + notes + cartes + source;
 
   conteneur.querySelectorAll("[data-carb]").forEach((b) => b.addEventListener("click", () => {
@@ -1667,69 +1689,77 @@ function _rendreStations() {
 
 function _rendreCategorie() {
   if (!dernieresDonneesAmenities) return;
-  const { categorie, items, stats, phrases } = dernieresDonneesAmenities;
-  if (categorie === "station_service") { _rendreStations(); return; }
   const conteneur = document.getElementById("popup-resultats");
-  const infoCategorie = ICONES_CATEGORIE[categorie] || {};
-  const couleur = infoCategorie.couleur || "#e63946";
-  const resume = creerResumeRecherche(stats, items.length);
 
-  // Message pied / voiture : toujours affiché, calculé côté client
-  const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
+  try {
+    const { categorie, items, stats, phrases } = dernieresDonneesAmenities;
+    if (categorie === "station_service") { _rendreStations(); return; }
+    const infoCategorie = ICONES_CATEGORIE[categorie] || {};
+    const couleur = infoCategorie.couleur || "#e63946";
+    const resume = creerResumeRecherche(stats, items.length);
 
-  const selecteurTri = `
-    <div class="selecteur-mode">
-      <button class="mode-btn ${modeTriCourant === "pied" ? "actif" : ""}" data-mode="pied"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Trier à pied</button>
-      <button class="mode-btn ${modeTriCourant === "voiture" ? "actif" : ""}" data-mode="voiture"><i class="fa-solid fa-car" aria-hidden="true"></i> Trier en voiture</button>
-    </div>
-  `;
+    // Message pied / voiture : toujours affiché, calculé côté client
+    const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
 
-  const cleDistance = modeTriCourant === "pied" ? "distance_pied_metres" : "distance_voiture_metres";
-  const itemsTries = [...items].sort((a, b) => {
-    const da = a[cleDistance] ?? Infinity;
-    const db = b[cleDistance] ?? Infinity;
-    return da - db;
-  });
-
-  const liste = itemsTries.map((item, index) => {
-    const estPlusProche = index === 0 && item[cleDistance] != null;
-    return `
-      <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
-        ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
-        <div class="nom">${item.nom}${item.note_etoiles ? ` <span class="etoiles">${"<i class='fa-solid fa-star' aria-hidden='true'></i>".repeat(Math.round(item.note_etoiles))}</span>` : ""}</div>
-        ${estPlusProche ? `<div class="station-badges">${BADGE_PLUS_PROCHE}</div>` : ""}
-        <div class="distance">${_texteDistanceDynamique(item, modeTriCourant)}</div>
-        ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
-        ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
-        ${item.telephone ? `<div class="telephone"><i class="fa-solid fa-phone" aria-hidden="true"></i> ${item.telephone}</div>` : ""}
-        ${item.tarif_min ? `<div class="tarif"><i class="fa-solid fa-coins" aria-hidden="true"></i> ${_texteTarif(item)}</div>` : ""}
-        ${item.equipements ? `<div class="equipements"><i class="fa-solid fa-wrench" aria-hidden="true"></i> ${item.equipements}</div>` : ""}
-        ${item.langues_parlees ? `<div class="langues"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> ${item.langues_parlees}</div>` : ""}
-        ${item.description ? `<div class="description-commodite scrollable">${item.description}</div>` : ""}
-        ${item.lien_accessibilite ? `<div class="accessibilite"><a href="${item.lien_accessibilite}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-wheelchair" aria-hidden="true"></i> Infos accessibilité</a></div>` : ""}
-        ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
-        <div class="boutons-itineraire">
-          <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
-          <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
-        </div>
-        <div class="itineraire-resultat"></div>
+    const selecteurTri = `
+      <div class="selecteur-mode">
+        <button class="mode-btn ${modeTriCourant === "pied" ? "actif" : ""}" data-mode="pied"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> Trier à pied</button>
+        <button class="mode-btn ${modeTriCourant === "voiture" ? "actif" : ""}" data-mode="voiture"><i class="fa-solid fa-car" aria-hidden="true"></i> Trier en voiture</button>
       </div>
     `;
-  }).join("");
 
-  conteneur.innerHTML = resume + blocPhrases + selecteurTri + liste;
-
-  conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
-    btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
-  });
-  conteneur.querySelectorAll(".mode-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      modeTriCourant = btn.dataset.mode;
-      _rendreCategorie();
+    const cleDistance = modeTriCourant === "pied" ? "distance_pied_metres" : "distance_voiture_metres";
+    const itemsTries = [...items].sort((a, b) => {
+      const da = a[cleDistance] ?? Infinity;
+      const db = b[cleDistance] ?? Infinity;
+      return da - db;
     });
-  });
 
-  afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTriCourant);
+    const liste = itemsTries.map((item, index) => {
+      const estPlusProche = index === 0 && item[cleDistance] != null;
+      return `
+        <div class="resultat-item ${estPlusProche ? "plus-proche" : ""}" style="${estPlusProche ? `border-color:${couleur};` : ""}">
+          ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy">` : ""}
+          <div class="nom">${item.nom}${item.note_etoiles ? ` <span class="etoiles">${"<i class='fa-solid fa-star' aria-hidden='true'></i>".repeat(Math.round(item.note_etoiles))}</span>` : ""}</div>
+          ${estPlusProche ? `<div class="station-badges">${BADGE_PLUS_PROCHE}</div>` : ""}
+          <div class="distance">${_texteDistanceDynamique(item, modeTriCourant)}</div>
+          ${item.adresse ? `<div class="adresse">${item.adresse}</div>` : ""}
+          ${item.horaires ? `<div class="horaires">${_texteHoraires(item.horaires)}</div>` : ""}
+          ${item.telephone ? `<div class="telephone"><i class="fa-solid fa-phone" aria-hidden="true"></i> ${item.telephone}</div>` : ""}
+          ${item.tarif_min ? `<div class="tarif"><i class="fa-solid fa-coins" aria-hidden="true"></i> ${_texteTarif(item)}</div>` : ""}
+          ${item.equipements ? `<div class="equipements"><i class="fa-solid fa-wrench" aria-hidden="true"></i> ${item.equipements}</div>` : ""}
+          ${item.langues_parlees ? `<div class="langues"><i class="fa-solid fa-comment-dots" aria-hidden="true"></i> ${item.langues_parlees}</div>` : ""}
+          ${item.description ? `<div class="description-commodite scrollable">${item.description}</div>` : ""}
+          ${item.lien_accessibilite ? `<div class="accessibilite"><a href="${item.lien_accessibilite}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-wheelchair" aria-hidden="true"></i> Infos accessibilité</a></div>` : ""}
+          ${item.site_web ? `<div class="site-web"><a href="${item.site_web}" target="_blank" rel="noopener noreferrer">Voir le site</a></div>` : ""}
+          <div class="boutons-itineraire">
+            <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
+            <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+          </div>
+          <div class="itineraire-resultat"></div>
+        </div>
+      `;
+    }).join("");
+
+    conteneur.innerHTML = resume + blocPhrases + selecteurTri + liste;
+
+    conteneur.querySelectorAll(".btn-itineraire").forEach((btn) => {
+      btn.addEventListener("click", () => afficherItineraireVersCommodite(btn));
+    });
+    conteneur.querySelectorAll(".mode-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        modeTriCourant = btn.dataset.mode;
+        _rendreCategorie();
+      });
+    });
+
+    afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTriCourant);
+  } catch (err) {
+    console.error("rendu de la catégorie : échec", err);
+    if (conteneur) {
+      conteneur.innerHTML = `<p style="color:#9a9ea8;">Impossible d'afficher ces résultats pour le moment.</p>`;
+    }
+  }
 }
 let coucheItineraireCommodite = null;
 

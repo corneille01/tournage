@@ -4,6 +4,69 @@
 const API_BASE = "";
 const MON_PARCOURS_STORAGE_KEY = "pelify_mon_parcours_v41";
 const MON_PARCOURS_OPTIONS_KEY = "pelify_mon_parcours_options_v43";
+const MON_PARCOURS_RESULT_KEY = "pelify_mon_parcours_dernier_v1";
+const COULEUR_RECOMMANDATION = "#00b4d8";   // turquoise : distincte des activités (violet) et des carburants (orange)
+
+function escapeIcone(v) {
+  const s = String(v || "");
+  return /^fa-[a-z0-9-]+$/.test(s) ? s : "fa-circle-info";
+}
+
+function _dateLocaleISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ── Distance vers l'étape la plus proche (toujours calculée, à vol d'oiseau) ──
+function _texteDistanceEtape(item, etapes, ordreImpose = null) {
+  const lat = Number(item?.latitude), lon = Number(item?.longitude);
+  const liste = Array.isArray(etapes) ? etapes : [];
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !liste.length) return "Distance à l'étape indisponible";
+  const calc = (e, i) => ({ ordre: i + 1, nom: e.nom || "Étape", distance: haversineApprox(lat, lon, Number(e.latitude), Number(e.longitude)) });
+  let proche = null;
+  if (ordreImpose && liste[ordreImpose - 1]) proche = calc(liste[ordreImpose - 1], ordreImpose - 1);
+  if (!proche) {
+    liste.forEach((e, i) => {
+      const c = calc(e, i);
+      if (Number.isFinite(c.distance) && (!proche || c.distance < proche.distance)) proche = c;
+    });
+  }
+  if (!proche) return "Distance à l'étape indisponible";
+  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau`;
+}
+
+// ── Mémorisation du dernier calcul ──
+function _signatureParcours() {
+  return state.monParcours.map((x) => Number(x.id)).join(",") + "|" + (state.monParcoursOptions.mode || "");
+}
+function memoriserDernierCalcul(data) {
+  data._signature = _signatureParcours();
+  data._calcule_le = Date.now();
+  state.monParcoursDernierCalcul = data;
+  try { localStorage.setItem(MON_PARCOURS_RESULT_KEY, JSON.stringify(data)); }
+  catch (e) { console.warn("Dernier calcul non mémorisé (stockage plein ?)", e); }
+}
+function chargerDernierCalcul() {
+  try {
+    const d = JSON.parse(localStorage.getItem(MON_PARCOURS_RESULT_KEY) || "null");
+    if (d && typeof d === "object" && Array.isArray(d.etapes)) state.monParcoursDernierCalcul = d;
+  } catch {}
+}
+function dernierCalculValide() {
+  const d = state.monParcoursDernierCalcul;
+  return !!d && d._signature === _signatureParcours();
+}
+function restaurerDernierCalcul() {
+  const zone = document.getElementById("mon-parcours-resultat");
+  const d = state.monParcoursDernierCalcul;
+  if (!zone || !d || !state.monParcours.length) return;
+  if (dernierCalculValide()) {
+    afficherGeometrieParcoursV4(d, false);   // d'abord le tracé…
+    afficherResultatMonParcours(d);          // …puis le résultat, qui ajoute les points d'offres
+  } else {
+    zone.innerHTML = `<p class="mon-parcours-note">Vos étapes ou votre mode de déplacement ont changé depuis le dernier calcul : cliquez sur « Calculer mon parcours » pour l'actualiser.</p>`;
+  }
+}
 let filtreBorneElectrique = false;     // true = n'afficher que les stations avec borne de recharge
 
 // Doit rester synchronisé avec ICONES_CATEGORIE dans backend/overpass.py
@@ -195,8 +258,12 @@ function afficherMonParcoursPanel(){
   const c=document.getElementById("mon-parcours-contenu");if(!c)return;
   mettreAJourCompteurMonParcours();
   const o=state.monParcoursOptions;
+  const interets=Object.entries(ICONES_CATEGORIE).filter(([k])=>k!=="station_service");
   const parcoursVideHtml=!state.monParcours.length?`<div class="mon-parcours-vide"><div class="mon-parcours-vide-icone"><i class="fa-solid fa-film" aria-hidden="true"></i></div><h3>Construisez votre sortie autrement</h3><p>Vous pouvez ajouter des lieux depuis la carte, <b>ou partir directement de vos critères</b> pour que Pelify vous propose des possibilités.</p></div>`:"";
   const liste=state.monParcours.map((l,i)=>`<article class="mon-parcours-etape"><div class="mon-parcours-numero">${i+1}</div><div class="mon-parcours-etape-info"><strong>${escapeHtml(l.nom)}</strong><small>${escapeHtml([l.commune,l.departement].filter(Boolean).join(", "))}</small>${l.film_titre?`<small><i class="fa-solid fa-film" aria-hidden="true"></i> ${escapeHtml(l.film_titre)}</small>`:""}</div><div class="mon-parcours-etape-actions"><button type="button" data-action="up" data-index="${i}" title="Monter">↑</button><button type="button" data-action="down" data-index="${i}" title="Descendre">↓</button><button type="button" data-action="remove" data-index="${i}" title="Retirer"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></article>`).join("");
+  const selectionDepart=o.depart?.nom&&o.departType!=='premiere'
+    ?`Départ : <b>${escapeHtml(o.depart.nom)}</b>`
+    :`Départ : <b>${o.departType==='position'?'votre position':escapeHtml(state.monParcours[0]?.nom||'première étape')}</b>`;
   c.innerHTML=`
     ${parcoursVideHtml}
     <div class="mon-parcours-resume-top"><b>${state.monParcours.length} étape${state.monParcours.length>1?"s":""}${state.monParcours.length?" sélectionnée"+(state.monParcours.length>1?"s":""):""}</b>${state.monParcours.length?'<button type="button" id="btn-effacer-mon-parcours" class="btn-texte-danger">Tout effacer</button>':''}</div>
@@ -210,33 +277,35 @@ function afficherMonParcoursPanel(){
         <label><input type="radio" name="mp-depart-type" value="adresse" ${o.departType==='adresse'?'checked':''}> <i class="fa-solid fa-house" aria-hidden="true"></i> Une adresse</label>
       </div>
       <div id="mp-adresse-bloc" class="mp-adresse-bloc ${o.departType==='adresse'?'':'hidden'}">
-        <div class="mp-adresse-ligne"><input id="mp-adresse-input" type="search" placeholder="Adresse, commune, lieu…" value="${escapeAttr(o.depart?.nom||'')}"><button id="mp-adresse-rechercher" type="button">Rechercher</button></div>
+        <div class="mp-adresse-ligne"><input id="mp-adresse-input" type="search" placeholder="Adresse, commune, lieu…" value="${escapeHtml(o.depart?.source==='adresse'?o.depart.nom:'')}"><button id="mp-adresse-rechercher" type="button">Rechercher</button></div>
         <div id="mp-adresse-resultats"></div>
       </div>
-      <div id="mp-depart-selection" class="mp-selection-info">${o.depart?.nom&&o.departType!=='premiere'?`Départ : <b>${escapeHtml(o.depart.nom)}</b>`:`Départ : <b>${o.departType==='position'?'votre position':(state.monParcours[0]?.nom||'première étape')}</b>`}</div>
+      <div id="mp-depart-selection" class="mp-selection-info">${selectionDepart}</div>
 
       <label class="mp-label">Temps disponible</label>
       <select id="mp-temps"><option value="60" ${o.temps===60?'selected':''}>1 heure</option><option value="120" ${o.temps===120?'selected':''}>2 heures</option><option value="180" ${o.temps===180?'selected':''}>3 heures</option><option value="240" ${o.temps===240?'selected':''}>4 heures</option><option value="360" ${o.temps===360?'selected':''}>6 heures</option><option value="480" ${o.temps===480?'selected':''}>8 heures</option><option value="720" ${o.temps===720?'selected':''}>12 heures</option><option value="1440" ${o.temps===1440?'selected':''}>Toute la journée</option></select>
       <label class="mp-label">Temps de visite moyen par lieu</label>
       <select id="mp-visite"><option value="15" ${o.visite===15?'selected':''}>15 min</option><option value="30" ${o.visite===30?'selected':''}>30 min</option><option value="45" ${o.visite===45?'selected':''}>45 min</option><option value="60" ${o.visite===60?'selected':''}>1 h</option><option value="90" ${o.visite===90?'selected':''}>1 h 30</option></select>
-      <label class="mp-label">Date de la sortie</label><input id="mp-date-sortie" type="date" value="${escapeAttr(o.dateSortie||new Date().toISOString().slice(0,10))}" class="mp-time-input"><small class="mp-aide">La date permet à Pelify de vérifier les créneaux publiés des visites guidées.</small><label class="mp-label">Heure de départ</label><input id="mp-heure-depart" type="time" value="${escapeAttr(o.heureDepart||'09:00')}" class="mp-time-input"><label class="mp-label">Budget maximum indicatif</label><select id="mp-budget-max"><option value="" ${!o.budgetMax?'selected':''}>Sans plafond</option><option value="20" ${o.budgetMax===20?'selected':''}>20 €</option><option value="40" ${o.budgetMax===40?'selected':''}>40 €</option><option value="60" ${o.budgetMax===60?'selected':''}>60 €</option><option value="100" ${o.budgetMax===100?'selected':''}>100 €</option></select><label class="mp-label">Moyen de déplacement</label>
+      <label class="mp-label">Date de la sortie</label><input id="mp-date-sortie" type="date" min="${_dateLocaleISO()}" value="${escapeHtml(o.dateSortie||_dateLocaleISO())}" class="mp-time-input"><small class="mp-aide">La date permet à Pelify de vérifier les créneaux publiés des visites guidées.</small>
+      <label class="mp-label">Heure de départ</label><input id="mp-heure-depart" type="time" value="${escapeHtml(o.heureDepart||'09:00')}" class="mp-time-input">
+      <label class="mp-label">Budget maximum indicatif</label><select id="mp-budget-max"><option value="" ${!o.budgetMax?'selected':''}>Sans plafond</option><option value="20" ${o.budgetMax===20?'selected':''}>20 €</option><option value="40" ${o.budgetMax===40?'selected':''}>40 €</option><option value="60" ${o.budgetMax===60?'selected':''}>60 €</option><option value="100" ${o.budgetMax===100?'selected':''}>100 €</option></select>
+      <label class="mp-label">Moyen de déplacement</label>
       <div class="mp-depart-options"><label><input type="radio" name="mon-parcours-mode" value="driving-car" ${o.mode==='driving-car'?'checked':''}> <i class="fa-solid fa-car" aria-hidden="true"></i> Voiture</label><label><input type="radio" name="mon-parcours-mode" value="foot-walking" ${o.mode==='foot-walking'?'checked':''}> <i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</label></div>
       <div id="mp-carburant-bloc" class="mp-carburant-bloc ${o.mode==='driving-car'?'':'hidden'}">
         <label class="mp-label"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> Carburant de votre véhicule</label>
         <select id="mp-carburant">${[['e10','SP95-E10'],['sp95','SP95'],['sp98','SP98'],['gazole','Gazole'],['e85','E85 (superéthanol)'],['gplc','GPLc'],['aucun','Ne pas afficher les prix']].map(([v,l])=>`<option value="${v}" ${(o.carburant||'e10')===v?'selected':''}>${l}</option>`).join('')}</select>
         <label class="mp-label">Consommation (L/100 km)</label>
-        <input id="mp-conso" type="number" min="2" max="25" step="0.1" value="${escapeAttr(o.consommation||6.5)}" class="mp-time-input">
+        <input id="mp-conso" type="number" min="2" max="25" step="0.1" value="${escapeHtml(o.consommation||6.5)}" class="mp-time-input">
         <small class="mp-aide">Pelify estime votre plein et repère les stations les moins chères autour de votre départ et de chaque étape.</small>
       </div>
       <label class="mp-check"><input id="mp-retour" type="checkbox" ${o.retour?'checked':''}> <i class="fa-solid fa-repeat" aria-hidden="true"></i> Revenir au point de départ</label>
       <label class="mp-label">Budget souhaité</label>
-      <select id="mp-budget"><option value="economique" ${o.budget==='economique'?'selected':''}><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Économique</option><option value="equilibre" ${o.budget==='equilibre'?'selected':''}><i class="fa-solid fa-scale-balanced" aria-hidden="true"></i> Bon équilibre</option><option value="confort" ${o.budget==='confort'?'selected':''}><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Confort</option></select>
-      <label class="mp-check"><input id="mp-accessibilite" type="checkbox" ${o.accessibilite?'checked':''}> <i class="fa-solid fa-wheelchair" aria-hidden="true"></i> Privilégier les offres avec accessibilité renseignée</label>
+      <select id="mp-budget"><option value="economique" ${o.budget==='economique'?'selected':''}>Économique</option><option value="equilibre" ${o.budget==='equilibre'?'selected':''}>Bon équilibre</option><option value="confort" ${o.budget==='confort'?'selected':''}>Confort</option></select>
       <label class="mp-check"><input id="mp-optimiser" type="checkbox" ${o.optimiser?'checked':''}> <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Optimiser automatiquement si mon temps est trop court</label>
       <label class="mp-check"><input id="mp-visites-guidees" type="checkbox" ${o.inclureVisitesGuidees!==false?'checked':''}> <i class="fa-solid fa-ticket" aria-hidden="true"></i> Intégrer une visite guidée lorsqu’elle est disponible</label>
       <label class="mp-label">Ce que vous souhaitez trouver autour du parcours</label>
       <div class="mp-interets">
-        ${[["restaurant","<i class='fa-solid fa-utensils' aria-hidden='true'></i> Restaurants"],["hebergement","<i class='fa-solid fa-hotel' aria-hidden='true'></i> Hébergements"],["activite","<i class='fa-solid fa-ticket' aria-hidden='true'></i> Activités"],["office_tourisme","<i class='fa-solid fa-circle-info' aria-hidden='true'></i> Offices de tourisme"],["parking","<i class='fa-solid fa-square-parking' aria-hidden='true'></i> Parkings"],["gare","<i class='fa-solid fa-train' aria-hidden='true'></i> Gares"]].map(([v,l])=>`<label><input class="mp-interet" type="checkbox" value="${v}" ${o.categories.includes(v)?'checked':''}> ${l}</label>`).join('')}
+        ${interets.map(([v,info])=>`<label><input class="mp-interet" type="checkbox" value="${escapeHtml(v)}" ${o.categories.includes(v)?'checked':''}> ${info.emoji} ${escapeHtml(info.label)}</label>`).join('')}
       </div>
     </section>
     <button type="button" id="btn-calculer-mon-parcours" class="btn-calculer-mon-parcours"><i class="fa-solid fa-map" aria-hidden="true"></i> Calculer mon parcours</button><button type="button" id="btn-generer-parcours-ideal" class="btn-generer-parcours-ideal"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Générer des possibilités avec mes critères</button><div id="mp-generation-resultat"></div>
@@ -244,19 +313,27 @@ function afficherMonParcoursPanel(){
     <div id="mon-parcours-resultat" class="mon-parcours-resultat"></div>`;
 
   c.querySelectorAll("[data-action]").forEach(b=>b.addEventListener("click",()=>{const i=Number(b.dataset.index);if(b.dataset.action==="remove")retirerLieuDuParcours(state.monParcours[i]?.id);if(b.dataset.action==="up")deplacerLieuDansMonParcours(i,-1);if(b.dataset.action==="down")deplacerLieuDansMonParcours(i,1);afficherMonParcoursPanel();}));
-  document.getElementById("btn-effacer-mon-parcours")?.addEventListener("click",()=>{state.monParcours=[];sauvegarderMonParcours();nettoyerAffichageParcoursGlobal();afficherMonParcoursPanel();});
-  c.querySelectorAll('input[name="mp-depart-type"]').forEach(x=>x.addEventListener('change',()=>{o.departType=x.value;if(x.value==='premiere'){o.depart=null;}else if(x.value==='position'){o.depart=null;demanderPositionPourParcours();}document.getElementById('mp-adresse-bloc')?.classList.toggle('hidden',x.value!=='adresse');afficherMonParcoursPanel();}));
+  document.getElementById("btn-effacer-mon-parcours")?.addEventListener("click",()=>{
+    state.monParcours=[];state.monParcoursDernierCalcul=null;state.monParcoursDerniereGeneration=null;
+    try{localStorage.removeItem(MON_PARCOURS_RESULT_KEY);}catch{}
+    sauvegarderMonParcours();nettoyerAffichageParcoursGlobal();afficherMonParcoursPanel();
+  });
+  c.querySelectorAll('input[name="mp-depart-type"]').forEach(x=>x.addEventListener('change',()=>{
+    o.departType=x.value;
+    if(o.depart && o.depart.source!==x.value) o.depart=null;   // ne jamais garder le départ d'un autre mode
+    sauvegarderOptionsMonParcours();
+    if(x.value==='position'&&!o.depart) demanderPositionPourParcours(); else afficherMonParcoursPanel();
+  }));
   c.querySelectorAll('input[name="mon-parcours-mode"]').forEach(x=>x.addEventListener('change',()=>{o.mode=x.value;document.getElementById('mp-carburant-bloc')?.classList.toggle('hidden',x.value!=='driving-car');sauvegarderOptionsMonParcours();}));
   document.getElementById('mp-carburant')?.addEventListener('change',e=>{o.carburant=e.target.value;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-conso')?.addEventListener('change',e=>{const v=Number(String(e.target.value).replace(',','.'));o.consommation=Number.isFinite(v)&&v>=2&&v<=25?v:6.5;e.target.value=o.consommation;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-temps')?.addEventListener('change',e=>{o.temps=Number(e.target.value);sauvegarderOptionsMonParcours();});
   document.getElementById('mp-visite')?.addEventListener('change',e=>{o.visite=Number(e.target.value);sauvegarderOptionsMonParcours();});
-  document.getElementById('mp-date-sortie')?.addEventListener('change',e=>{o.dateSortie=e.target.value;sauvegarderOptionsMonParcours();});
-  document.getElementById('mp-heure-depart')?.addEventListener('change',e=>{o.heureDepart=e.target.value;sauvegarderOptionsMonParcours();});
+  document.getElementById('mp-date-sortie')?.addEventListener('change',e=>{o.dateSortie=e.target.value||_dateLocaleISO();sauvegarderOptionsMonParcours();});
+  document.getElementById('mp-heure-depart')?.addEventListener('change',e=>{o.heureDepart=e.target.value||'09:00';sauvegarderOptionsMonParcours();});
   document.getElementById('mp-budget-max')?.addEventListener('change',e=>{o.budgetMax=e.target.value?Number(e.target.value):null;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-retour')?.addEventListener('change',e=>{o.retour=e.target.checked;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-budget')?.addEventListener('change',e=>{o.budget=e.target.value;sauvegarderOptionsMonParcours();});
-  document.getElementById('mp-accessibilite')?.addEventListener('change',e=>{o.accessibilite=e.target.checked;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-optimiser')?.addEventListener('change',e=>{o.optimiser=e.target.checked;sauvegarderOptionsMonParcours();});
   document.getElementById('mp-visites-guidees')?.addEventListener('change',e=>{o.inclureVisitesGuidees=e.target.checked;sauvegarderOptionsMonParcours();});
   c.querySelectorAll('.mp-interet').forEach(x=>x.addEventListener('change',()=>{o.categories=[...c.querySelectorAll('.mp-interet:checked')].map(x=>x.value);sauvegarderOptionsMonParcours();}));
@@ -264,6 +341,10 @@ function afficherMonParcoursPanel(){
   document.getElementById('mp-adresse-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')rechercherAdressePourParcours();});
   document.getElementById("btn-calculer-mon-parcours")?.addEventListener("click",calculerMonParcoursGlobal);
   document.getElementById("btn-generer-parcours-ideal")?.addEventListener("click",genererParcoursIdeal);
+
+  // Retrouver ce qui avait été fait
+  if(state.monParcoursDerniereGeneration) afficherPossibilitesGenerees(state.monParcoursDerniereGeneration);
+  restaurerDernierCalcul();
 }
 async function genererParcoursIdeal(){
   const box=document.getElementById("mp-generation-resultat"); if(!box)return;
@@ -310,25 +391,56 @@ async function genererParcoursIdeal(){
     });
   }catch(e){box.innerHTML=`<small class="mon-parcours-erreur">${escapeHtml(e.message||'Génération impossible')}</small>`;}
 }
-function demanderPositionPourParcours(){
-  if(!navigator.geolocation){alert("La géolocalisation n'est pas disponible dans ce navigateur.");return;}
-  navigator.geolocation.getCurrentPosition(pos=>{state.monParcoursOptions.depart={nom:'Ma position',latitude:pos.coords.latitude,longitude:pos.coords.longitude};afficherMonParcoursPanel();},()=>alert("Pelify n'a pas pu accéder à votre position. Vous pouvez choisir une adresse à la place."),{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
+function demanderPositionPourParcours() {
+  if (!navigator.geolocation) { alert("La géolocalisation n'est pas disponible dans ce navigateur."); return; }
+  navigator.geolocation.getCurrentPosition((pos) => {
+    state.monParcoursOptions.depart = { nom: "Ma position", latitude: pos.coords.latitude, longitude: pos.coords.longitude, source: "position", maj: Date.now() };
+    sauvegarderOptionsMonParcours();
+    afficherMonParcoursPanel();
+  }, () => alert("Pelify n'a pas pu accéder à votre position. Vous pouvez choisir une adresse à la place."),
+  { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
 }
-async function rechercherAdressePourParcours(){
-  const input=document.getElementById('mp-adresse-input'), box=document.getElementById('mp-adresse-resultats'); if(!input||!box)return;
-  const q=input.value.trim(); if(q.length<3){box.innerHTML='<small>Entrez au moins 3 caractères.</small>';return;}
-  box.innerHTML='<small>Recherche de l’adresse…</small>';
-  try{const res=await fetch(`${API_BASE}/api/geocodage?q=${encodeURIComponent(q)}`);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Recherche impossible');
-    box.innerHTML=(data.resultats||[]).map((x,i)=>`<button type="button" class="mp-adresse-resultat" data-index="${i}">${escapeHtml(x.label)}</button>`).join('')||'<small>Aucune adresse trouvée.</small>';
-    box.querySelectorAll('.mp-adresse-resultat').forEach(b=>b.addEventListener('click',()=>{const x=data.resultats[Number(b.dataset.index)];state.monParcoursOptions.depart={nom:x.label,latitude:x.latitude,longitude:x.longitude};afficherMonParcoursPanel();}));
-  }catch(e){box.innerHTML=`<small class="mon-parcours-erreur">${escapeHtml(e.message)}</small>`;}
+async function rechercherAdressePourParcours() {
+  const input = document.getElementById("mp-adresse-input"), box = document.getElementById("mp-adresse-resultats");
+  if (!input || !box) return;
+  const q = input.value.trim();
+  if (q.length < 3) { box.innerHTML = "<small>Entrez au moins 3 caractères.</small>"; return; }
+  box.innerHTML = "<small>Recherche de l’adresse…</small>";
+  try {
+    const res = await fetch(`${API_BASE}/api/geocodage?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Recherche impossible");
+    box.innerHTML = (data.resultats || []).map((x, i) => `<button type="button" class="mp-adresse-resultat" data-index="${i}">${escapeHtml(x.label)}</button>`).join("") || "<small>Aucune adresse trouvée.</small>";
+    box.querySelectorAll(".mp-adresse-resultat").forEach((b) => b.addEventListener("click", () => {
+      const x = data.resultats[Number(b.dataset.index)];
+      state.monParcoursOptions.depart = { nom: x.label, latitude: x.latitude, longitude: x.longitude, source: "adresse" };
+      sauvegarderOptionsMonParcours();
+      afficherMonParcoursPanel();
+    }));
+  } catch (e) { box.innerHTML = `<small class="mon-parcours-erreur">${escapeHtml(e.message)}</small>`; }
 }
-function construireDepartParcours(){
-  const o=state.monParcoursOptions;
-  if(o.departType==='premiere')return null;
-  return o.depart;
+function construireDepartParcours() {
+  const o = state.monParcoursOptions;
+  if (o.departType === "premiere" || !o.depart) return null;
+  return { nom: o.depart.nom, latitude: o.depart.latitude, longitude: o.depart.longitude };
 }
-function nettoyerAffichageParcoursGlobal(){nettoyerMarqueursParcoursExtra();if(state.marqueurDepartParcours){map.removeLayer(state.marqueurDepartParcours);state.marqueurDepartParcours=null;}if(state.traceLayer){map.removeLayer(state.traceLayer);state.traceLayer=null;} (state.marqueursEtapes||[]).forEach(m=>map.removeLayer(m));state.marqueursEtapes=[];(state.parcoursV4AmenityMarkers||[]).forEach(m=>clusterActivites.removeLayer(m));state.parcoursV4AmenityMarkers=[];}
+function nettoyerAffichageParcoursGlobal() {
+  nettoyerMarqueursParcoursExtra();
+  if (state.marqueurDepartParcours) { map.removeLayer(state.marqueurDepartParcours); state.marqueurDepartParcours = null; }
+  if (state.traceLayer) { map.removeLayer(state.traceLayer); state.traceLayer = null; }
+  (state.marqueursEtapes || []).forEach((m) => map.removeLayer(m));
+  state.marqueursEtapes = [];
+  (state.parcoursV4AmenityMarkers || []).forEach((m) => clusterActivites.removeLayer(m));
+  state.parcoursV4AmenityMarkers = [];
+  map.closePopup();
+}
+
+function effacerTrace() {
+  nettoyerAffichageParcoursGlobal();
+  const conteneurResultat = document.getElementById("resultat-trace");
+  if (conteneurResultat) conteneurResultat.innerHTML = "";
+}
+
 function construireVisitesGuideesPourParcours(){
   if(state.monParcoursOptions.inclureVisitesGuidees===false) return [];
   const vus=new Set(); const sorties=[];
@@ -346,7 +458,8 @@ async function calculerMonParcoursGlobal(){
   if(o.departType==='position'&&!o.depart){demanderPositionPourParcours();return;}
   if(o.departType==='adresse'&&!o.depart){r.innerHTML='<p class="mon-parcours-erreur">Choisissez une adresse de départ avant de calculer.</p>';return;}
   r.innerHTML=`<p class="mon-parcours-loading">Calcul du trajet IGN et des offres touristiques…</p>`;
-  try{const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:o.accessibilite,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",carburant:o.carburant||"e10",consommation_l_100km:o.consommation||null,inclure_carburant:(o.carburant||"e10")!=="aucun"};
+  try{
+    const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:false,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",carburant:o.carburant||"e10",consommation_l_100km:o.consommation||null,inclure_carburant:(o.carburant||"e10")!=="aucun"};
     const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const raw=await res.text();
     let data=null;
@@ -356,7 +469,9 @@ async function calculerMonParcoursGlobal(){
     }
     if(!res.ok)throw new Error(data?.detail||data?.message||`Erreur serveur (${res.status})`);
     if(!data||typeof data!=="object")throw new Error("Réponse invalide du serveur.");
-    state.monParcoursDernierCalcul=data;afficherGeometrieParcoursV4(data,false);afficherResultatMonParcours(data);
+    memoriserDernierCalcul(data);
+    afficherGeometrieParcoursV4(data,false);
+    afficherResultatMonParcours(data);
   }catch(e){console.error(e);r.innerHTML=`<p class="mon-parcours-erreur">${escapeHtml(e.message||"Erreur lors du calcul du parcours.")}</p>`;}
 }
 function _minutesDepuisMinuit(hhmm){const [h,m]=String(hhmm||'00:00').split(':').map(Number);return (h||0)*60+(m||0);}
@@ -417,7 +532,7 @@ function construireCarburantsHtml(data){
   if(c.actif===false) return `<section class="mp-carburant"><h3><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> Carburant</h3><p class="mp-carburant-note">${escapeHtml(c.raison||'Prix indisponibles pour ce parcours.')}</p></section>`;
   const heure=iso=>{if(!iso)return '';const d=new Date(iso);return Number.isNaN(d.getTime())?'':d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});};
   const prix=v=>Number(v).toFixed(3).replace('.',',');
-  const conseils=(c.conseils||[]).map(x=>`<p><i class="fa-solid ${escapeAttr(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('');
+  const conseils=(c.conseils||[]).map(x=>`<p><i class="fa-solid ${escapeIcone(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('');
   const alertes=(c.avertissements||[]).map(x=>`<p class="mp-carburant-alerte"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(x)}</p>`).join('');
   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
@@ -430,6 +545,7 @@ function construireCarburantsHtml(data){
 }
 function afficherResultatMonParcours(data){
   const c=document.getElementById("mon-parcours-resultat");if(!c)return;
+  const etapesData=Array.isArray(data.etapes)?data.etapes:[];
   const distance=Number(data.distance_metres||0);
   const duree=Number(data.duree_secondes||0);
   const total=Number(data.duree_totale_estimee_secondes||0);
@@ -445,48 +561,49 @@ function afficherResultatMonParcours(data){
 
   const budgetHtml=budget?`<div class="mp-budget ${data.budget_respecte?'ok':'alerte'}"><b>${data.budget_respecte?'<i class="fa-solid fa-circle-check" aria-hidden="true"></i> Votre parcours tient dans votre créneau':'<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Votre parcours dépasse votre temps disponible'}</b><span>Déplacements : ${duree?formatDuree(duree):'-'} · Visites : ${formatDuree(visite)}${data.duree_visites_guidees_secondes?` · Visites guidées : ${formatDuree(data.duree_visites_guidees_secondes)}`:''}${data.attente_visites_guidees_minutes?` · Attente : ${data.attente_visites_guidees_minutes} min`:''} · Total : ${formatDuree(total)} · Disponible : ${formatDuree(budget*60)}</span>${data.optimiser&&data.etapes_exclues_optimisation?.length?`<small><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> ${data.etapes_exclues_optimisation.length} étape(s) ont été écartées automatiquement pour respecter vos contraintes.</small>`:''}</div>`:'';
 
- const ordre=["activite","restaurant","hebergement","office_tourisme","parking","gare","aeroport","refuge","arret_bus","fetes_manifestations"];
-  const blocs=ordre.filter(k=>cats[k]?.length).map(k=>{
+  // Toutes les catégories : d'abord celles qui ont des offres, puis les cochées sans résultat
+  const ordre=["activite","restaurant","hebergement","office_tourisme","parking","gare","aeroport","aerodrome","refuge","arret_bus","distributeur","hopital","police","fetes_manifestations"];
+  const selection=state.monParcoursOptions.categories||[];
+  const cles=[...new Set([
+    ...ordre.filter(k=>cats[k]?.length),
+    ...Object.keys(cats).filter(k=>cats[k]?.length&&!ordre.includes(k)&&k!=="station_service"),
+    ...selection.filter(k=>!cats[k]?.length),
+  ])];
+  const blocs=cles.map(k=>{
     const info=icones[k]||ICONES_CATEGORIE[k]||{};
-    const offres=(cats[k]||[]).map(x=>{
-      const distanceTxt=x.meilleure_distance_metres!=null?`${formatDistance(x.meilleure_distance_metres)} de l'étape la plus proche`:'À proximité';
+    const titre=escapeHtml(labels[k]||info.label||k);
+    if(!cats[k]?.length) return `<section class="mon-parcours-offres-cat"><h4>${titre}</h4><small class="mon-parcours-note">Aucune offre référencée autour de ce parcours.</small></section>`;
+    const offres=cats[k].map(x=>{
       const tarif=x.tarif_libelle?`<small>${escapeHtml(x.tarif_libelle)}</small>`:'';
-      const action=x.site_web?`<a class="mp-action" href="${escapeAttr(x.site_web)}" target="_blank" rel="noopener noreferrer">Voir / réserver →</a>`:(x.telephone?`<a class="mp-action" href="tel:${escapeAttr(x.telephone)}">Appeler →</a>`:'');
-      return `<div class="mon-parcours-offre"><b>${info.emoji||'<i class="fa-solid fa-location-dot" aria-hidden="true"></i>'} ${escapeHtml(x.nom||'Offre touristique')}</b><small>${distanceTxt}${x.adresse?` · ${escapeHtml(x.adresse)}`:''}</small>${tarif}${x.description?`<small>${escapeHtml(x.description)}</small>`:''}${action}</div>`;
+      const action=x.site_web?`<a class="mp-action" href="${escapeAttr(x.site_web)}" target="_blank" rel="noopener noreferrer">Voir / réserver →</a>`:(x.telephone?`<a class="mp-action" href="tel:${escapeHtml(String(x.telephone).replace(/[^\d+]/g,''))}">Appeler →</a>`:'');
+      return `<div class="mon-parcours-offre"><b>${info.emoji||'<i class="fa-solid fa-location-dot" aria-hidden="true"></i>'} ${escapeHtml(x.nom||'Offre touristique')}</b><small><i class="fa-solid fa-route" aria-hidden="true"></i> ${escapeHtml(_texteDistanceEtape(x,etapesData))}${x.adresse?` · ${escapeHtml(x.adresse)}`:''}</small>${tarif}${x.description?`<small>${escapeHtml(x.description)}</small>`:''}${action}</div>`;
     }).join('');
-    return `<section class="mon-parcours-offres-cat"><h4>${escapeHtml(labels[k]||info.label||k)}</h4>${offres}</section>`;
+    return `<section class="mon-parcours-offres-cat"><h4>${titre}</h4>${offres}</section>`;
   }).join('');
 
-  const etapeRecos=(data.etapes||[]).map((etape,i)=>{
+  const etapeRecos=etapesData.map((etape,i)=>{
     const items=(recs[String(etape.id)]||[]).slice(0,3);
     if(!items.length)return '';
     const cards=items.map(x=>{
       const info=icones[x.categorie]||ICONES_CATEGORIE[x.categorie]||{emoji:'<i class="fa-solid fa-location-dot" aria-hidden="true"></i>'};
-      const action=x.action_url?`<a class="mp-reco-action" href="${escapeAttr(x.action_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.action_label||'Voir')} ↗</a>`:(x.telephone?`<a class="mp-reco-action" href="tel:${escapeAttr(x.telephone)}">Appeler ↗</a>`:'');
-      return `<article class="mp-reco-card mp-reco-suggestion"><div><b>${info.emoji||'<i class="fa-solid fa-location-dot" aria-hidden="true"></i>'} ${escapeHtml(x.nom||'Suggestion')}</b><small>${escapeHtml(x.raison||'Suggestion personnalisée pour votre parcours.')}</small>${x.adresse?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> ${escapeHtml(x.adresse)}</small>`:''}</div>${action}</article>`;
+      const action=x.action_url?`<a class="mp-reco-action" href="${escapeAttr(x.action_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.action_label||'Voir')} ↗</a>`:(x.telephone?`<a class="mp-reco-action" href="tel:${escapeHtml(String(x.telephone).replace(/[^\d+]/g,''))}">Appeler ↗</a>`:'');
+      return `<article class="mp-reco-card mp-reco-suggestion" style="border-left:4px solid ${COULEUR_RECOMMANDATION};"><div><b>${info.emoji||'<i class="fa-solid fa-location-dot" aria-hidden="true"></i>'} ${escapeHtml(x.nom||'Suggestion')}</b><small>${escapeHtml(x.raison||'Suggestion personnalisée pour votre parcours.')}</small>${x.adresse?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> ${escapeHtml(x.adresse)}</small>`:''}<small><i class="fa-solid fa-route" aria-hidden="true"></i> ${escapeHtml(_texteDistanceEtape(x,etapesData,i+1))}</small></div>${action}</article>`;
     }).join('');
     return `<section class="mp-reco-etape"><div class="mp-reco-etape-titre"><span class="mon-parcours-numero">${i+1}</span><div><b>${escapeHtml(etape.nom||'Étape')}</b><small>${etape.film_titre?`<i class="fa-solid fa-film" aria-hidden="true"></i> ${escapeHtml(etape.film_titre)}${etape.annee?` · ${escapeHtml(etape.annee)}`:''}<br>`:''}${escapeHtml([etape.commune,etape.departement].filter(Boolean).join(', '))}</small></div></div>${cards}</section>`;
   }).join('');
 
   const visitesGuidees=[];
   (data.visites_guidees_disponibles||[]).forEach(v=>{
-    const etape=(data.etapes||[]).find(e=>(v.film_ids||[]).map(Number).includes(Number(e.film_id)));
-    visitesGuidees.push({...v,film_titre:etape?.film_titre||'',ordre:etape?((data.etapes||[]).indexOf(etape)+1):null});
+    const etape=etapesData.find(e=>(v.film_ids||[]).map(Number).includes(Number(e.film_id)));
+    visitesGuidees.push({...v,film_titre:etape?.film_titre||'',ordre:etape?(etapesData.indexOf(etape)+1):null});
   });
-  // Si aucune disponibilité datée n'est connue, on garde les visites éditoriales
-  // déjà présentes dans le projet afin que l'utilisateur puisse les consulter.
   if(!visitesGuidees.length){
-    (data.etapes||[]).forEach((etape,i)=>{
-      const partenaires=VISITES_PARTENAIRES[Number(etape.film_id)]||[];
-      partenaires.forEach(v=>visitesGuidees.push({...v,film_titre:etape.film_titre||'',ordre:i+1}));
+    etapesData.forEach((etape,i)=>{
+      (VISITES_PARTENAIRES[Number(etape.film_id)]||[]).forEach(v=>visitesGuidees.push({...v,film_titre:etape.film_titre||'',ordre:i+1}));
     });
   }
   const visitesGuideesHtml=visitesGuidees.length?`<section class="mp-visites-guidees"><h3><i class="fa-solid fa-ticket" aria-hidden="true"></i> Visites guidées pertinentes</h3>${visitesGuidees.map(v=>`<article class="mp-visite-card"><div><b>${escapeHtml(v.nom)}</b><small>${v.ordre?`Étape ${v.ordre}`:''}${v.film_titre?` · ${escapeHtml(v.film_titre)}`:''}${v.duree_minutes?` · <i class="fa-solid fa-stopwatch" aria-hidden="true"></i> ${v.duree_minutes} min`:''}${v.heure_debut?` · <i class="fa-solid fa-clock" aria-hidden="true"></i> ${escapeHtml(v.heure_debut)}–${escapeHtml(v.heure_fin||'')}`:''}</small><small>${escapeHtml(v.description||'')}${v.date?` · <i class="fa-solid fa-calendar-days" aria-hidden="true"></i> ${escapeHtml(v.date)}`:''}</small>${v.heure_debut?`<small class="mp-creneau-confirme"><i class="fa-solid fa-check" aria-hidden="true"></i> Créneau publié pour la date sélectionnée - réservation à confirmer sur le site officiel.</small>`:''}</div>${v.lien?`<a class="mp-reco-action" href="${escapeAttr(v.lienAffiliation||v.lien)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Réserver / voir la visite ↗</a>`:''}</article>`).join('')}</section>`:'';
 
-  // Guides et médiateurs pertinents pour ce parcours (backend/guides.py).
-  // Pelify affiche une étiquette de correspondance qualitative, jamais un
-  // score chiffré, et ne prétend jamais qu'un guide est réservable ici :
-  // le contact se fait via le lien fourni sur la fiche.
   const guidesRecommandes=data.guides_recommandes||[];
   const guidesHtml=guidesRecommandes.length?`<section class="mp-visites-guidees mp-guides"><h3><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> ${guidesRecommandes.every(g=>g.hors_zone)?'Guides les plus proches (hors de leur zone habituelle)':'Guides et médiateurs pertinents'}</h3>${guidesRecommandes.map(g=>{
     const lien=g.site_web||g.lien_contact;
@@ -496,11 +613,22 @@ function afficherResultatMonParcours(data){
     return `<article class="mp-visite-card mp-guide-card"><div><b>${escapeHtml(g.nom)}</b><small><i class="fa-solid fa-user-tie" aria-hidden="true"></i> ${escapeHtml(g.fonction||'Guide / médiateur')}${specs?` · ${escapeHtml(specs)}`:''}${g.tarif_indicatif?` · ${escapeHtml(g.tarif_indicatif)}`:''}</small>${lieu.length?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Basé à : ${escapeHtml(lieu.join(', '))}</small>`:''}<small class="mp-guide-correspondance"><i class="fa-solid fa-check" aria-hidden="true"></i> ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${dists?`<details class="mp-guide-distances"><summary>Distance de chaque étape</summary><ul>${dists}</ul></details>`:''}${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
   }).join('')}<p class="mp-guides-inscription"><button type="button" class="mp-guides-voir-tous" data-ouvrir-guides="parcours"><i class="fa-solid fa-address-book" aria-hidden="true"></i> Voir tous les guides et filtrer</button> <a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
 
-  const conseil=scenario.texte.length?`<section class="mp-scenario"><h3><i class="fa-solid fa-film" aria-hidden="true"></i> Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p><i class="fa-solid ${escapeAttr(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('')}</section>`:'';
+  const conseil=scenario.texte.length?`<section class="mp-scenario"><h3><i class="fa-solid fa-film" aria-hidden="true"></i> Votre scénario conseillé</h3>${scenario.texte.map(x=>`<p><i class="fa-solid ${escapeIcone(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('')}</section>`:'';
   const budgetInfo=data.budget_estime_euros!=null?`<div class="mp-budget ${data.budget_max_respecte===false?'alerte':'ok'}"><b><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Budget indicatif renseigné : ${Number(data.budget_estime_euros).toFixed(2)} €</b><span>${(data.budget_items||[]).some(b=>b.categorie==='carburant')?'Offres au tarif minimum jugé fiable, plus une estimation du carburant (consommation modifiable). Les repas, nuits et entrées sans tarif fiable ne sont pas comptés.':'Calculé uniquement à partir des tarifs fiables disponibles ; les dépenses sans tarif renseigné ne sont pas incluses.'}</span></div>`:'';
   const planning=(data.planning_horaire||[]).map(x=>`<div class="mp-planning-row"><b>${escapeHtml(x.heure_arrivee)}</b><span>${escapeHtml(x.nom||'Étape')}${x.film_titre?` · <i class="fa-solid fa-film" aria-hidden="true"></i> ${escapeHtml(x.film_titre)}`:''} · fin estimée ${escapeHtml(x.heure_fin_visite)}</span></div>`).join('');
 
-  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'-'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'-'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${planning?`<section class="mp-planning"><h3><i class="fa-solid fa-clock" aria-hidden="true"></i> Votre journée cinéma</h3>${planning}</section>`:''}${carburantHtml}${conseil}${visitesGuideesHtml}${guidesHtml}${etapeRecos?`<div class="mp-recommandations"><h3><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Mes suggestions étape par étape</h3><p class="mp-legende"><span class="mp-pastille reco"></span> Repérées en violet sur la carte. Les tarifs affichés sont ceux relevés dans les fiches officielles (DATAtourisme) : ils indiquent une fourchette, pas le prix d'un repas ou d'une nuit type.</p>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3><i class="fa-solid fa-ticket" aria-hidden="true"></i> Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
+  const exportHtml=`<section class="mp-export"><h3><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Exporter et partager</h3><p class="mp-aide">Envoyez ce parcours à votre accompagnateur ou à votre guide.</p><div class="mp-export-boutons">
+    <button type="button" data-export="partager"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> Partager</button>
+    <button type="button" data-export="html"><i class="fa-solid fa-globe" aria-hidden="true"></i> Page interactive</button>
+    <button type="button" data-export="png"><i class="fa-solid fa-image" aria-hidden="true"></i> Image de la carte</button>
+    <button type="button" data-export="pdf"><i class="fa-solid fa-file-pdf" aria-hidden="true"></i> PDF / impression</button>
+    <button type="button" data-export="gpx"><i class="fa-solid fa-route" aria-hidden="true"></i> GPX</button>
+    <button type="button" data-export="geojson"><i class="fa-solid fa-code" aria-hidden="true"></i> GeoJSON</button>
+  </div><div id="mp-export-statut" class="mp-aide" role="status"></div></section>`;
+
+  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'-'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'-'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${exportHtml}${planning?`<section class="mp-planning"><h3><i class="fa-solid fa-clock" aria-hidden="true"></i> Votre journée cinéma</h3>${planning}</section>`:''}${carburantHtml}${conseil}${visitesGuideesHtml}${guidesHtml}${etapeRecos?`<div class="mp-recommandations"><h3><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Mes suggestions étape par étape</h3><p class="mp-legende"><span class="mp-pastille reco" style="background:${COULEUR_RECOMMANDATION};"></span> Repérées en turquoise sur la carte. Les tarifs affichés sont ceux relevés dans les fiches officielles (DATAtourisme) : ils indiquent une fourchette, pas le prix d'un repas ou d'une nuit type.</p>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3><i class="fa-solid fa-ticket" aria-hidden="true"></i> Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
+
+  c.querySelectorAll("[data-export]").forEach((b)=>b.addEventListener("click",()=>exporterParcours(b.dataset.export,data)));
   afficherAmenitiesParcoursV4(cats,data);
 }
 // ── Initialisation carte Leaflet + clustering ────────────────────
@@ -512,6 +640,7 @@ function initCarte() {
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap",
     maxZoom: 19,
+    crossOrigin: true,
   }).addTo(map);
   // Les lieux de tournage ne doivent JAMAIS être masqués dans une bulle
   // de regroupement, même sur petit écran avec beaucoup de commodités
@@ -1377,7 +1506,7 @@ function _aBorneElectrique(item) {
   });
 }
 
-const BADGE_PLUS_PROCHE = `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> La plus proche</span>`;
+const BADGE_PLUS_PROCHE = `<span class="station-badge proche"><i class="fa-solid fa-star" aria-hidden="true"></i> Le/La plus proche</span>`;
 
 function _plusProcheParMode(items, cleDistance) {
   const valides = items.filter((i) => i[cleDistance] != null && Number.isFinite(Number(i[cleDistance])));
@@ -1455,7 +1584,7 @@ function _rendreStations() {
       <span class="station-label">Tri</span><div class="selecteur-mode">${tris}${boutonBorne}</div>
     </div>`;
 
-  const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
+    conteneur.innerHTML = barre + vide + notes + cartes + source;
 
   const cartes = affiches.map((item, index) => {
     const st = item.station || null;
@@ -2468,59 +2597,39 @@ async function calculerParcoursV4() {
 }
 
 function afficherGeometrieParcoursV4(data, parcoursInitial = false) {
-  // Nettoyage de l'ancien parcours V4.
-  nettoyerMarqueursParcoursExtra();
-  if (state.marqueurDepartParcours) { map.removeLayer(state.marqueurDepartParcours); state.marqueurDepartParcours = null; }
-  if (state.traceLayer) {
-    map.removeLayer(state.traceLayer);
-    state.traceLayer = null;
+  nettoyerAffichageParcoursGlobal();
+  const etapes = Array.isArray(data?.etapes) ? data.etapes : [];
+  if (!etapes.length) return;
+  const points = [];
+
+  if (data.geometry) {
+    state.traceLayer = L.geoJSON(data.geometry, { style: { color: "#e63946", weight: 4, opacity: 0.82 } }).addTo(map);
+    if (Number.isFinite(Number(data.distance_metres))) attacherSurvolItineraire(state.traceLayer, data.distance_metres, data.duree_secondes);
+    const b = state.traceLayer.getBounds();
+    if (b.isValid()) points.push(b.getSouthWest(), b.getNorthEast());
   }
-  if (state.marqueursEtapes) {
-    state.marqueursEtapes.forEach((m) => map.removeLayer(m));
-  }
+
   state.marqueursEtapes = [];
-
-  if (state.parcoursV4AmenityMarkers) {
-    state.parcoursV4AmenityMarkers.forEach((m) => clusterActivites.removeLayer(m));
-  }
-  state.parcoursV4AmenityMarkers = [];
-
-  if (!data.geometry || !data.etapes?.length) return;
-
-  state.traceLayer = L.geoJSON(data.geometry, {
-    style: { color: "#e63946", weight: 4, opacity: 0.82 },
-  }).addTo(map);
-
-  state.marqueursEtapes = data.etapes.map((etape, index) => {
-    const icone = L.divIcon({
-      html: `<div class="numero-etape">${index + 1}</div>`,
-      className: "", iconSize: [28, 28], iconAnchor: [14, 14],
-    });
-    const marker = L.marker([etape.latitude, etape.longitude], { icon: icone });
+  etapes.forEach((etape, index) => {
+    const lat = Number(etape.latitude), lon = Number(etape.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const icone = L.divIcon({ html: `<div class="numero-etape">${index + 1}</div>`, className: "", iconSize: [28, 28], iconAnchor: [14, 14] });
     const mediaLabel = etape.media_type === "tv" ? "Série" : etape.media_type === "movie" ? "Film" : etape.media_type === "anime" ? "Animé" : "Œuvre";
-    marker.bindPopup(`<b>Étape ${index + 1}</b><br><strong>${escapeHtml(etape.film_titre || "Lieu de tournage")}</strong><br><small>${escapeHtml(mediaLabel)}${etape.annee ? ` · ${escapeHtml(etape.annee)}` : ""}</small><br>${escapeHtml(_adresseCompleteFrontend(etape))}`);
+    const marker = L.marker([lat, lon], { icon: icone }).bindPopup(`<b>Étape ${index + 1}</b><br><strong>${escapeHtml(etape.film_titre || "Lieu de tournage")}</strong><br><small>${escapeHtml(mediaLabel)}${etape.annee ? ` · ${escapeHtml(etape.annee)}` : ""}</small><br>${escapeHtml(_adresseCompleteFrontend(etape))}`);
     marker.addTo(map);
-    return marker;
+    state.marqueursEtapes.push(marker);
+    points.push([lat, lon]);
   });
 
-  // Point de départ : marqueur bleu distinct des étapes numérotées.
-  if (data.depart && Number.isFinite(Number(data.depart.latitude))) {
+  if (data.depart && Number.isFinite(Number(data.depart.latitude)) && Number.isFinite(Number(data.depart.longitude))) {
     state.marqueurDepartParcours = L.marker([data.depart.latitude, data.depart.longitude], {
       zIndexOffset: 1000,
-      icon: L.divIcon({
-        html: '<div class="marqueur-depart"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i></div>',
-        className: "", iconSize: [36, 36], iconAnchor: [18, 18],
-      }),
+      icon: L.divIcon({ html: '<div class="marqueur-depart"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i></div>', className: "", iconSize: [36, 36], iconAnchor: [18, 18] }),
     }).bindPopup(`<b>Point de départ</b><br>${escapeHtml(data.depart.nom || "Votre départ")}`).addTo(map);
+    points.push([data.depart.latitude, data.depart.longitude]);
   }
 
-  if (Number.isFinite(Number(data.distance_metres))) {
-    attacherSurvolItineraire(state.traceLayer, data.distance_metres, data.duree_secondes);
-  }
-
-  const zone = state.traceLayer.getBounds();
-  if (state.marqueurDepartParcours) zone.extend(state.marqueurDepartParcours.getLatLng());
-  map.fitBounds(zone, { padding: [40, 40] });
+  if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 15 });
 }
 
 function afficherResultatEnrichiV4(data) {
@@ -2551,22 +2660,22 @@ function afficherResultatEnrichiV4(data) {
       const info = icones[categorie] || {};
       const label = labels[categorie] || categorie;
       const items = categories[categorie].map((item) => `
-        <div class="parcours-v4-amenity">
-          <b>${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"} ${escapeHtml(item.nom || "Offre touristique")}</b>
-          <small>
-            ${item.meilleure_distance_metres != null ? `${formatDistance(item.meilleure_distance_metres)} de l'étape la plus proche` : "À proximité d'une étape"}
-            ${item.adresse ? ` · ${escapeHtml(item.adresse)}` : ""}
-          </small>
-          ${item.description ? `<small>${escapeHtml(item.description)}</small>` : ""}
-          ${item.site_web ? `<a href="${escapeAttr(item.site_web)}" target="_blank" rel="noopener noreferrer">Voir le site →</a>` : ""}
-        </div>
-      `).join("");
+  <div class="parcours-v4-amenity">
+    <b>${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"} ${escapeHtml(item.nom || "Offre touristique")}</b>
+    <small>
+      ${escapeHtml(_texteDistanceEtape(item, data.etapes || []))}
+      ${item.adresse ? ` · ${escapeHtml(item.adresse)}` : ""}
+    </small>
+    ${item.description ? `<small>${escapeHtml(item.description)}</small>` : ""}
+    ${item.site_web ? `<a href="${escapeAttr(item.site_web)}" target="_blank" rel="noopener noreferrer">Voir le site →</a>` : ""}
+  </div>
+`).join("");
       return `<section class="parcours-v4-cat"><h4>${escapeHtml(label)}</h4>${items}</section>`;
     }).join("");
 
   conteneur.innerHTML = resume + (blocs || `<p class="parcours-v4-loading">Aucune offre touristique en cache n'est actuellement référencée autour des étapes sélectionnées.</p>`);
 
-  afficherAmenitiesParcoursV4(categories);
+  afficherAmenitiesParcoursV4(categories, data);
 }
 
 function nettoyerMarqueursParcoursExtra() {
@@ -2576,19 +2685,15 @@ function nettoyerMarqueursParcoursExtra() {
 
 function afficherAmenitiesParcoursV4(categories, data) {
   nettoyerMarqueursParcoursExtra();
+  const etapes = Array.isArray(data?.etapes) ? data.etapes : [];
   const recos = data?.recommandations_par_etape || {};
-  // Offres suggérées : repérées par catégorie + nom pour ne pas les dessiner deux fois.
   const cleReco = (cat, nom) => `${cat}|${String(nom || "").toLowerCase()}`;
   const suggerees = new Map();
   Object.values(recos).forEach((liste) => (liste || []).forEach((r) => suggerees.set(cleReco(r.categorie, r.nom), r)));
 
-  const toutes = Object.entries(categories || {}).flatMap(([categorie, items]) =>
-    (items || []).map((item) => ({ categorie, item }))
-  );
-  toutes.forEach(({ categorie, item }) => {
+  Object.entries(categories || {}).flatMap(([categorie, items]) => (items || []).map((item) => ({ categorie, item }))).forEach(({ categorie, item }) => {
     if (suggerees.has(cleReco(categorie, item.nom))) return;
-    const lat = Number(item.latitude);
-    const lon = Number(item.longitude);
+    const lat = Number(item.latitude), lon = Number(item.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     const info = ICONES_CATEGORIE[categorie] || {};
     const marker = L.marker([lat, lon], {
@@ -2599,6 +2704,7 @@ function afficherAmenitiesParcoursV4(categories, data) {
     }).bindPopup(`
       <b>${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"} ${escapeHtml(item.nom || "")}</b><br>
       ${item.adresse ? `${escapeHtml(item.adresse)}<br>` : ""}
+      <small>${escapeHtml(_texteDistanceEtape(item, etapes))}</small><br>
       ${item.tarif_libelle ? `${escapeHtml(item.tarif_libelle)}<br>` : ""}
       ${item.site_web ? `<a href="${escapeAttr(item.site_web)}" target="_blank" rel="noopener noreferrer">Voir le site</a>` : ""}
     `);
@@ -2606,16 +2712,15 @@ function afficherAmenitiesParcoursV4(categories, data) {
     state.parcoursV4AmenityMarkers.push(marker);
   });
 
-  // Suggestions : couleur violette, liseré doré, étoile, jamais regroupées.
+  // Suggestions : turquoise, double liseré blanc + halo, jamais regroupées
   suggerees.forEach((r) => {
-    const lat = Number(r.latitude);
-    const lon = Number(r.longitude);
+    const lat = Number(r.latitude), lon = Number(r.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     const info = ICONES_CATEGORIE[r.categorie] || {};
     const marker = L.marker([lat, lon], {
       zIndexOffset: 900,
       icon: L.divIcon({
-        html: `<div class="icone-commodite recommande">${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}<span class="badge-reco"><i class="fa-solid fa-star" aria-hidden="true"></i></span></div>`,
+        html: `<div class="icone-commodite recommande" style="background:${COULEUR_RECOMMANDATION};box-shadow:0 0 0 3px #fff,0 0 12px ${COULEUR_RECOMMANDATION};">${info.emoji || "<i class='fa-solid fa-location-dot' aria-hidden='true'></i>"}<span class="badge-reco"><i class="fa-solid fa-star" aria-hidden="true"></i></span></div>`,
         className: "", iconSize: [38, 38], iconAnchor: [19, 19],
       }),
     }).bindPopup(`
@@ -2623,21 +2728,19 @@ function afficherAmenitiesParcoursV4(categories, data) {
       <b>${escapeHtml(r.nom || "")}</b> (${escapeHtml(r.categorie_label || "offre")})<br>
       ${escapeHtml(r.raison || "")}<br>
       ${r.adresse ? `${escapeHtml(r.adresse)}<br>` : ""}
+      <small>${escapeHtml(_texteDistanceEtape(r, etapes, Number(r.etape_ordre) || null))}</small><br>
       ${r.action_url ? `<a href="${escapeAttr(r.action_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.action_label || "Voir")}</a>` : ""}
     `).addTo(map);
     state.parcoursExtraMarkers.push(marker);
   });
 
-  // Stations-service : la meilleure de chaque point, en orange.
+  // Stations-service : la meilleure de chaque point, en orange
   (data?.carburants?.points || []).forEach((p) => {
     const s = p.stations?.[0];
     if (!s) return;
     const marker = L.marker([s.latitude, s.longitude], {
       zIndexOffset: 800,
-      icon: L.divIcon({
-        html: `<div class="icone-commodite carburant"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i></div>`,
-        className: "", iconSize: [34, 34], iconAnchor: [17, 17],
-      }),
+      icon: L.divIcon({ html: `<div class="icone-commodite carburant"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i></div>`, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
     }).bindPopup(`
       <b><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
       <b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>
@@ -3240,12 +3343,199 @@ function initialiserPublicites() {
   _initialiserCarrousel(1);
   _initialiserCarrousel(2);
 }
+// ── Export du parcours ──────────────────────────────────────────
+function _segmentsGeometrie(g) {
+  const out = [];
+  const lire = (geom) => {
+    if (!geom) return;
+    if (geom.type === "LineString") out.push(geom.coordinates);
+    else if (geom.type === "MultiLineString") geom.coordinates.forEach((s) => out.push(s));
+    else if (geom.type === "GeometryCollection") (geom.geometries || []).forEach(lire);
+    else if (geom.type === "Feature") lire(geom.geometry);
+    else if (geom.type === "FeatureCollection") (geom.features || []).forEach(lire);
+  };
+  lire(g);
+  return out.filter((s) => Array.isArray(s) && s.length >= 2);
+}
+
+function construireDonneesExport(data) {
+  const brutes = Array.isArray(data.etapes) ? data.etapes : [];
+  const etapes = brutes.map((x, i) => ({
+    ordre: i + 1, nom: x.nom || "Lieu de tournage", commune: x.commune || "", departement: x.departement || "",
+    latitude: Number(x.latitude), longitude: Number(x.longitude), film: x.film_titre || "", annee: x.annee || "",
+  }));
+  const planning = (data.planning_horaire || []).map((p) => ({ arrivee: p.heure_arrivee || "", fin: p.heure_fin_visite || "", nom: p.nom || "", film: p.film_titre || "" }));
+  const suggestions = [];
+  Object.entries(data.recommandations_par_etape || {}).forEach(([id, liste]) => {
+    const idx = brutes.findIndex((e) => String(e.id) === String(id));
+    (liste || []).slice(0, 3).forEach((r) => suggestions.push({
+      etape: idx + 1, nom: r.nom || "", categorie: r.categorie_label || r.categorie || "", raison: r.raison || "",
+      adresse: r.adresse || "", lien: r.action_url || "", latitude: Number(r.latitude), longitude: Number(r.longitude),
+    }));
+  });
+  const sourceVisites = (data.visites_guidees_planifiees && data.visites_guidees_planifiees.length) ? data.visites_guidees_planifiees : (data.visites_guidees_disponibles || []);
+  const visites = sourceVisites.map((v) => ({ nom: v.nom || "", debut: v.heure_debut || "", fin: v.heure_fin || "", date: v.date || "", duree: v.duree_minutes || null, lien: v.lien || "" }));
+  const films = [...new Set(etapes.map((e) => e.film).filter(Boolean))];
+  return {
+    titre: films.length ? `Parcours Pelify : ${films.slice(0, 3).join(", ")}` : "Parcours Pelify",
+    date: data.date_sortie || "", heure: data.heure_depart || "", mode: data.mode || "",
+    distance_metres: Number(data.distance_metres) || 0, duree_secondes: Number(data.duree_secondes) || 0,
+    depart: data.depart ? { nom: data.depart.nom || "Départ", latitude: Number(data.depart.latitude), longitude: Number(data.depart.longitude) } : null,
+    etapes, planning, suggestions, visites, segments: _segmentsGeometrie(data.geometry),
+  };
+}
+
+function _nomFichierParcours(e) {
+  return (`pelify-${_slug(e.titre.replace("Parcours Pelify", "parcours"))}${e.date ? "-" + e.date : ""}`).replace(/-+$/, "") || "pelify-parcours";
+}
+
+function _telechargerBlob(nom, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nom;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function _telecharger(nom, contenu, mime) { _telechargerBlob(nom, new Blob([contenu], { type: `${mime};charset=utf-8` })); }
+
+function _chargerScript(url) {
+  return new Promise((ok, ko) => {
+    const s = document.createElement("script");
+    s.src = url; s.onload = ok; s.onerror = () => ko(new Error("Chargement d'une bibliothèque impossible (réseau ?)."));
+    document.head.appendChild(s);
+  });
+}
+
+function construireGPX(e) {
+  const x = escapeHtml;
+  const wpt = e.etapes.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)).map((p) =>
+    `  <wpt lat="${p.latitude}" lon="${p.longitude}"><name>${x(`${p.ordre}. ${p.nom}`)}</name><desc>${x([p.film, p.commune].filter(Boolean).join(" - "))}</desc></wpt>`).join("\n");
+  const trk = e.segments.length
+    ? `  <trk><name>${x(e.titre)}</name>\n${e.segments.map((s) => `    <trkseg>${s.map((c) => `<trkpt lat="${c[1]}" lon="${c[0]}"/>`).join("")}</trkseg>`).join("\n")}\n  </trk>` : "";
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Pelify" xmlns="http://www.topografix.com/GPX/1/1">\n  <metadata><name>${x(e.titre)}</name></metadata>\n${wpt}\n${trk}\n</gpx>`;
+}
+
+function construireGeoJSONExport(e) {
+  const features = e.etapes.filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude)).map((p) => ({
+    type: "Feature", properties: { type: "etape", ordre: p.ordre, nom: p.nom, film: p.film, commune: p.commune },
+    geometry: { type: "Point", coordinates: [p.longitude, p.latitude] },
+  }));
+  e.segments.forEach((s) => features.push({ type: "Feature", properties: { type: "trajet" }, geometry: { type: "LineString", coordinates: s } }));
+  return { type: "FeatureCollection", name: e.titre, features };
+}
+
+function resumeTexteParcours(e) {
+  const lignes = [e.titre];
+  if (e.date) lignes.push(`Date : ${new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR")}${e.heure ? " à " + e.heure : ""}`);
+  if (e.distance_metres) lignes.push(`Trajet : ${formatDistance(e.distance_metres)}${e.duree_secondes ? " · " + formatDuree(e.duree_secondes) : ""}`);
+  lignes.push("", ...e.etapes.map((p) => `${p.ordre}. ${p.nom}${p.commune ? " (" + p.commune + ")" : ""}${p.film ? " - " + p.film : ""}`));
+  return lignes.join("\n");
+}
+
+function construireHtmlExport(e) {
+  const x = escapeHtml;
+  const json = JSON.stringify(e).replace(/</g, "\\u003c");
+  const dateTxt = e.date ? new Date(e.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+  const resume = [dateTxt && `${dateTxt}${e.heure ? " à " + x(e.heure) : ""}`, e.distance_metres ? formatDistance(e.distance_metres) : "", e.duree_secondes ? formatDuree(e.duree_secondes) : ""].filter(Boolean).join(" · ");
+  const planning = e.planning.length ? `<h2>Planning</h2><ul>${e.planning.map((p) => `<li><b>${x(p.arrivee)}</b> ${x(p.nom)}${p.film ? ` · ${x(p.film)}` : ""} <small>(fin estimée ${x(p.fin)})</small></li>`).join("")}</ul>` : "";
+  const etapes = `<h2>Étapes</h2><ol>${e.etapes.map((p) => `<li><b>${x(p.nom)}</b>${p.film ? ` · ${x(p.film)}${p.annee ? ` (${x(p.annee)})` : ""}` : ""}<br><small>${x([p.commune, p.departement].filter(Boolean).join(", "))} · <a href="https://www.openstreetmap.org/?mlat=${p.latitude}&amp;mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}" target="_blank" rel="noopener">voir sur la carte</a></small></li>`).join("")}</ol>`;
+  const visites = e.visites.length ? `<h2>Visites guidées</h2><ul>${e.visites.map((v) => `<li><b>${x(v.nom)}</b>${v.debut ? ` · ${x(v.debut)}–${x(v.fin)}` : ""}${v.duree ? ` · ${v.duree} min` : ""}${v.lien ? ` · <a href="${escapeAttr(v.lien)}" target="_blank" rel="noopener">page officielle</a>` : ""}</li>`).join("")}</ul>` : "";
+  const sugg = e.suggestions.length ? `<h2>Suggestions autour du parcours</h2><ul>${e.suggestions.map((r) => `<li><b>${x(r.nom)}</b> (${x(r.categorie)}) · étape ${r.etape}${r.raison ? `<br><small>${x(r.raison)}</small>` : ""}${r.adresse ? `<br><small>${x(r.adresse)}</small>` : ""}${r.lien ? ` <a href="${escapeAttr(r.lien)}" target="_blank" rel="noopener">voir</a>` : ""}</li>`).join("")}</ul>` : "";
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${x(e.titre)}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+body{margin:0;font-family:system-ui,Arial,sans-serif;color:#1d1f24;line-height:1.45}
+header{padding:16px 20px;background:#e63946;color:#fff}header h1{margin:0;font-size:1.3rem}header p{margin:4px 0 0;opacity:.92}
+#map{height:420px}main{max-width:820px;margin:0 auto;padding:8px 20px 32px}
+h2{margin:22px 0 8px;font-size:1.05rem;border-bottom:2px solid #e63946;padding-bottom:4px}
+li{margin:8px 0}small{color:#555}a{color:#c1272d}
+.num{background:#e63946;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.reco{background:${COULEUR_RECOMMANDATION};color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+footer{font-size:.8rem;color:#666;margin-top:24px}
+@media print{#map{height:360px}a{color:inherit;text-decoration:none}}
+</style></head><body>
+<header><h1>${x(e.titre)}</h1><p>${resume}</p></header>
+<div id="map"></div>
+<main>${planning}${etapes}${visites}${sugg}
+<footer>Document généré par Pelify. Horaires, tarifs et disponibilités sont à vérifier auprès des sites officiels avant de partir.</footer></main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var D=${json};
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+var map=L.map("map");
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+var pts=[];
+(D.segments||[]).forEach(function(s){var ll=s.map(function(c){return[c[1],c[0]];});L.polyline(ll,{color:"#e63946",weight:4,opacity:.85}).addTo(map);ll.forEach(function(p){pts.push(p);});});
+(D.etapes||[]).forEach(function(p){if(typeof p.latitude!=="number"||typeof p.longitude!=="number")return;L.marker([p.latitude,p.longitude],{icon:L.divIcon({className:"",html:'<div class="num">'+p.ordre+'</div>',iconSize:[28,28],iconAnchor:[14,14]})}).addTo(map).bindPopup("<b>"+p.ordre+". "+esc(p.nom)+"</b>");pts.push([p.latitude,p.longitude]);});
+(D.suggestions||[]).forEach(function(r){if(typeof r.latitude!=="number"||typeof r.longitude!=="number")return;L.marker([r.latitude,r.longitude],{icon:L.divIcon({className:"",html:'<div class="reco">★</div>',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(map).bindPopup("<b>"+esc(r.nom)+"</b><br>"+esc(r.categorie));});
+if(pts.length){map.fitBounds(pts,{padding:[30,30],maxZoom:15});}else{map.setView([43.9,2.2],8);}
+</script></body></html>`;
+}
+
+function imprimerParcours(e) {
+  const w = window.open("", "_blank");
+  if (!w) throw new Error("Le navigateur a bloqué la fenêtre. Autorisez les pop-ups pour ce site.");
+  w.document.open(); w.document.write(construireHtmlExport(e)); w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (_) {} }, 1800);   // laisse les tuiles se charger
+}
+
+async function exporterCartePNG(base) {
+  if (!window.html2canvas) await _chargerScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
+  fermerMonParcours();                       // révèle la carte
+  map.invalidateSize();
+  if (state.traceLayer) { const b = state.traceLayer.getBounds(); if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 15 }); }
+  await new Promise((r) => setTimeout(r, 1200));   // tuiles chargées
+  try {
+    const canvas = await html2canvas(document.getElementById("map"), {
+      useCORS: true, backgroundColor: "#ffffff", scale: Math.min(2, window.devicePixelRatio || 1.5),
+      ignoreElements: (el) => el.classList && el.classList.contains("leaflet-control-container"),
+    });
+    await new Promise((ok, ko) => canvas.toBlob((b) => { if (!b) return ko(new Error("Capture vide.")); _telechargerBlob(base + ".png", b); ok(); }, "image/png"));
+  } finally {
+    ouvrirMonParcours();                     // le panneau et le dernier résultat reviennent
+  }
+}
+
+async function partagerParcours(e, base) {
+  const texte = resumeTexteParcours(e);
+  const fichier = new File([construireHtmlExport(e)], base + ".html", { type: "text/html" });
+  if (navigator.canShare && navigator.canShare({ files: [fichier] })) {
+    await navigator.share({ title: e.titre, text: texte, files: [fichier] });
+    return "Parcours partagé.";
+  }
+  if (navigator.share) { await navigator.share({ title: e.titre, text: texte }); return "Résumé partagé."; }
+  await navigator.clipboard.writeText(texte);
+  return "Résumé copié dans le presse-papiers.";
+}
+
+async function exporterParcours(format, data) {
+  const dire = (t) => { const s = document.getElementById("mp-export-statut"); if (s) s.textContent = t; };
+  try {
+    const e = construireDonneesExport(data);
+    const base = _nomFichierParcours(e);
+    dire("Préparation…");
+    if (format === "gpx") { _telecharger(base + ".gpx", construireGPX(e), "application/gpx+xml"); dire("Fichier GPX téléchargé."); }
+    else if (format === "geojson") { _telecharger(base + ".geojson", JSON.stringify(construireGeoJSONExport(e), null, 2), "application/geo+json"); dire("Fichier GeoJSON téléchargé."); }
+    else if (format === "html") { _telecharger(base + ".html", construireHtmlExport(e), "text/html"); dire("Page interactive téléchargée : envoyez ce fichier, il s'ouvre dans un navigateur."); }
+    else if (format === "pdf") { imprimerParcours(e); dire("Choisissez « Enregistrer au format PDF » dans la fenêtre d'impression."); }
+    else if (format === "png") { await exporterCartePNG(base); dire("Image de la carte téléchargée."); }
+    else if (format === "partager") { dire(await partagerParcours(e, base)); }
+  } catch (err) {
+    if (err && err.name === "AbortError") { dire(""); return; }   // partage annulé par l'utilisateur
+    console.error("Export impossible :", err);
+    dire(`Export impossible : ${err.message || err}`);
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   initCarte();
   chargerMonParcoursStocke();
   actualiserProfilPelify();
   chargerOptionsMonParcours();
+    chargerDernierCalcul();
   mettreAJourCompteurMonParcours();
   initialiserControlesIsochrone();
   chargerContourOccitanie();

@@ -1562,3 +1562,9 @@ i.fa-solid, i.fa-regular { line-height: 1; }
 .guides-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--couleur-accent); border-radius: 8px; background: transparent; color: var(--couleur-texte); font-size: 0.75rem; text-decoration: none; cursor: pointer; }
 .guides-inscription { margin-top: 14px; font-size: 0.78rem; }
 .guides-inscription a { color: var(--couleur-accent); }
+.mp-export{margin:14px 0;padding:12px;border:1px solid #3a3d45;border-radius:10px}
+.mp-export h3{margin:0 0 6px}
+.mp-export-boutons{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.mp-export-boutons button{padding:8px 12px;border-radius:8px;border:1px solid #e63946;background:transparent;color:inherit;cursor:pointer}
+.mp-export-boutons button:hover{background:#e63946;color:#fff}
+.mp-pastille.reco{background:#00b4d8}

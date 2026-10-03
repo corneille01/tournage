@@ -1,0 +1,78 @@
+name: Précalcul distances de route (lieu→lieu, guide→lieu) — Géoplateforme IGN
+
+# Alimente la table distances_routieres, lue par le parcours pour :
+#   - l'ordre des étapes et la sélection sous contrainte de temps (lieu → lieu) ;
+#   - les distances affichées pour les guides recommandés (guide → lieu).
+# Incrémental : seuls les trajets manquants sont calculés (nouveaux lieux / guides).
+# Si le travail dépasse le budget de temps, le script s'arrête proprement et
+# reprend le lendemain là où il s'est arrêté.
+#
+# 04h10 UTC : après l'import DATAtourisme / guides (03h) et avant les calculs de 05h40+.
+on:
+  workflow_dispatch:
+    inputs:
+      lieu_id:
+        description: "ID d'un seul lieu comme origine (laisser vide pour tout traiter)"
+        required: false
+        default: ""
+      guide_id:
+        description: "ID d'un seul guide (laisser vide pour tout traiter)"
+        required: false
+        default: ""
+      recalculer:
+        description: "Vider la table et tout recalculer (long : reprend sur plusieurs jours)"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "10 4 * * *"
+
+# Une seule exécution à la fois : jamais deux scripts qui écrivent la même table.
+concurrency:
+  group: precalcul-distances-routieres
+  cancel-in-progress: false
+
+jobs:
+  precalcul:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install asyncpg httpx python-dotenv
+
+      - name: Migration (table distances_routieres)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import asyncio, os, asyncpg
+          async def main():
+              dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
+              conn = await asyncpg.connect(dsn)
+              with open("migration_v31.sql", encoding="utf-8") as f:
+                  await conn.execute(f.read())
+              await conn.close()
+          asyncio.run(main())
+          PY
+
+      - name: Précalculer les distances de route
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ARGS="--duree-max-minutes 330"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.lieu_id }}" ]; then ARGS="$ARGS --lieu-id ${{ github.event.inputs.lieu_id }}"; fi
+            if [ -n "${{ github.event.inputs.guide_id }}" ]; then ARGS="$ARGS --guide-id ${{ github.event.inputs.guide_id }}"; fi
+            if [ "${{ github.event.inputs.recalculer }}" = "true" ]; then ARGS="$ARGS --recalculer"; fi
+          fi
+          python precalculer_distances_routieres.py $ARGS

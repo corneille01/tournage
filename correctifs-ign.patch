@@ -1,0 +1,1143 @@
+diff --git a/.github/workflows/precalcul-distances-routieres.yml b/.github/workflows/precalcul-distances-routieres.yml
+new file mode 100644
+index 0000000..1a5c049
+--- /dev/null
++++ b/.github/workflows/precalcul-distances-routieres.yml
+@@ -0,0 +1,78 @@
++name: Précalcul distances de route (lieu→lieu, guide→lieu) — Géoplateforme IGN
++
++# Alimente la table distances_routieres, lue par le parcours pour :
++#   - l'ordre des étapes et la sélection sous contrainte de temps (lieu → lieu) ;
++#   - les distances affichées pour les guides recommandés (guide → lieu).
++# Incrémental : seuls les trajets manquants sont calculés (nouveaux lieux / guides).
++# Si le travail dépasse le budget de temps, le script s'arrête proprement et
++# reprend le lendemain là où il s'est arrêté.
++#
++# 04h10 UTC : après l'import DATAtourisme / guides (03h) et avant les calculs de 05h40+.
++on:
++  workflow_dispatch:
++    inputs:
++      lieu_id:
++        description: "ID d'un seul lieu comme origine (laisser vide pour tout traiter)"
++        required: false
++        default: ""
++      guide_id:
++        description: "ID d'un seul guide (laisser vide pour tout traiter)"
++        required: false
++        default: ""
++      recalculer:
++        description: "Vider la table et tout recalculer (long : reprend sur plusieurs jours)"
++        type: boolean
++        default: false
++  schedule:
++    - cron: "10 4 * * *"
++
++# Une seule exécution à la fois : jamais deux scripts qui écrivent la même table.
++concurrency:
++  group: precalcul-distances-routieres
++  cancel-in-progress: false
++
++jobs:
++  precalcul:
++    runs-on: ubuntu-latest
++    timeout-minutes: 345
++    defaults:
++      run:
++        working-directory: backend
++    steps:
++      - name: Récupérer le dépôt
++        uses: actions/checkout@v4
++
++      - name: Installer Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Installer les dépendances
++        run: pip install asyncpg httpx python-dotenv
++
++      - name: Migration (table distances_routieres)
++        env:
++          DATABASE_URL: ${{ secrets.DATABASE_URL }}
++        run: |
++          python - <<'PY'
++          import asyncio, os, asyncpg
++          async def main():
++              dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
++              conn = await asyncpg.connect(dsn)
++              with open("migration_v31.sql", encoding="utf-8") as f:
++                  await conn.execute(f.read())
++              await conn.close()
++          asyncio.run(main())
++          PY
++
++      - name: Précalculer les distances de route
++        env:
++          DATABASE_URL: ${{ secrets.DATABASE_URL }}
++        run: |
++          ARGS="--duree-max-minutes 330"
++          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
++            if [ -n "${{ github.event.inputs.lieu_id }}" ]; then ARGS="$ARGS --lieu-id ${{ github.event.inputs.lieu_id }}"; fi
++            if [ -n "${{ github.event.inputs.guide_id }}" ]; then ARGS="$ARGS --guide-id ${{ github.event.inputs.guide_id }}"; fi
++            if [ "${{ github.event.inputs.recalculer }}" = "true" ]; then ARGS="$ARGS --recalculer"; fi
++          fi
++          python precalculer_distances_routieres.py $ARGS
+diff --git a/backend/carburants.py b/backend/carburants.py
+index df94b5b..fc9b131 100644
+--- a/backend/carburants.py
++++ b/backend/carburants.py
+@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
+ 
+ from db import fetch_all, fetch_one
+ from overpass import haversine_metres
++from distances_ign import distances_routieres, estimation
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -239,7 +240,8 @@ async def stations_autour(lat: float, lon: float, rayon_m: float, cle: str) -> d
+             continue
+         item = dict(s)
+         item["prix"] = float(s["prix"])
+-        item["distance_m"] = d
++        item["distance_m"] = d            # vol d'oiseau : présélection seulement, remplacé par l'IGN dans plan_carburant
++        item["distance_vol_m"] = d
+         item["maj_effective"] = maj
+         stations.append(item)
+     return {"stations": stations, "nb_rupture": ruptures, "nb_total": total, "nb_perimes": perimes}
+@@ -283,7 +285,8 @@ def _nom_station(s: dict) -> str:
+ 
+ 
+ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quand: datetime | None) -> dict:
+-    detour_km = 2 * FACTEUR_ROUTE * s["distance_m"] / 1000.0
++    # distance_m est ici une distance de ROUTE (IGN) : aller-retour = 2 × distance.
++    detour_km = 2 * s["distance_m"] / 1000.0
+     cout_detour = detour_km * conso / 100.0 * s["prix"]
+     economie = (prix_ref - s["prix"]) * achat_l - cout_detour
+     maj = s.get("maj_effective") or s.get("maj_prix")
+@@ -295,6 +298,8 @@ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quan
+         "adresse": _adresse(s),
+         "latitude": float(s["latitude"]), "longitude": float(s["longitude"]),
+         "prix": s["prix"], "distance_m": round(s["distance_m"]),
++        "duree_secondes": s.get("duree_s"),
++        "distance_source": s.get("distance_source", "vol_oiseau"),   # "ign" | "estimee" | "vol_oiseau"
+         "autoroute": s.get("type_route") == "A",
+         "automate_24_24": s.get("automate_24_24"),
+         "ouverture": statut_ouverture(s, quand),
+@@ -323,6 +328,81 @@ def _choisir(stations: list, achat_l: float, conso: float, prix_ref: float, quan
+     return formatees[:n]
+ 
+ 
++PRESELECTION_IGN = 5      # candidats interrogés auprès de l'IGN, par point du parcours
++
++
++async def _distances_precalculees(lieu_id) -> dict[int, dict]:
++    """Distances de route IGN déjà stockées (enrich_itineraires.py) entre un lieu et ses stations."""
++    if lieu_id is None:
++        return {}
++    try:
++        lignes = await fetch_all(
++            """
++            SELECT station_id, distance_voiture_metres, duree_voiture_secondes
++            FROM amenity_cache
++            WHERE lieu_tournage_id = %s AND categorie = 'station_service'
++              AND station_id IS NOT NULL AND distance_voiture_metres IS NOT NULL
++            """,
++            (int(lieu_id),),
++        )
++    except Exception:
++        logger.warning("Distances stations précalculées indisponibles (lieu %s)", lieu_id)
++        return {}
++    return {
++        int(x["station_id"]): {
++            "distance_metres": int(x["distance_voiture_metres"]),
++            "duree_secondes": x["duree_voiture_secondes"],
++            "source": "ign",
++        }
++        for x in lignes
++    }
++
++
++async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: float) -> list:
++    """Remplace, pour les meilleurs candidats d'un point, le vol d'oiseau par la distance
++    de route de la Géoplateforme IGN. Le vol d'oiseau ne sert qu'à présélectionner."""
++    if not stations:
++        return []
++    # Étape : on lit les distances IGN déjà stockées dans amenity_cache (aucun appel IGN).
++    # Départ saisi par le visiteur : pas de précalcul possible, donc appel IGN en direct.
++    deja = await _distances_precalculees(p.get("lieu_id")) if p["role"] == "etape" else {}
++    if deja:
++        stations = [s for s in stations if int(s["id"]) in deja] or stations
++    hors_autoroute = [s for s in stations if s.get("type_route") != "A"]
++    pool = hors_autoroute or stations
++    pool = sorted(
++        pool,
++        key=lambda s: s["prix"] * achat_l
++        + 2 * FACTEUR_ROUTE * s["distance_vol_m"] / 1000.0 * conso / 100.0 * s["prix"],
++    )[:PRESELECTION_IGN]
++
++    origine = (p["lat"], p["lon"])
++    a_calculer = [s for s in pool if int(s["id"]) not in deja]
++    mesures = await distances_routieres(
++        origine, [(float(s["latitude"]), float(s["longitude"])) for s in a_calculer],
++        "driving-car", delai_max_s=20.0,
++    )
++    par_id = {int(s["id"]): m for s, m in zip(a_calculer, mesures)}
++
++    affinees = []
++    for s in pool:
++        m = deja.get(int(s["id"])) or par_id.get(int(s["id"]))
++        if not m:  # IGN indisponible : estimation, signalée à l'utilisateur
++            m = estimation(origine, (float(s["latitude"]), float(s["longitude"])), "driving-car")
++        item = dict(s)
++        item["distance_m"] = float(m["distance_metres"])
++        item["duree_s"] = m.get("duree_secondes")
++        item["distance_source"] = m.get("source", "ign")
++        affinees.append(item)
++    return affinees
++
++
++def _txt_distance(st: dict, cible: str) -> str:
++    if st.get("distance_source") == "ign":
++        return f"à {_km_txt(st['distance_m'])} de {cible} par la route"
++    return f"à environ {_km_txt(st['distance_m'])} de {cible} (estimation, itinéraire IGN indisponible)"
++
++
+ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carburant, consommation,
+                          date_sortie, heure_depart, mode) -> dict | None:
+     """Prépare les conseils carburant. Renvoie None si le sujet ne s'applique pas."""
+@@ -346,7 +426,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+                        "quand": depart_dt, "rayon": RAYON_DEPART_M})
+     for i, e in enumerate(etapes, start=1):
+         points.append({"role": "etape", "ordre": i, "nom": e.get("nom") or f"Étape {i}",
+-                       "lat": float(e["latitude"]), "lon": float(e["longitude"]),
++                       "lat": float(e["latitude"]), "lon": float(e["longitude"]), "lieu_id": e.get("id"),
+                        "quand": arrivees.get(i), "rayon": RAYON_ETAPE_M})
+ 
+     async def chercher(p):
+@@ -380,8 +460,9 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+                 plus_recent = m
+ 
+     sorties, conseils, avertissements = [], [], []
+-    for p, r in zip(points, resultats):
+-        top = _choisir(r["stations"], achat_l, conso, prix_ref, p["quand"])
++    affinees = await asyncio.gather(*(_affiner_par_route(p, r["stations"], achat_l, conso) for p, r in zip(points, resultats)))
++    for p, r, stations_ign in zip(points, resultats, affinees):
++        top = _choisir(stations_ign, achat_l, conso, prix_ref, p["quand"])
+         sorties.append({
+             "role": p["role"], "ordre": p["ordre"], "nom": p["nom"],
+             "latitude": p["lat"], "longitude": p["lon"],
+@@ -413,7 +494,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+         st = depart_sortie["stations"][0]
+         eco = f", soit environ {_eur_txt(st['economie_nette_eur'])} € d'économie sur un plein" if st["economie_nette_eur"] >= 1 else ""
+         conseils.append({"icone": "fa-flag-checkered", "texte": (
+-            f"Avant de partir : {st['nom']}, à {_km_txt(st['distance_m'])} de votre départ, "
++            f"Avant de partir : {st['nom']}, {_txt_distance(st, 'votre départ')}, "
+             f"{_prix_txt(st['prix'])} €/L{eco}. {st['ouverture']['libelle']}.")})
+     if meilleurs:
+         s, st = min(meilleurs, key=lambda t: t[1]["prix"])
+diff --git a/backend/distances_ign.py b/backend/distances_ign.py
+new file mode 100644
+index 0000000..9950bf4
+--- /dev/null
++++ b/backend/distances_ign.py
+@@ -0,0 +1,354 @@
++"""
++backend/distances_ign.py
++
++Distances et durées PAR LA ROUTE (Géoplateforme IGN) pour le parcours.
++
++Ordre de recherche, du plus fiable au moins fiable :
++  1. la table `distances_routieres` (précalculée chaque jour par
++     precalculer_distances_routieres.py) : aucun appel IGN pour le visiteur ;
++  2. un appel IGN en direct, mis en cache 24 h : uniquement pour ce qui n'est pas
++     précalculé (point de départ saisi par le visiteur, paires de lieux lointaines) ;
++  3. une estimation, toujours signalée comme telle.
++
++Principes :
++- La distance « à vol d'oiseau » (haversine) ne sert JAMAIS à afficher ni à
++  classer : uniquement à présélectionner quelques candidats avant d'interroger
++  l'IGN, pour ne pas multiplier les appels.
++- Chaque trajet est mis en cache 24 h (mémoire du processus + Redis/Upstash si
++  configuré), par tranche de ~10 m.
++- Débit limité (4 appels simultanés + petite pause) : l'API IGN accepte 10 req/s
++  par IP.
++- Si l'IGN ne répond pas, on renvoie None : l'appelant décide du repli et doit
++  l'indiquer à l'utilisateur (distance « estimée »).
++"""
++from __future__ import annotations
++
++import asyncio
++import logging
++import time
++
++from db import fetch_all
++from geoplateforme import GeoplateformeError, calculer_itineraire
++from navigation_cache import navigation_cache
++from overpass import haversine_metres
++
++logger = logging.getLogger(__name__)
++
++CONCURRENCE_MAX = 4
++PAUSE_ENTRE_APPELS_S = 0.25
++TTL_S = 24 * 60 * 60
++MEMOIRE_MAX = 5000
++
++# Utilisés UNIQUEMENT pour estimer quand l'IGN est indisponible.
++FACTEUR_ROUTE = {"driving-car": 1.30, "foot-walking": 1.15}
++VITESSE_KMH = {"driving-car": 45.0, "foot-walking": 4.5}
++
++_memoire: dict[str, tuple[float, dict]] = {}
++_semaphore: asyncio.Semaphore | None = None
++
++
++def _sem() -> asyncio.Semaphore:
++    global _semaphore
++    if _semaphore is None:
++        _semaphore = asyncio.Semaphore(CONCURRENCE_MAX)
++    return _semaphore
++
++
++def _cle(origine: tuple[float, float], destination: tuple[float, float], mode: str) -> str:
++    n = navigation_cache._normaliser_coordonnee
++    return (
++        f"pelify:distance-route:v1:{mode}:"
++        f"{n(origine[0])},{n(origine[1])}:{n(destination[0])},{n(destination[1])}"
++    )
++
++
++def _memoriser(cle: str, valeur: dict) -> None:
++    if len(_memoire) >= MEMOIRE_MAX:
++        # Purge simple : on retire les entrées expirées, puis les plus anciennes.
++        maintenant = time.monotonic()
++        for k in [k for k, (exp, _) in _memoire.items() if exp <= maintenant]:
++            _memoire.pop(k, None)
++        while len(_memoire) >= MEMOIRE_MAX:
++            _memoire.pop(next(iter(_memoire)), None)
++    _memoire[cle] = (time.monotonic() + TTL_S, valeur)
++
++
++def estimation(origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car") -> dict:
++    """Repli quand l'IGN est indisponible. Toujours marqué source = « estimee »."""
++    d = haversine_metres(origine[0], origine[1], destination[0], destination[1]) * FACTEUR_ROUTE.get(mode, 1.3)
++    duree = d / 1000.0 / VITESSE_KMH.get(mode, 45.0) * 3600.0
++    return {"distance_metres": round(d), "duree_secondes": round(duree), "source": "estimee"}
++
++
++async def distance_routiere(
++    origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car"
++) -> dict | None:
++    """{'distance_metres', 'duree_secondes', 'source': 'ign'} ou None si l'IGN échoue."""
++    cle = _cle(origine, destination, mode)
++    hit = _memoire.get(cle)
++    if hit and hit[0] > time.monotonic():
++        return hit[1]
++
++    if navigation_cache.enabled:
++        try:
++            en_cache = await navigation_cache.get(cle)
++        except Exception:  # Redis indisponible : on calcule quand même
++            en_cache = None
++        if en_cache and en_cache.get("distance_metres") is not None:
++            _memoriser(cle, en_cache)
++            return en_cache
++
++    async with _sem():
++        try:
++            res = await calculer_itineraire(
++                depart_lat=origine[0], depart_lon=origine[1],
++                arrivee_lat=destination[0], arrivee_lon=destination[1],
++                mode=mode, avec_etapes=False,
++            )
++        except (GeoplateformeError, ValueError) as exc:
++            logger.warning("Distance IGN indisponible (%s) : %s", mode, exc)
++            return None
++        except Exception:
++            logger.exception("Erreur imprévue pendant un calcul de distance IGN")
++            return None
++        await asyncio.sleep(PAUSE_ENTRE_APPELS_S)
++
++    if res.get("distance_metres") is None:
++        return None
++    distance = round(float(res["distance_metres"]))
++    duree = res.get("duree_secondes")
++    if duree is None:  # distance IGN conservée ; seule la durée est déduite
++        duree = distance / 1000.0 / VITESSE_KMH.get(mode, 45.0) * 3600.0
++    out = {"distance_metres": distance, "duree_secondes": round(float(duree)), "source": "ign"}
++    _memoriser(cle, out)
++    if navigation_cache.enabled:
++        try:
++            await navigation_cache.set(cle, out)
++        except Exception:
++            pass
++    return out
++
++
++async def distances_routieres(
++    origine: tuple[float, float],
++    destinations: list[tuple[float, float]],
++    mode: str = "driving-car",
++    delai_max_s: float = 8.0,
++) -> list[dict | None]:
++    """Un résultat par destination, dans le même ordre ; None si échec ou délai dépassé."""
++    if not destinations:
++        return []
++    taches = [asyncio.ensure_future(distance_routiere(origine, d, mode)) for d in destinations]
++    _, en_attente = await asyncio.wait(taches, timeout=delai_max_s)
++    for t in en_attente:
++        t.cancel()
++    if en_attente:
++        await asyncio.gather(*en_attente, return_exceptions=True)
++        logger.warning("Délai dépassé pour %d calcul(s) de distance IGN", len(en_attente))
++    sortie: list[dict | None] = []
++    for t in taches:
++        if t.cancelled():
++            sortie.append(None)
++        elif t.exception() is not None:
++            sortie.append(None)
++        else:
++            sortie.append(t.result())
++    return sortie
++
++
++def _coord(x: dict) -> tuple[float, float]:
++    return float(x["latitude"]), float(x["longitude"])
++
++
++async def mesure_ou_estimation(
++    origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car"
++) -> dict:
++    """Distance IGN si possible, sinon estimation clairement marquée."""
++    return (await distance_routiere(origine, destination, mode)) or estimation(origine, destination, mode)
++
++
++MODE_BASE = {"driving-car": "voiture", "foot-walking": "pied"}
++
++
++async def charger_distances_lieux(ids: list, mode: str = "driving-car") -> dict[tuple[int, int], dict]:
++    """Trajets lieu -> lieu précalculés entre les lieux donnés. Le sens inverse sert à
++    défaut (la distance de route A→B et B→A est quasi identique)."""
++    ids = sorted({int(i) for i in ids if i is not None})
++    if len(ids) < 2:
++        return {}
++    try:
++        lignes = await fetch_all(
++            """
++            SELECT origine_id, lieu_destination_id, distance_metres, duree_secondes
++            FROM distances_routieres
++            WHERE type_origine = 'lieu' AND mode = %s
++              AND origine_id = ANY(%s) AND lieu_destination_id = ANY(%s)
++            """,
++            (MODE_BASE.get(mode, "voiture"), ids, ids),
++        )
++    except Exception:
++        logger.warning("Table distances_routieres indisponible : repli sur l'IGN en direct")
++        return {}
++    direct = {
++        (int(x["origine_id"]), int(x["lieu_destination_id"])): {
++            "distance_metres": int(x["distance_metres"]),
++            "duree_secondes": x["duree_secondes"],
++            "source": "ign",
++        }
++        for x in lignes
++    }
++    complet = dict(direct)
++    for (a, b), m in direct.items():
++        complet.setdefault((b, a), m)
++    return complet
++
++
++async def charger_distances_guides(guide_ids: list, lieu_ids: list) -> dict[tuple[int, int], dict]:
++    """Trajets guide -> lieu précalculés (voiture)."""
++    guide_ids = sorted({int(i) for i in guide_ids if i is not None})
++    lieu_ids = sorted({int(i) for i in lieu_ids if i is not None})
++    if not guide_ids or not lieu_ids:
++        return {}
++    try:
++        lignes = await fetch_all(
++            """
++            SELECT origine_id, lieu_destination_id, distance_metres, duree_secondes
++            FROM distances_routieres
++            WHERE type_origine = 'guide' AND mode = 'voiture'
++              AND origine_id = ANY(%s) AND lieu_destination_id = ANY(%s)
++            """,
++            (guide_ids, lieu_ids),
++        )
++    except Exception:
++        logger.warning("Table distances_routieres indisponible : repli sur l'IGN en direct")
++        return {}
++    return {
++        (int(x["origine_id"]), int(x["lieu_destination_id"])): {
++            "distance_metres": int(x["distance_metres"]),
++            "duree_secondes": x["duree_secondes"],
++            "source": "ign",
++        }
++        for x in lignes
++    }
++
++
++def _id(x: dict):
++    v = x.get("id")
++    return int(v) if v is not None else None
++
++
++async def _mesures_vers(origine: dict, candidats: list[dict], mode: str, base: dict) -> list[dict | None]:
++    """Base précalculée d'abord ; appel IGN en direct seulement pour les paires absentes."""
++    resultat: list[dict | None] = [None] * len(candidats)
++    manquants = []
++    for i, c in enumerate(candidats):
++        o, d = _id(origine), _id(c)
++        if o is not None and d is not None and (o, d) in base:
++            resultat[i] = base[(o, d)]
++        else:
++            manquants.append(i)
++    if manquants:
++        live = await distances_routieres(_coord(origine), [_coord(candidats[i]) for i in manquants], mode)
++        for i, m in zip(manquants, live):
++            resultat[i] = m
++    return resultat
++
++
++async def _mesure(origine: dict, destination: dict, mode: str, base: dict) -> dict:
++    m = (await _mesures_vers(origine, [destination], mode, base))[0]
++    return m or estimation(_coord(origine), _coord(destination), mode)
++
++
++def _candidats(courant: dict, restants: list[dict], base: dict, preselection: int) -> list[dict]:
++    """Tous les lieux dont le trajet est déjà en base (gratuit), complétés par les plus
++    proches à vol d'oiseau (présélection seulement) jusqu'à `preselection` candidats."""
++    o = _id(courant)
++    connus = [c for c in restants if o is not None and _id(c) is not None and (o, _id(c)) in base]
++    if len(connus) >= preselection:
++        return connus
++    origine = _coord(courant)
++    autres = sorted((c for c in restants if c not in connus),
++                    key=lambda x: haversine_metres(*origine, *_coord(x)))
++    return connus + autres[: preselection - len(connus)]
++
++
++async def ordre_plus_proche_voisin_ign(
++    lieux: list[dict], mode: str = "driving-car", preselection: int = 4
++) -> list[dict]:
++    """Ordonne les lieux : à chaque pas, on va vers le lieu le plus proche PAR LA ROUTE.
++
++    Distances lues dans `distances_routieres` (précalcul IGN) ; appel IGN en direct
++    seulement pour les paires absentes. Le premier lieu reste le premier.
++    """
++    if len(lieux) <= 2:
++        return list(lieux)
++    base = await charger_distances_lieux([_id(x) for x in lieux], mode)
++    restants = list(lieux)
++    ordre = [restants.pop(0)]
++    while restants:
++        courant = ordre[-1]
++        candidats = _candidats(courant, restants, base, preselection)
++        mesures = await _mesures_vers(courant, candidats, mode, base)
++        meilleur, meilleure_cle = None, None
++        for cand, m in zip(candidats, mesures):
++            m = m or estimation(_coord(courant), _coord(cand), mode)
++            cle_tri = m["duree_secondes"] if m.get("duree_secondes") is not None else m["distance_metres"]
++            if meilleure_cle is None or cle_tri < meilleure_cle:
++                meilleur, meilleure_cle = cand, cle_tri
++        ordre.append(meilleur)
++        restants.remove(meilleur)
++    return ordre
++
++
++async def optimiser_etapes_ign(
++    etapes: list[dict], depart: dict | None, mode: str,
++    temps_disponible_minutes, temps_visite_minutes, retour_depart: bool,
++) -> tuple[list[dict], list[dict]]:
++    """Choisit et ordonne les étapes qui tiennent dans le temps disponible, avec les
++    durées de route IGN (précalculées si possible)."""
++    if not temps_disponible_minutes or len(etapes) <= 1:
++        return list(etapes), []
++
++    budget_h = max(0.25, float(temps_disponible_minutes) / 60.0)
++    temps_visites_h = len(etapes) * float(temps_visite_minutes) / 60.0
++    if budget_h - temps_visites_h <= 0:
++        return ([etapes[0]] if etapes else []), [x for x in etapes[1:]]
++
++    base_db = await charger_distances_lieux(
++        [_id(x) for x in etapes] + ([_id(depart)] if depart else []), mode
++    )
++    restants = list(etapes)
++    if depart:
++        choisi: list[dict] = []
++        courant = depart
++    else:
++        choisi = [restants.pop(0)]
++        courant = choisi[0]
++    base = depart if depart else (choisi[0] if choisi else etapes[0])
++
++    cumul_s = 0.0
++    while restants:
++        candidats = _candidats(courant, restants, base_db, 4)
++        mesures = await _mesures_vers(courant, candidats, mode, base_db)
++        meilleur, meilleure_mesure = None, None
++        for cand, m in zip(candidats, mesures):
++            m = m or estimation(_coord(courant), _coord(cand), mode)
++            if meilleure_mesure is None or m["duree_secondes"] < meilleure_mesure["duree_secondes"]:
++                meilleur, meilleure_mesure = cand, m
++        prochain_s = cumul_s + float(meilleure_mesure["duree_secondes"])
++        retour_s = 0.0
++        if retour_depart:
++            r = await _mesure(meilleur, base, mode, base_db)
++            retour_s = float(r["duree_secondes"])
++        heures = (prochain_s + retour_s) / 3600.0
++        visites_h = (len(choisi) + 1) * float(temps_visite_minutes) / 60.0
++        if heures + visites_h > budget_h and choisi:
++            break
++        choisi.append(meilleur)
++        restants.remove(meilleur)
++        cumul_s = prochain_s
++        courant = meilleur
++
++    ids_choisis = {int(x["id"]) for x in choisi if x.get("id") is not None}
++    exclus = [x for x in etapes if x.get("id") is not None and int(x["id"]) not in ids_choisis]
++    return choisi, exclus
+diff --git a/backend/guides.py b/backend/guides.py
+index cc0fd4f..e9c2db4 100644
+--- a/backend/guides.py
++++ b/backend/guides.py
+@@ -9,6 +9,7 @@ import httpx
+ from fastapi import HTTPException, Request
+ from db import execute, fetch_all
+ from overpass import haversine_metres
++from distances_ign import distances_routieres, estimation, charger_distances_guides
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -187,9 +188,46 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
+             "photo_url": guide.get("photo_url"),
+             "source_donnee": guide.get("source_donnee") or "manuel",
+             "distance_metres": round(distance_min), "correspondance": _etiquette(score),
+-            "hors_zone": hors_zone, "_score": score,
++            "hors_zone": hors_zone, "_score": score, "_guide": guide,
+         })
+ 
++    # Distances de ROUTE (Géoplateforme IGN) : le vol d'oiseau ci-dessus ne sert qu'à
++    # présélectionner quelques guides ; les distances affichées, le score et la
++    # comparaison avec la zone d'intervention utilisent ensuite l'itinéraire réel.
++    resultats.sort(key=lambda x: (x["hors_zone"], -x["_score"], x["distance_metres"], x["nom"].lower()))
++    resultats = resultats[:limite + 2]
++    # 1) Trajets guide -> lieu précalculés chaque jour (precalculer_distances_routieres.py).
++    base = await charger_distances_guides(
++        [r["id"] for r in resultats], [e.get("id") for e in etapes]
++    )
++    for r in resultats:
++        origine = (r["latitude"], r["longitude"])
++        cibles = [(float(e["latitude"]), float(e["longitude"])) for e in etapes]
++        mesures = [base.get((int(r["id"]), int(e["id"]))) if e.get("id") is not None else None for e in etapes]
++        # 2) Repli : appel IGN en direct (mis en cache) pour les seuls trajets non précalculés.
++        manquants = [i for i, m in enumerate(mesures) if m is None]
++        if manquants:
++            live = await distances_routieres(origine, [cibles[i] for i in manquants], "driving-car", delai_max_s=25.0)
++            for i, m in zip(manquants, live):
++                mesures[i] = m
++        par_etape, sources = [], set()
++        for ordre, (etape, cible, m) in enumerate(zip(etapes, cibles, mesures), start=1):
++            m = m or estimation(origine, cible, "driving-car")
++            sources.add(m.get("source", "ign"))
++            d = float(m["distance_metres"])
++            par_etape.append({"ordre": ordre, "nom": etape.get("nom"), "distance_metres": round(d),
++                              "distance_km": round(d / 1000.0, 1), "source": m.get("source", "ign")})
++        r["distances_etapes"] = par_etape
++        r["etape_la_plus_proche"] = min(par_etape, key=lambda x: x["distance_metres"])
++        distance_min = r["etape_la_plus_proche"]["distance_metres"]
++        r["distance_metres"] = distance_min
++        r["distance_source"] = "ign" if sources == {"ign"} else "estimee"
++        rayon_m = (r["_guide"].get("rayon_intervention_km") or 0) * 1000
++        r["hors_zone"] = bool(rayon_m and distance_min > rayon_m)
++        r["_score"] = _score_guide(r["_guide"], distance_min, mode, langue, nb_personnes)
++        r["correspondance"] = _etiquette(r["_score"])
++    resultats = [r for r in resultats if not (r["hors_zone"] and r["distance_metres"] > RAYON_REPLI_M)]
++
+     # Guides dont la zone couvre le parcours d'abord. S'il n'y en a aucun, on
+     # propose les plus proches (dans RAYON_REPLI_M), clairement signalés
+     # « hors zone » : mieux qu'une section vide, sans faire croire à une
+@@ -205,6 +243,7 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
+     resultats = resultats[:limite]
+     for resultat in resultats:
+         resultat.pop("_score", None)
++        resultat.pop("_guide", None)
+         resultat["adresse"], resultat["commune"] = await _localiser(resultat)
+     return resultats
+ 
+diff --git a/backend/main.py b/backend/main.py
+index e99824c..3872c37 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -41,6 +41,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
+ from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
+ from seo import slugify, url_film, json_ld_film, meta_description
+ from visites_cinetouristiques import creneaux_pour_date
++from distances_ign import ordre_plus_proche_voisin_ign, optimiser_etapes_ign
+ from carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
+ from guides import (guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
+                     SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
+@@ -1417,16 +1418,12 @@ async def api_itineraire(
+ 
+ async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
+     """
+-    Optimise l'ordre d'un petit circuit sans utiliser OSRM.
+-
+-    Pour rester léger côté API, on utilise une heuristique de plus
+-    proche voisin basée sur la distance géographique.
+-
+-    Les trajets réels entre les lieux sont ensuite calculés par
+-    Géoplateforme IGN dans _itineraire_multi_etapes().
++    Ordonne un petit circuit : à chaque pas, on va vers le lieu le plus proche
++    PAR LA ROUTE (Géoplateforme IGN, résultats mis en cache). Le vol d'oiseau ne
++    sert qu'à présélectionner quelques candidats avant d'interroger l'IGN.
+     """
+ 
+-    return _ordre_plus_proche_voisin(lieux)
++    return await ordre_plus_proche_voisin_ign(lieux, "driving-car")
+ 
+ 
+ 
+@@ -2178,7 +2175,7 @@ async def parcours_enrichi(request: Request, response: Response):
+     etapes_originales = list(etapes)
+     etapes_exclues_optimisation = []
+     if optimiser:
+-        etapes, etapes_exclues_optimisation = _optimiser_etapes_approx(
++        etapes, etapes_exclues_optimisation = await optimiser_etapes_ign(
+             etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart
+         )
+         if not etapes:
+@@ -2200,12 +2197,8 @@ async def parcours_enrichi(request: Request, response: Response):
+             cible = next((x for x in etapes if int(x["id"]) == guide_planifie["lieu_id"]), None)
+             if cible and etapes and int(etapes[0]["id"]) != guide_planifie["lieu_id"]:
+                 autres = [x for x in etapes if int(x["id"]) != guide_planifie["lieu_id"]]
+-                ordonnes = [cible]
+-                courant = cible
+-                while autres:
+-                    suivant = min(autres, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
+-                    ordonnes.append(suivant); autres.remove(suivant); courant = suivant
+-                etapes = ordonnes
++                # Ordre des étapes suivantes : plus proche voisin PAR LA ROUTE (IGN).
++                etapes = await ordre_plus_proche_voisin_ign([cible] + autres, mode)
+ 
+     # Guides et médiateurs dont la zone d'intervention couvre ce parcours.
+     # Ne remplace jamais une visite guidée existante (visites_disponibles) :
+@@ -2254,7 +2247,7 @@ async def parcours_enrichi(request: Request, response: Response):
+         FROM amenity_cache
+         WHERE lieu_tournage_id IN ({placeholders})
+           AND categorie <> 'station_service'   -- les stations ont leur propre volet « carburants »
+-        ORDER BY lieu_tournage_id, categorie, distance_metres ASC
++        ORDER BY lieu_tournage_id, categorie
+         """,
+         tuple(lieu_ids),
+     )
+@@ -2266,10 +2259,19 @@ async def parcours_enrichi(request: Request, response: Response):
+     vus = {}
+     par_etape = {str(x): [] for x in lieu_ids}
+ 
++    # Classement des offres : distance de ROUTE IGN (précalculée) selon le mode de
++    # déplacement ; le vol d'oiseau (distance_metres) ne sert que si elle manque.
++    cle_route = "distance_voiture_metres" if mode == "driving-car" else "distance_pied_metres"
++
++    def _distance_classement(r):
++        d = r.get(cle_route)
++        return d if d is not None else r.get("distance_metres")
++
+     for row in rows:
+         categorie = row["categorie"]
+         item = dict(row)
+         item["lieu_tournage_id"] = int(row["lieu_tournage_id"])
++        item["distance_classement_metres"] = _distance_classement(row)
+         par_etape[str(item["lieu_tournage_id"])].append(item)
+ 
+         # Clé stable : osm_id n'est pas toujours disponible, donc on
+@@ -2284,11 +2286,11 @@ async def parcours_enrichi(request: Request, response: Response):
+             vus[cle] = {
+                 "item": item,
+                 "proche_de": [item["lieu_tournage_id"]],
+-                "meilleure_distance_metres": row["distance_metres"],
++                "meilleure_distance_metres": _distance_classement(row),
+             }
+         else:
+             vus[cle]["proche_de"].append(item["lieu_tournage_id"])
+-            d = row["distance_metres"]
++            d = _distance_classement(row)
+             if d is not None and (
+                 vus[cle]["meilleure_distance_metres"] is None
+                 or d < vus[cle]["meilleure_distance_metres"]
+@@ -2320,6 +2322,7 @@ async def parcours_enrichi(request: Request, response: Response):
+     # Réduire également le détail par étape afin de ne pas envoyer une
+     # réponse inutilement volumineuse au navigateur.
+     for cle, items in par_etape.items():
++        items.sort(key=lambda x: (x.get("distance_classement_metres") is None, x.get("distance_classement_metres") or 0))
+         par_etape[cle] = items[:limite]
+ 
+     duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0
+diff --git a/backend/migration_v31.sql b/backend/migration_v31.sql
+new file mode 100644
+index 0000000..d65d655
+--- /dev/null
++++ b/backend/migration_v31.sql
+@@ -0,0 +1,27 @@
++-- Migration v31 - Distances de route IGN précalculées pour le parcours
++-- Idempotente : peut être rejouée sans risque.
++--
++-- Une seule table pour deux usages :
++--   type_origine = 'lieu'  : trajet lieu de tournage -> lieu de tournage
++--                            (ordre des étapes, sélection sous contrainte de temps)
++--   type_origine = 'guide' : trajet guide -> lieu de tournage
++--                            (distances affichées pour les guides recommandés)
++-- Alimentée chaque jour par precalculer_distances_routieres.py (Géoplateforme IGN).
++-- Les visiteurs ne déclenchent aucun appel IGN pour ces trajets : ils lisent cette table.
++
++CREATE TABLE IF NOT EXISTS distances_routieres (
++    id                    BIGSERIAL PRIMARY KEY,
++    type_origine          VARCHAR(5)  NOT NULL CHECK (type_origine IN ('lieu', 'guide')),
++    origine_id            INT         NOT NULL,
++    lieu_destination_id   INT         NOT NULL REFERENCES lieux_tournage(id) ON DELETE CASCADE,
++    mode                  VARCHAR(7)  NOT NULL CHECK (mode IN ('pied', 'voiture')),
++    distance_metres       INT         NOT NULL,
++    duree_secondes        INT         NULL,
++    calcule_le            TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++
++CREATE UNIQUE INDEX IF NOT EXISTS uq_distances_routieres
++    ON distances_routieres (type_origine, origine_id, lieu_destination_id, mode);
++
++CREATE INDEX IF NOT EXISTS idx_distances_routieres_dest
++    ON distances_routieres (lieu_destination_id, mode);
+diff --git a/backend/precalculer_distances_routieres.py b/backend/precalculer_distances_routieres.py
+new file mode 100644
+index 0000000..fb7eafb
+--- /dev/null
++++ b/backend/precalculer_distances_routieres.py
+@@ -0,0 +1,223 @@
++"""
++backend/precalculer_distances_routieres.py
++
++Précalcule, avec la Géoplateforme IGN, les distances de ROUTE dont le parcours a
++besoin et que enrich_itineraires.py (lieu -> commodités) ne couvre pas :
++
++  - lieu  -> lieu : les VOISINS_PAR_LIEU lieux les plus proches de chaque lieu
++                    (ordre des étapes, sélection sous contrainte de temps) ;
++  - guide -> lieu : les lieux situés dans la zone d'intervention de chaque guide
++                    (au moins les NB_LIEUX_MIN_GUIDE plus proches, au plus NB_LIEUX_MAX_GUIDE).
++
++Le vol d'oiseau n'est utilisé ici que pour CHOISIR quels trajets calculer ; la
++distance enregistrée est toujours celle de l'itinéraire IGN.
++
++Incrémental : seuls les trajets absents de la table `distances_routieres` sont
++calculés. Un lancement quotidien ne traite donc que les nouveaux lieux / guides.
++Le script s'arrête proprement au bout de --duree-max-minutes et reprend le
++lendemain exactement où il s'est arrêté.
++
++Usage :
++    python precalculer_distances_routieres.py                     # tout ce qui manque
++    python precalculer_distances_routieres.py --lieu-id 42        # un lieu (et ses voisins)
++    python precalculer_distances_routieres.py --guide-id 7        # un guide
++    python precalculer_distances_routieres.py --recalculer        # repart de zéro
++"""
++from __future__ import annotations
++
++import argparse
++import asyncio
++import math
++import time
++
++from db import init_db_pool, close_db_pool, fetch_all, execute, executemany
++from geoplateforme import calculer_itineraire, GeoplateformeError
++
++# L'API itinéraire accepte 10 req/s par IP : on reste très en dessous.
++CONCURRENCE_MAX = 4
++DELAI_APRES_APPEL = 0.35
++
++VOISINS_PAR_LIEU = 12              # lieux les plus proches calculés pour chaque lieu
++RAYON_MAX_VOISINS_KM = 150         # au-delà, on ne précalcule pas (repli géré par l'API)
++RAYON_PIED_KM = 8                  # trajets à pied seulement pour des lieux proches
++NB_LIEUX_MIN_GUIDE = 20
++NB_LIEUX_MAX_GUIDE = 150
++RAYON_GUIDE_MIN_KM = 30
++TAILLE_LOT = 200
++
++MODE_API = {"pied": "foot-walking", "voiture": "driving-car"}
++
++
++def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
++    r = 6371000.0
++    p1, p2 = math.radians(lat1), math.radians(lat2)
++    a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
++    return 2 * r * math.asin(math.sqrt(a))
++
++
++# ─────────────────────────────────────────────────────────────
++# Quels trajets faut-il ?
++# ─────────────────────────────────────────────────────────────
++
++def _trajets_lieux(lieux: list[dict], seulement: int | None) -> list[tuple]:
++    """(type, origine_id, origine, dest_id, dest, mode, distance_vol_m)"""
++    trajets = []
++    for a in lieux:
++        if seulement is not None and a["id"] != seulement:
++            continue
++        voisins = []
++        for b in lieux:
++            if b["id"] == a["id"]:
++                continue
++            d = _haversine_m(a["lat"], a["lon"], b["lat"], b["lon"])
++            if d <= RAYON_MAX_VOISINS_KM * 1000:
++                voisins.append((d, b))
++        voisins.sort(key=lambda x: x[0])
++        for d, b in voisins[:VOISINS_PAR_LIEU]:
++            trajets.append(("lieu", a["id"], (a["lat"], a["lon"]), b["id"], (b["lat"], b["lon"]), "voiture", d))
++            if d <= RAYON_PIED_KM * 1000:
++                trajets.append(("lieu", a["id"], (a["lat"], a["lon"]), b["id"], (b["lat"], b["lon"]), "pied", d))
++    return trajets
++
++
++def _trajets_guides(guides: list[dict], lieux: list[dict], seulement: int | None) -> list[tuple]:
++    trajets = []
++    for g in guides:
++        if seulement is not None and g["id"] != seulement:
++            continue
++        rayon_m = max(g["rayon_km"], RAYON_GUIDE_MIN_KM) * 1000
++        classes = sorted(
++            ((_haversine_m(g["lat"], g["lon"], l["lat"], l["lon"]), l) for l in lieux),
++            key=lambda x: x[0],
++        )
++        retenus = [(d, l) for d, l in classes if d <= rayon_m][:NB_LIEUX_MAX_GUIDE]
++        if len(retenus) < NB_LIEUX_MIN_GUIDE:
++            retenus = classes[:NB_LIEUX_MIN_GUIDE]
++        for d, l in retenus:
++            trajets.append(("guide", g["id"], (g["lat"], g["lon"]), l["id"], (l["lat"], l["lon"]), "voiture", d))
++    return trajets
++
++
++# ─────────────────────────────────────────────────────────────
++# Calcul IGN
++# ─────────────────────────────────────────────────────────────
++
++async def _calculer(trajet: tuple, semaphore: asyncio.Semaphore):
++    type_o, origine_id, origine, dest_id, dest, mode, d_vol = trajet
++    if d_vol < 5:  # même position : pas la peine d'interroger l'IGN
++        return (type_o, origine_id, dest_id, mode, 0, 0)
++    async with semaphore:
++        try:
++            res = await calculer_itineraire(
++                depart_lat=origine[0], depart_lon=origine[1],
++                arrivee_lat=dest[0], arrivee_lon=dest[1],
++                mode=MODE_API[mode], avec_etapes=False,
++            )
++        except GeoplateformeError as exc:
++            print(f"  ⚠️ IGN indisponible ({type_o} {origine_id} → {dest_id}, {mode}) : {exc}", flush=True)
++            return None
++        except Exception as exc:
++            print(f"  ⚠️ Erreur ({type_o} {origine_id} → {dest_id}, {mode}) : {exc}", flush=True)
++            return None
++        finally:
++            await asyncio.sleep(DELAI_APRES_APPEL)
++    if not res or res.get("distance_metres") is None:
++        return None
++    duree = res.get("duree_secondes")
++    return (type_o, origine_id, dest_id, mode,
++            round(float(res["distance_metres"])), round(float(duree)) if duree is not None else None)
++
++
++async def _enregistrer(lignes: list[tuple]) -> None:
++    await executemany(
++        """
++        INSERT INTO distances_routieres
++            (type_origine, origine_id, lieu_destination_id, mode, distance_metres, duree_secondes, calcule_le)
++        VALUES (%s, %s, %s, %s, %s, %s, now())
++        ON CONFLICT (type_origine, origine_id, lieu_destination_id, mode)
++        DO UPDATE SET distance_metres = EXCLUDED.distance_metres,
++                      duree_secondes  = EXCLUDED.duree_secondes,
++                      calcule_le      = now()
++        """,
++        lignes,
++    )
++
++
++# ─────────────────────────────────────────────────────────────
++# Programme principal
++# ─────────────────────────────────────────────────────────────
++
++async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, recalculer: bool) -> None:
++    await init_db_pool()
++    debut = time.monotonic()
++    try:
++        if recalculer:
++            await execute("DELETE FROM distances_routieres")
++            print("Table vidée : tout sera recalculé.", flush=True)
++
++        # Nettoyage : guides supprimés (pas de clé étrangère sur origine_id).
++        await execute(
++            "DELETE FROM distances_routieres WHERE type_origine = 'guide' "
++            "AND origine_id NOT IN (SELECT id FROM guides)"
++        )
++
++        lieux = [
++            {"id": int(r["id"]), "lat": float(r["latitude"]), "lon": float(r["longitude"])}
++            for r in await fetch_all("SELECT id, latitude, longitude FROM lieux_tournage")
++        ]
++        guides = [
++            {"id": int(r["id"]), "lat": float(r["latitude"]), "lon": float(r["longitude"]),
++             "rayon_km": int(r["rayon_intervention_km"] or 30)}
++            for r in await fetch_all(
++                "SELECT id, latitude, longitude, rayon_intervention_km FROM guides WHERE statut = 'actif'"
++            )
++        ]
++        print(f"{len(lieux)} lieu(x), {len(guides)} guide(s) actif(s)", flush=True)
++
++        souhaites = []
++        if guide_id is None:
++            souhaites += _trajets_lieux(lieux, lieu_id)
++        if lieu_id is None:
++            souhaites += _trajets_guides(guides, lieux, guide_id)
++
++        deja = {
++            (r["type_origine"], int(r["origine_id"]), int(r["lieu_destination_id"]), r["mode"])
++            for r in await fetch_all(
++                "SELECT type_origine, origine_id, lieu_destination_id, mode FROM distances_routieres"
++            )
++        }
++        a_faire = [t for t in souhaites if (t[0], t[1], t[3], t[5]) not in deja]
++        # Les plus proches d'abord : ce sont les plus utiles si le budget de temps s'épuise.
++        a_faire.sort(key=lambda t: t[6])
++        print(f"{len(souhaites)} trajet(s) souhaité(s), {len(a_faire)} à calculer", flush=True)
++
++        semaphore = asyncio.Semaphore(CONCURRENCE_MAX)
++        ok = echecs = 0
++        for i in range(0, len(a_faire), TAILLE_LOT):
++            if (time.monotonic() - debut) / 60.0 >= duree_max_min:
++                print(f"⏱️ Budget de {duree_max_min:.0f} min atteint : reprise au prochain lancement.", flush=True)
++                break
++            lot = a_faire[i:i + TAILLE_LOT]
++            resultats = await asyncio.gather(*(_calculer(t, semaphore) for t in lot))
++            lignes = [r for r in resultats if r]
++            echecs += len(resultats) - len(lignes)
++            ok += len(lignes)
++            if lignes:
++                await _enregistrer(lignes)
++            print(f"  … {min(i + TAILLE_LOT, len(a_faire))}/{len(a_faire)} (ok {ok}, échecs {echecs})", flush=True)
++
++        reste = len(a_faire) - ok
++        print(f"Terminé : {ok} trajet(s) enregistré(s), {reste} restant(s) (repris au prochain lancement).", flush=True)
++    finally:
++        await close_db_pool()
++
++
++if __name__ == "__main__":
++    ap = argparse.ArgumentParser(description="Précalcul des distances de route IGN pour le parcours")
++    ap.add_argument("--lieu-id", type=int, default=None, help="Ne traiter que ce lieu comme origine")
++    ap.add_argument("--guide-id", type=int, default=None, help="Ne traiter que ce guide")
++    ap.add_argument("--duree-max-minutes", type=float, default=330.0,
++                    help="Arrêt propre après cette durée (reprise au lancement suivant)")
++    ap.add_argument("--recalculer", action="store_true", help="Vider la table et tout recalculer")
++    a = ap.parse_args()
++    asyncio.run(main(a.lieu_id, a.guide_id, a.duree_max_minutes, a.recalculer))
+diff --git a/frontend/app.js b/frontend/app.js
+index 14b1b85..6c964c8 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -17,11 +17,41 @@ function _dateLocaleISO() {
+   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+ }
+ 
+-// ── Distance vers l'étape la plus proche (toujours calculée, à vol d'oiseau) ──
++// Distance d'une station : route IGN si disponible, sinon estimation signalée.
++function _distanceStationTxt(s, cible) {
++  const m = Number(s.distance_m) || 0;
++  const t = m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`;
++  if (s.distance_source === "ign") {
++    const duree = s.duree_secondes ? ` (${Math.max(1, Math.round(s.duree_secondes / 60))} min)` : "";
++    return `à ${t}${duree} de ${cible} par la route`;
++  }
++  return `à environ ${t} de ${cible} (estimation)`;
++}
++
++// ── Distance vers l'étape ──
++// Priorité aux distances d'itinéraire IGN (Géoplateforme) déjà calculées côté serveur
++// (distance_voiture_metres / distance_pied_metres). Repli sur le vol d'oiseau, signalé.
+ function _texteDistanceEtape(item, etapes, ordreImpose = null) {
+   const lat = Number(item?.latitude), lon = Number(item?.longitude);
+   const liste = Array.isArray(etapes) ? etapes : [];
+   if (!Number.isFinite(lat) || !Number.isFinite(lon) || !liste.length) return "Distance à l'étape indisponible";
++
++  const enVoiture = (state.monParcoursOptions?.mode || "driving-car") === "driving-car";
++  const distIGN = enVoiture ? item?.distance_voiture_metres : item?.distance_pied_metres;
++  const dureeIGN = enVoiture ? item?.duree_voiture_secondes : item?.duree_pied_secondes;
++
++  // Les valeurs IGN du serveur sont calculées depuis l'étape lieu_tournage_id : on s'y réfère.
++  let idx = -1;
++  if (distIGN != null && item?.lieu_tournage_id != null) {
++    idx = liste.findIndex((e) => Number(e.id) === Number(item.lieu_tournage_id));
++  }
++  if (distIGN != null && idx >= 0) {
++    const e = liste[idx];
++    const minutes = dureeIGN != null ? ` · ${Math.max(1, Math.round(Number(dureeIGN) / 60))} min ${enVoiture ? "en voiture" : "à pied"}` : "";
++    return `${formatDistance(Number(distIGN))} de l'étape ${idx + 1} (${e.nom || "Étape"}) par la route${minutes} · itinéraire IGN`;
++  }
++
++  // Repli : vol d'oiseau
+   const calc = (e, i) => ({ ordre: i + 1, nom: e.nom || "Étape", distance: haversineApprox(lat, lon, Number(e.latitude), Number(e.longitude)) });
+   let proche = null;
+   if (ordreImpose && liste[ordreImpose - 1]) proche = calc(liste[ordreImpose - 1], ordreImpose - 1);
+@@ -32,7 +62,7 @@ function _texteDistanceEtape(item, etapes, ordreImpose = null) {
+     });
+   }
+   if (!proche) return "Distance à l'étape indisponible";
+-  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau`;
++  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau (itinéraire non calculé)`;
+ }
+ 
+ // ── Mémorisation du dernier calcul ──
+@@ -519,7 +549,7 @@ function construireScenarioCinetouristique(data){
+     const g=guidesReco[0];
+     const proche=g.etape_la_plus_proche;
+     const ou=[g.commune].filter(Boolean).join('');
+-    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
++    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km${proche.source==='ign'?' par la route':' (estimation)'} de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
+     ajoute('fa-microphone-lines',g.hors_zone
+       ?`Aucun guide de l'annuaire n'est basé sur votre parcours. Le plus proche est ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}), ${distTxt}. Contactez-le pour savoir s'il peut se déplacer.`
+       :`Pour aller plus loin, ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}) peut vous accompagner, ${distTxt}. Voir « Guides et médiateurs » ci-dessous.`);
+@@ -537,7 +567,7 @@ function construireCarburantsHtml(data){
+   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
+     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
+     const h=heure(p.passage);
+-    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}à ${s.distance_m<1000?s.distance_m+' m':(s.distance_m/1000).toFixed(1).replace('.',',')+' km'} de ${p.role==='depart'?'votre départ':"l'étape "+p.ordre}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
++    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}${_distanceStationTxt(s, p.role==='depart'?'votre départ':"l'étape "+p.ordre)}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
+     return `<div class="mp-carburant-point"><h4>${escapeHtml(titre)}${h?` <small>passage vers ${h}</small>`:''}</h4><ul>${lignes}</ul></div>`;
+   }).join('');
+   const maj=c.maj_donnees?new Date(c.maj_donnees).toLocaleDateString('fr-FR'):'';
+@@ -609,7 +639,7 @@ function afficherResultatMonParcours(data){
+     const lien=g.site_web||g.lien_contact;
+     const lieu=[g.adresse,g.commune].filter(Boolean).filter((v,k,t)=>t.findIndex(w=>String(w).includes(String(v)))===k);
+     const specs=(g.specialites_libelles||[]).join(', ');
+-    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b></li>`).join('');
++    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b> ${d.source==='ign'?'par la route':'(estimation)'}</li>`).join('');
+     return `<article class="mp-visite-card mp-guide-card"><div><b>${escapeHtml(g.nom)}</b><small><i class="fa-solid fa-user-tie" aria-hidden="true"></i> ${escapeHtml(g.fonction||'Guide / médiateur')}${specs?` · ${escapeHtml(specs)}`:''}${g.tarif_indicatif?` · ${escapeHtml(g.tarif_indicatif)}`:''}</small>${lieu.length?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Basé à : ${escapeHtml(lieu.join(', '))}</small>`:''}<small class="mp-guide-correspondance"><i class="fa-solid fa-check" aria-hidden="true"></i> ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${dists?`<details class="mp-guide-distances"><summary>Distance de chaque étape</summary><ul>${dists}</ul></details>`:''}${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
+   }).join('')}<p class="mp-guides-inscription"><button type="button" class="mp-guides-voir-tous" data-ouvrir-guides="parcours"><i class="fa-solid fa-address-book" aria-hidden="true"></i> Voir tous les guides et filtrer</button> <a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
+ 
+@@ -1584,7 +1614,6 @@ function _rendreStations() {
+       <span class="station-label">Tri</span><div class="selecteur-mode">${tris}${boutonBorne}</div>
+     </div>`;
+ 
+-    conteneur.innerHTML = barre + vide + notes + cartes + source;
+ 
+   const cartes = affiches.map((item, index) => {
+     const st = item.station || null;
+@@ -1638,6 +1667,7 @@ function _rendreStations() {
+   ].join("");
+   const source = `<small class="station-source">Prix relevés sur prix-carburants.gouv.fr (Licence Ouverte 2.0), mis à jour chaque jour : ils peuvent avoir changé à la pompe. Pour un carburant peu courant (E85, GPLc), une station plus éloignée peut être ajoutée à la liste.</small>`;
+ 
++  const blocPhrases = _htmlPhrasesPiedVoiture(items, phrases);
+   conteneur.innerHTML = barre + blocPhrases + vide + notes + cartes + source;
+ 
+   conteneur.querySelectorAll("[data-carb]").forEach((b) => b.addEventListener("click", () => {
+@@ -2744,7 +2774,7 @@ function afficherAmenitiesParcoursV4(categories, data) {
+     }).bindPopup(`
+       <b><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
+       <b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>
+-      À ${s.distance_m < 1000 ? s.distance_m + " m" : (s.distance_m / 1000).toFixed(1).replace(".", ",") + " km"} de ${p.role === "depart" ? "votre départ" : "l'étape " + p.ordre}<br>
++      ${_distanceStationTxt(s, p.role === "depart" ? "votre départ" : "l'étape " + p.ordre)}<br>
+       ${escapeHtml(s.maj_libelle || "")}<br>
+       ${escapeHtml(s.ouverture?.libelle || "")}<br>${s.adresse ? escapeHtml(s.adresse) : ""}
+     `).addTo(map);

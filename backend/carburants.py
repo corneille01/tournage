@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from db import fetch_all, fetch_one
 from overpass import haversine_metres
+from distances_ign import distances_routieres, estimation
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +240,8 @@ async def stations_autour(lat: float, lon: float, rayon_m: float, cle: str) -> d
             continue
         item = dict(s)
         item["prix"] = float(s["prix"])
-        item["distance_m"] = d
+        item["distance_m"] = d            # vol d'oiseau : présélection seulement, remplacé par l'IGN dans plan_carburant
+        item["distance_vol_m"] = d
         item["maj_effective"] = maj
         stations.append(item)
     return {"stations": stations, "nb_rupture": ruptures, "nb_total": total, "nb_perimes": perimes}
@@ -283,7 +285,8 @@ def _nom_station(s: dict) -> str:
 
 
 def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quand: datetime | None) -> dict:
-    detour_km = 2 * FACTEUR_ROUTE * s["distance_m"] / 1000.0
+    # distance_m est ici une distance de ROUTE (IGN) : aller-retour = 2 × distance.
+    detour_km = 2 * s["distance_m"] / 1000.0
     cout_detour = detour_km * conso / 100.0 * s["prix"]
     economie = (prix_ref - s["prix"]) * achat_l - cout_detour
     maj = s.get("maj_effective") or s.get("maj_prix")
@@ -295,6 +298,8 @@ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quan
         "adresse": _adresse(s),
         "latitude": float(s["latitude"]), "longitude": float(s["longitude"]),
         "prix": s["prix"], "distance_m": round(s["distance_m"]),
+        "duree_secondes": s.get("duree_s"),
+        "distance_source": s.get("distance_source", "vol_oiseau"),   # "ign" | "estimee" | "vol_oiseau"
         "autoroute": s.get("type_route") == "A",
         "automate_24_24": s.get("automate_24_24"),
         "ouverture": statut_ouverture(s, quand),
@@ -323,6 +328,81 @@ def _choisir(stations: list, achat_l: float, conso: float, prix_ref: float, quan
     return formatees[:n]
 
 
+PRESELECTION_IGN = 5      # candidats interrogés auprès de l'IGN, par point du parcours
+
+
+async def _distances_precalculees(lieu_id) -> dict[int, dict]:
+    """Distances de route IGN déjà stockées (enrich_itineraires.py) entre un lieu et ses stations."""
+    if lieu_id is None:
+        return {}
+    try:
+        lignes = await fetch_all(
+            """
+            SELECT station_id, distance_voiture_metres, duree_voiture_secondes
+            FROM amenity_cache
+            WHERE lieu_tournage_id = %s AND categorie = 'station_service'
+              AND station_id IS NOT NULL AND distance_voiture_metres IS NOT NULL
+            """,
+            (int(lieu_id),),
+        )
+    except Exception:
+        logger.warning("Distances stations précalculées indisponibles (lieu %s)", lieu_id)
+        return {}
+    return {
+        int(x["station_id"]): {
+            "distance_metres": int(x["distance_voiture_metres"]),
+            "duree_secondes": x["duree_voiture_secondes"],
+            "source": "ign",
+        }
+        for x in lignes
+    }
+
+
+async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: float) -> list:
+    """Remplace, pour les meilleurs candidats d'un point, le vol d'oiseau par la distance
+    de route de la Géoplateforme IGN. Le vol d'oiseau ne sert qu'à présélectionner."""
+    if not stations:
+        return []
+    # Étape : on lit les distances IGN déjà stockées dans amenity_cache (aucun appel IGN).
+    # Départ saisi par le visiteur : pas de précalcul possible, donc appel IGN en direct.
+    deja = await _distances_precalculees(p.get("lieu_id")) if p["role"] == "etape" else {}
+    if deja:
+        stations = [s for s in stations if int(s["id"]) in deja] or stations
+    hors_autoroute = [s for s in stations if s.get("type_route") != "A"]
+    pool = hors_autoroute or stations
+    pool = sorted(
+        pool,
+        key=lambda s: s["prix"] * achat_l
+        + 2 * FACTEUR_ROUTE * s["distance_vol_m"] / 1000.0 * conso / 100.0 * s["prix"],
+    )[:PRESELECTION_IGN]
+
+    origine = (p["lat"], p["lon"])
+    a_calculer = [s for s in pool if int(s["id"]) not in deja]
+    mesures = await distances_routieres(
+        origine, [(float(s["latitude"]), float(s["longitude"])) for s in a_calculer],
+        "driving-car", delai_max_s=20.0,
+    )
+    par_id = {int(s["id"]): m for s, m in zip(a_calculer, mesures)}
+
+    affinees = []
+    for s in pool:
+        m = deja.get(int(s["id"])) or par_id.get(int(s["id"]))
+        if not m:  # IGN indisponible : estimation, signalée à l'utilisateur
+            m = estimation(origine, (float(s["latitude"]), float(s["longitude"])), "driving-car")
+        item = dict(s)
+        item["distance_m"] = float(m["distance_metres"])
+        item["duree_s"] = m.get("duree_secondes")
+        item["distance_source"] = m.get("source", "ign")
+        affinees.append(item)
+    return affinees
+
+
+def _txt_distance(st: dict, cible: str) -> str:
+    if st.get("distance_source") == "ign":
+        return f"à {_km_txt(st['distance_m'])} de {cible} par la route"
+    return f"à environ {_km_txt(st['distance_m'])} de {cible} (estimation, itinéraire IGN indisponible)"
+
+
 async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carburant, consommation,
                          date_sortie, heure_depart, mode) -> dict | None:
     """Prépare les conseils carburant. Renvoie None si le sujet ne s'applique pas."""
@@ -346,7 +426,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
                        "quand": depart_dt, "rayon": RAYON_DEPART_M})
     for i, e in enumerate(etapes, start=1):
         points.append({"role": "etape", "ordre": i, "nom": e.get("nom") or f"Étape {i}",
-                       "lat": float(e["latitude"]), "lon": float(e["longitude"]),
+                       "lat": float(e["latitude"]), "lon": float(e["longitude"]), "lieu_id": e.get("id"),
                        "quand": arrivees.get(i), "rayon": RAYON_ETAPE_M})
 
     async def chercher(p):
@@ -380,8 +460,9 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
                 plus_recent = m
 
     sorties, conseils, avertissements = [], [], []
-    for p, r in zip(points, resultats):
-        top = _choisir(r["stations"], achat_l, conso, prix_ref, p["quand"])
+    affinees = await asyncio.gather(*(_affiner_par_route(p, r["stations"], achat_l, conso) for p, r in zip(points, resultats)))
+    for p, r, stations_ign in zip(points, resultats, affinees):
+        top = _choisir(stations_ign, achat_l, conso, prix_ref, p["quand"])
         sorties.append({
             "role": p["role"], "ordre": p["ordre"], "nom": p["nom"],
             "latitude": p["lat"], "longitude": p["lon"],
@@ -413,7 +494,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
         st = depart_sortie["stations"][0]
         eco = f", soit environ {_eur_txt(st['economie_nette_eur'])} € d'économie sur un plein" if st["economie_nette_eur"] >= 1 else ""
         conseils.append({"icone": "fa-flag-checkered", "texte": (
-            f"Avant de partir : {st['nom']}, à {_km_txt(st['distance_m'])} de votre départ, "
+            f"Avant de partir : {st['nom']}, {_txt_distance(st, 'votre départ')}, "
             f"{_prix_txt(st['prix'])} €/L{eco}. {st['ouverture']['libelle']}.")})
     if meilleurs:
         s, st = min(meilleurs, key=lambda t: t[1]["prix"])

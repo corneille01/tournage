@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException, Request
 from db import execute, fetch_all
 from overpass import haversine_metres
+from distances_ign import distances_routieres, estimation, charger_distances_guides
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +188,45 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
             "photo_url": guide.get("photo_url"),
             "source_donnee": guide.get("source_donnee") or "manuel",
             "distance_metres": round(distance_min), "correspondance": _etiquette(score),
-            "hors_zone": hors_zone, "_score": score,
+            "hors_zone": hors_zone, "_score": score, "_guide": guide,
         })
+
+    # Distances de ROUTE (Géoplateforme IGN) : le vol d'oiseau ci-dessus ne sert qu'à
+    # présélectionner quelques guides ; les distances affichées, le score et la
+    # comparaison avec la zone d'intervention utilisent ensuite l'itinéraire réel.
+    resultats.sort(key=lambda x: (x["hors_zone"], -x["_score"], x["distance_metres"], x["nom"].lower()))
+    resultats = resultats[:limite + 2]
+    # 1) Trajets guide -> lieu précalculés chaque jour (precalculer_distances_routieres.py).
+    base = await charger_distances_guides(
+        [r["id"] for r in resultats], [e.get("id") for e in etapes]
+    )
+    for r in resultats:
+        origine = (r["latitude"], r["longitude"])
+        cibles = [(float(e["latitude"]), float(e["longitude"])) for e in etapes]
+        mesures = [base.get((int(r["id"]), int(e["id"]))) if e.get("id") is not None else None for e in etapes]
+        # 2) Repli : appel IGN en direct (mis en cache) pour les seuls trajets non précalculés.
+        manquants = [i for i, m in enumerate(mesures) if m is None]
+        if manquants:
+            live = await distances_routieres(origine, [cibles[i] for i in manquants], "driving-car", delai_max_s=25.0)
+            for i, m in zip(manquants, live):
+                mesures[i] = m
+        par_etape, sources = [], set()
+        for ordre, (etape, cible, m) in enumerate(zip(etapes, cibles, mesures), start=1):
+            m = m or estimation(origine, cible, "driving-car")
+            sources.add(m.get("source", "ign"))
+            d = float(m["distance_metres"])
+            par_etape.append({"ordre": ordre, "nom": etape.get("nom"), "distance_metres": round(d),
+                              "distance_km": round(d / 1000.0, 1), "source": m.get("source", "ign")})
+        r["distances_etapes"] = par_etape
+        r["etape_la_plus_proche"] = min(par_etape, key=lambda x: x["distance_metres"])
+        distance_min = r["etape_la_plus_proche"]["distance_metres"]
+        r["distance_metres"] = distance_min
+        r["distance_source"] = "ign" if sources == {"ign"} else "estimee"
+        rayon_m = (r["_guide"].get("rayon_intervention_km") or 0) * 1000
+        r["hors_zone"] = bool(rayon_m and distance_min > rayon_m)
+        r["_score"] = _score_guide(r["_guide"], distance_min, mode, langue, nb_personnes)
+        r["correspondance"] = _etiquette(r["_score"])
+    resultats = [r for r in resultats if not (r["hors_zone"] and r["distance_metres"] > RAYON_REPLI_M)]
 
     # Guides dont la zone couvre le parcours d'abord. S'il n'y en a aucun, on
     # propose les plus proches (dans RAYON_REPLI_M), clairement signalés
@@ -205,6 +243,7 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
     resultats = resultats[:limite]
     for resultat in resultats:
         resultat.pop("_score", None)
+        resultat.pop("_guide", None)
         resultat["adresse"], resultat["commune"] = await _localiser(resultat)
     return resultats
 

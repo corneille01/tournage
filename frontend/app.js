@@ -17,11 +17,43 @@ function _dateLocaleISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// ── Distance vers l'étape la plus proche (toujours calculée, à vol d'oiseau) ──
+// Distance d'une station : route IGN si disponible, sinon estimation signalée.
+function _distanceStationTxt(s, cible) {
+  const m = Number(s.distance_m) || 0;
+  const t = m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`;
+  if (s.distance_source === "ign") {
+    const duree = s.duree_secondes ? ` (${Math.max(1, Math.round(s.duree_secondes / 60))} min)` : "";
+    return `à ${t}${duree} de ${cible} par la route`;
+  }
+  return `à environ ${t} de ${cible} (estimation)`;
+}
+
+// ── Distance vers l'étape ──
+// Priorité aux distances d'itinéraire IGN (Géoplateforme) déjà calculées côté serveur
+// (distance_voiture_metres / distance_pied_metres). Repli sur le vol d'oiseau, signalé.
 function _texteDistanceEtape(item, etapes, ordreImpose = null) {
   const lat = Number(item?.latitude), lon = Number(item?.longitude);
   const liste = Array.isArray(etapes) ? etapes : [];
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || !liste.length) return "Distance à l'étape indisponible";
+
+  const enVoiture = (state.monParcoursOptions?.mode || "driving-car") === "driving-car";
+  const distIGN = enVoiture ? item?.distance_voiture_metres : item?.distance_pied_metres;
+  const dureeIGN = enVoiture ? item?.duree_voiture_secondes : item?.duree_pied_secondes;
+
+  // Les valeurs IGN du serveur sont calculées depuis l'étape lieu_tournage_id (ou, pour une
+  // suggestion, depuis l'étape dont le numéro est imposé) : on s'y réfère.
+  let idx = -1;
+  if (distIGN != null) {
+    const refId = item?.lieu_tournage_id ?? item?.etape_id ?? (ordreImpose ? liste[ordreImpose - 1]?.id : null);
+    if (refId != null) idx = liste.findIndex((e) => Number(e.id) === Number(refId));
+  }
+  if (distIGN != null && idx >= 0) {
+    const e = liste[idx];
+    const minutes = dureeIGN != null ? ` · ${Math.max(1, Math.round(Number(dureeIGN) / 60))} min ${enVoiture ? "en voiture" : "à pied"}` : "";
+    return `${formatDistance(Number(distIGN))} de l'étape ${idx + 1} (${e.nom || "Étape"}) par la route${minutes} · itinéraire IGN`;
+  }
+
+  // Repli : vol d'oiseau
   const calc = (e, i) => ({ ordre: i + 1, nom: e.nom || "Étape", distance: haversineApprox(lat, lon, Number(e.latitude), Number(e.longitude)) });
   let proche = null;
   if (ordreImpose && liste[ordreImpose - 1]) proche = calc(liste[ordreImpose - 1], ordreImpose - 1);
@@ -32,7 +64,7 @@ function _texteDistanceEtape(item, etapes, ordreImpose = null) {
     });
   }
   if (!proche) return "Distance à l'étape indisponible";
-  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau`;
+  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau (itinéraire non calculé)`;
 }
 
 // ── Mémorisation du dernier calcul ──
@@ -519,7 +551,7 @@ function construireScenarioCinetouristique(data){
     const g=guidesReco[0];
     const proche=g.etape_la_plus_proche;
     const ou=[g.commune].filter(Boolean).join('');
-    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
+    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km${proche.source==='ign'?' par la route':' (estimation)'} de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
     ajoute('fa-microphone-lines',g.hors_zone
       ?`Aucun guide de l'annuaire n'est basé sur votre parcours. Le plus proche est ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}), ${distTxt}. Contactez-le pour savoir s'il peut se déplacer.`
       :`Pour aller plus loin, ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}) peut vous accompagner, ${distTxt}. Voir « Guides et médiateurs » ci-dessous.`);
@@ -537,7 +569,7 @@ function construireCarburantsHtml(data){
   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
     const h=heure(p.passage);
-    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}à ${s.distance_m<1000?s.distance_m+' m':(s.distance_m/1000).toFixed(1).replace('.',',')+' km'} de ${p.role==='depart'?'votre départ':"l'étape "+p.ordre}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
+    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}${_distanceStationTxt(s, p.role==='depart'?'votre départ':"l'étape "+p.ordre)}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
     return `<div class="mp-carburant-point"><h4>${escapeHtml(titre)}${h?` <small>passage vers ${h}</small>`:''}</h4><ul>${lignes}</ul></div>`;
   }).join('');
   const maj=c.maj_donnees?new Date(c.maj_donnees).toLocaleDateString('fr-FR'):'';
@@ -609,7 +641,7 @@ function afficherResultatMonParcours(data){
     const lien=g.site_web||g.lien_contact;
     const lieu=[g.adresse,g.commune].filter(Boolean).filter((v,k,t)=>t.findIndex(w=>String(w).includes(String(v)))===k);
     const specs=(g.specialites_libelles||[]).join(', ');
-    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b></li>`).join('');
+    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b> ${d.source==='ign'?'par la route':'(estimation)'}</li>`).join('');
     return `<article class="mp-visite-card mp-guide-card"><div><b>${escapeHtml(g.nom)}</b><small><i class="fa-solid fa-user-tie" aria-hidden="true"></i> ${escapeHtml(g.fonction||'Guide / médiateur')}${specs?` · ${escapeHtml(specs)}`:''}${g.tarif_indicatif?` · ${escapeHtml(g.tarif_indicatif)}`:''}</small>${lieu.length?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Basé à : ${escapeHtml(lieu.join(', '))}</small>`:''}<small class="mp-guide-correspondance"><i class="fa-solid fa-check" aria-hidden="true"></i> ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${dists?`<details class="mp-guide-distances"><summary>Distance de chaque étape</summary><ul>${dists}</ul></details>`:''}${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
   }).join('')}<p class="mp-guides-inscription"><button type="button" class="mp-guides-voir-tous" data-ouvrir-guides="parcours"><i class="fa-solid fa-address-book" aria-hidden="true"></i> Voir tous les guides et filtrer</button> <a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
 
@@ -2774,7 +2806,7 @@ function afficherAmenitiesParcoursV4(categories, data) {
     }).bindPopup(`
       <b><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
       <b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>
-      À ${s.distance_m < 1000 ? s.distance_m + " m" : (s.distance_m / 1000).toFixed(1).replace(".", ",") + " km"} de ${p.role === "depart" ? "votre départ" : "l'étape " + p.ordre}<br>
+      ${_distanceStationTxt(s, p.role === "depart" ? "votre départ" : "l'étape " + p.ordre)}<br>
       ${escapeHtml(s.maj_libelle || "")}<br>
       ${escapeHtml(s.ouverture?.libelle || "")}<br>${s.adresse ? escapeHtml(s.adresse) : ""}
     `).addTo(map);

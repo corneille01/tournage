@@ -41,6 +41,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
 from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
 from seo import slugify, url_film, json_ld_film, meta_description
 from visites_cinetouristiques import creneaux_pour_date
+from distances_ign import ordre_plus_proche_voisin_ign, optimiser_etapes_ign
 from carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
 from guides import (guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
                     SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
@@ -1417,16 +1418,12 @@ async def api_itineraire(
 
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """
-    Optimise l'ordre d'un petit circuit sans utiliser OSRM.
-
-    Pour rester léger côté API, on utilise une heuristique de plus
-    proche voisin basée sur la distance géographique.
-
-    Les trajets réels entre les lieux sont ensuite calculés par
-    Géoplateforme IGN dans _itineraire_multi_etapes().
+    Ordonne un petit circuit : à chaque pas, on va vers le lieu le plus proche
+    PAR LA ROUTE (Géoplateforme IGN, résultats mis en cache). Le vol d'oiseau ne
+    sert qu'à présélectionner quelques candidats avant d'interroger l'IGN.
     """
 
-    return _ordre_plus_proche_voisin(lieux)
+    return await ordre_plus_proche_voisin_ign(lieux, "driving-car")
 
 
 
@@ -2178,7 +2175,7 @@ async def parcours_enrichi(request: Request, response: Response):
     etapes_originales = list(etapes)
     etapes_exclues_optimisation = []
     if optimiser:
-        etapes, etapes_exclues_optimisation = _optimiser_etapes_approx(
+        etapes, etapes_exclues_optimisation = await optimiser_etapes_ign(
             etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart
         )
         if not etapes:
@@ -2200,12 +2197,8 @@ async def parcours_enrichi(request: Request, response: Response):
             cible = next((x for x in etapes if int(x["id"]) == guide_planifie["lieu_id"]), None)
             if cible and etapes and int(etapes[0]["id"]) != guide_planifie["lieu_id"]:
                 autres = [x for x in etapes if int(x["id"]) != guide_planifie["lieu_id"]]
-                ordonnes = [cible]
-                courant = cible
-                while autres:
-                    suivant = min(autres, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
-                    ordonnes.append(suivant); autres.remove(suivant); courant = suivant
-                etapes = ordonnes
+                # Ordre des étapes suivantes : plus proche voisin PAR LA ROUTE (IGN).
+                etapes = await ordre_plus_proche_voisin_ign([cible] + autres, mode)
 
     # Guides et médiateurs dont la zone d'intervention couvre ce parcours.
     # Ne remplace jamais une visite guidée existante (visites_disponibles) :
@@ -2254,7 +2247,7 @@ async def parcours_enrichi(request: Request, response: Response):
         FROM amenity_cache
         WHERE lieu_tournage_id IN ({placeholders})
           AND categorie <> 'station_service'   -- les stations ont leur propre volet « carburants »
-        ORDER BY lieu_tournage_id, categorie, distance_metres ASC
+        ORDER BY lieu_tournage_id, categorie
         """,
         tuple(lieu_ids),
     )
@@ -2266,10 +2259,19 @@ async def parcours_enrichi(request: Request, response: Response):
     vus = {}
     par_etape = {str(x): [] for x in lieu_ids}
 
+    # Classement des offres : distance de ROUTE IGN (précalculée) selon le mode de
+    # déplacement ; le vol d'oiseau (distance_metres) ne sert que si elle manque.
+    cle_route = "distance_voiture_metres" if mode == "driving-car" else "distance_pied_metres"
+
+    def _distance_classement(r):
+        d = r.get(cle_route)
+        return d if d is not None else r.get("distance_metres")
+
     for row in rows:
         categorie = row["categorie"]
         item = dict(row)
         item["lieu_tournage_id"] = int(row["lieu_tournage_id"])
+        item["distance_classement_metres"] = _distance_classement(row)
         par_etape[str(item["lieu_tournage_id"])].append(item)
 
         # Clé stable : osm_id n'est pas toujours disponible, donc on
@@ -2284,11 +2286,11 @@ async def parcours_enrichi(request: Request, response: Response):
             vus[cle] = {
                 "item": item,
                 "proche_de": [item["lieu_tournage_id"]],
-                "meilleure_distance_metres": row["distance_metres"],
+                "meilleure_distance_metres": _distance_classement(row),
             }
         else:
             vus[cle]["proche_de"].append(item["lieu_tournage_id"])
-            d = row["distance_metres"]
+            d = _distance_classement(row)
             if d is not None and (
                 vus[cle]["meilleure_distance_metres"] is None
                 or d < vus[cle]["meilleure_distance_metres"]
@@ -2320,6 +2322,7 @@ async def parcours_enrichi(request: Request, response: Response):
     # Réduire également le détail par étape afin de ne pas envoyer une
     # réponse inutilement volumineuse au navigateur.
     for cle, items in par_etape.items():
+        items.sort(key=lambda x: (x.get("distance_classement_metres") is None, x.get("distance_classement_metres") or 0))
         par_etape[cle] = items[:limite]
 
     duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0

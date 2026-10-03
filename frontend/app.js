@@ -284,20 +284,20 @@ function ajouterLieuAuParcours(film,lieu){ const item=lieuPourMonParcours(film,l
 function retirerLieuDuParcours(id){ const n=state.monParcours.length; state.monParcours=state.monParcours.filter(x=>Number(x.id)!==Number(id)); if(n!==state.monParcours.length)sauvegarderMonParcours(); mettreAJourCompteurMonParcours(); }
 function basculerLieuDansMonParcours(film,lieu){ const id=Number(lieu.id); if(state.monParcours.some(x=>Number(x.id)===id))retirerLieuDuParcours(id);else ajouterLieuAuParcours(film,lieu); afficherMonParcoursPanel(); mettreAJourCompteurMonParcours(); }
 function deplacerLieuDansMonParcours(i,d){const j=i+d;if(j<0||j>=state.monParcours.length)return;[state.monParcours[i],state.monParcours[j]]=[state.monParcours[j],state.monParcours[i]];sauvegarderMonParcours();afficherMonParcoursPanel();}
-// Page « Mon parcours » : seules les icônes du parcours sont visibles sur la carte.
-// Les icônes de films sont masquées à l'ouverture et réaffichées quand on quitte la page.
+// Page « Mon parcours » : on n'y voit que les icônes du parcours (celles des films sont
+// masquées le temps de la page). Fermer la page NE retire PAS le parcours de la carte :
+// on peut le regarder tranquillement. Il disparaît dès qu'on clique sur un film ou un lieu
+// (effacerTrace), pour laisser la place à l'icône choisie.
 function _masquerIconesFilms(){ if (typeof clusterGroup !== "undefined" && clusterGroup && map && map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup); }
 function _reafficherIconesFilms(){ if (typeof clusterGroup !== "undefined" && clusterGroup && map && !map.hasLayer(clusterGroup)) map.addLayer(clusterGroup); }
 function ouvrirMonParcours(){const o=document.getElementById("mon-parcours-overlay");if(!o)return;_masquerIconesFilms();afficherMonParcoursPanel();o.classList.remove("hidden");o.setAttribute("aria-hidden","false");}
-// Fermeture « technique » (ex. capture de la carte) : le parcours reste dessiné.
+// Fermeture « technique » (ex. capture de la carte) : rien n'est modifié sur la carte.
 function fermerMonParcours(){const o=document.getElementById("mon-parcours-overlay");if(!o)return;o.classList.add("hidden");o.setAttribute("aria-hidden","true");}
-// L'utilisateur QUITTE la page parcours : ses icônes et son tracé disparaissent de la carte
-// et les icônes de films reviennent. Un nouveau clic sur « Mon parcours » les redessine.
+// L'utilisateur quitte la page : le parcours reste affiché, les icônes de films reviennent.
 function quitterMonParcours(){
   const o=document.getElementById("mon-parcours-overlay");
   if(!o||o.classList.contains("hidden"))return;
   fermerMonParcours();
-  nettoyerAffichageParcoursGlobal();
   _reafficherIconesFilms();
 }
 function afficherMonParcoursPanel(){
@@ -339,10 +339,14 @@ function afficherMonParcoursPanel(){
       <div class="mp-depart-options"><label><input type="radio" name="mon-parcours-mode" value="driving-car" ${o.mode==='driving-car'?'checked':''}> <i class="fa-solid fa-car" aria-hidden="true"></i> Voiture</label><label><input type="radio" name="mon-parcours-mode" value="foot-walking" ${o.mode==='foot-walking'?'checked':''}> <i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</label></div>
       <div id="mp-carburant-bloc" class="mp-carburant-bloc ${o.mode==='driving-car'?'':'hidden'}">
         <label class="mp-label"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> Carburant de votre véhicule</label>
-        <select id="mp-carburant">${[['e10','SP95-E10'],['sp95','SP95'],['sp98','SP98'],['gazole','Gazole'],['e85','E85 (superéthanol)'],['gplc','GPLc'],['aucun','Ne pas afficher les prix']].map(([v,l])=>`<option value="${v}" ${(o.carburant||'e10')===v?'selected':''}>${l}</option>`).join('')}</select>
-        <label class="mp-label">Consommation (L/100 km)</label>
+        <select id="mp-carburant">${[['e10','SP95-E10'],['sp95','SP95'],['sp98','SP98'],['gazole','Gazole'],['e85','E85 (superéthanol)'],['gplc','GPLc'],['electrique','Électrique (bornes de recharge)'],['aucun','Ne pas afficher les prix']].map(([v,l])=>`<option value="${v}" ${(o.carburant||'e10')===v?'selected':''}>${l}</option>`).join('')}</select>
+        ${o.carburant==='electrique'
+          ? `<label class="mp-label">Consommation (kWh/100 km)</label>
+        <input id="mp-conso" type="number" min="8" max="40" step="0.5" value="${escapeHtml(o.consommationElec||17)}" class="mp-time-input">
+        <small class="mp-aide">Pelify repère les bornes de recharge autour de votre départ et de chaque étape et estime l'énergie nécessaire. Les tarifs de recharge ne sont pas affichés.</small>`
+          : `<label class="mp-label">Consommation (L/100 km)</label>
         <input id="mp-conso" type="number" min="2" max="25" step="0.1" value="${escapeHtml(o.consommation||6.5)}" class="mp-time-input">
-        <small class="mp-aide">Pelify estime votre plein et repère les stations les moins chères autour de votre départ et de chaque étape.</small>
+        <small class="mp-aide">Pelify estime votre plein et repère les stations les moins chères autour de votre départ et de chaque étape.</small>`}
       </div>
       <label class="mp-check"><input id="mp-retour" type="checkbox" ${o.retour?'checked':''}> <i class="fa-solid fa-repeat" aria-hidden="true"></i> Revenir au point de départ</label>
       <label class="mp-label">Budget souhaité</label>
@@ -371,8 +375,8 @@ function afficherMonParcoursPanel(){
     if(x.value==='position'&&!o.depart) demanderPositionPourParcours(); else afficherMonParcoursPanel();
   }));
   c.querySelectorAll('input[name="mon-parcours-mode"]').forEach(x=>x.addEventListener('change',()=>{o.mode=x.value;document.getElementById('mp-carburant-bloc')?.classList.toggle('hidden',x.value!=='driving-car');sauvegarderOptionsMonParcours();}));
-  document.getElementById('mp-carburant')?.addEventListener('change',e=>{o.carburant=e.target.value;sauvegarderOptionsMonParcours();});
-  document.getElementById('mp-conso')?.addEventListener('change',e=>{const v=Number(String(e.target.value).replace(',','.'));o.consommation=Number.isFinite(v)&&v>=2&&v<=25?v:6.5;e.target.value=o.consommation;sauvegarderOptionsMonParcours();});
+  document.getElementById('mp-carburant')?.addEventListener('change',e=>{o.carburant=e.target.value;sauvegarderOptionsMonParcours();afficherMonParcoursPanel();});
+  document.getElementById('mp-conso')?.addEventListener('change',e=>{const v=Number(String(e.target.value).replace(',','.'));if(o.carburant==='electrique'){o.consommationElec=Number.isFinite(v)&&v>=8&&v<=40?v:17;e.target.value=o.consommationElec;}else{o.consommation=Number.isFinite(v)&&v>=2&&v<=25?v:6.5;e.target.value=o.consommation;}sauvegarderOptionsMonParcours();});
   document.getElementById('mp-temps')?.addEventListener('change',e=>{o.temps=Number(e.target.value);sauvegarderOptionsMonParcours();});
   document.getElementById('mp-visite')?.addEventListener('change',e=>{o.visite=Number(e.target.value);sauvegarderOptionsMonParcours();});
   document.getElementById('mp-date-sortie')?.addEventListener('change',e=>{o.dateSortie=e.target.value||_dateLocaleISO();sauvegarderOptionsMonParcours();});
@@ -499,7 +503,7 @@ async function calculerMonParcoursGlobal(){
   if(o.departType==='adresse'&&!o.depart){r.innerHTML='<p class="mon-parcours-erreur">Choisissez une adresse de départ avant de calculer.</p>';return;}
   r.innerHTML=`<p class="mon-parcours-loading">Calcul du trajet IGN et des offres touristiques…</p>`;
   try{
-    const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:false,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",carburant:o.carburant||"e10",consommation_l_100km:o.consommation||null,inclure_carburant:(o.carburant||"e10")!=="aucun"};
+    const body={lieu_ids:state.monParcours.map(x=>Number(x.id)),mode:o.mode,limite_par_categorie:5,depart:construireDepartParcours(),temps_disponible_minutes:o.temps,temps_visite_minutes:o.visite,retour_depart:o.retour,date_sortie:o.dateSortie,categories_interet:o.categories,budget_level:o.budget,budget_max_euros:o.budgetMax||null,accessibilite:false,optimiser:o.optimiser,inclure_visites_guidees:o.inclureVisitesGuidees!==false,heure_depart:o.heureDepart||"09:00",carburant:o.carburant||"e10",consommation_l_100km:(o.carburant==="electrique"?(o.consommationElec||17):(o.consommation||null)),inclure_carburant:(o.carburant||"e10")!=="aucun"};
     const res=await fetch(`${API_BASE}/api/parcours/enrichi`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const raw=await res.text();
     let data=null;
@@ -566,22 +570,24 @@ function construireScenarioCinetouristique(data){
   }
   return {guides:guidesDisponibles,texte:scenario,tempsUtilise};
 }
+function o_est_elec_(data){return (state.monParcoursOptions?.carburant)==='electrique';}
 function construireCarburantsHtml(data){
   const c=data.carburants;
   if(!c) return '';
-  if(c.actif===false) return `<section class="mp-carburant"><h3><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> Carburant</h3><p class="mp-carburant-note">${escapeHtml(c.raison||'Prix indisponibles pour ce parcours.')}</p></section>`;
+  if(c.actif===false) return `<section class="mp-carburant"><h3><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${o_est_elec_(data)?'Recharge électrique':'Carburant'}</h3><p class="mp-carburant-note">${escapeHtml(c.raison||'Données indisponibles pour ce parcours.')}</p></section>`;
   const heure=iso=>{if(!iso)return '';const d=new Date(iso);return Number.isNaN(d.getTime())?'':d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});};
   const prix=v=>Number(v).toFixed(3).replace('.',',');
+  const elec=c.type==='electrique';
   const conseils=(c.conseils||[]).map(x=>`<p><i class="fa-solid ${escapeIcone(x.icone)}" aria-hidden="true"></i> ${escapeHtml(x.texte)}</p>`).join('');
   const alertes=(c.avertissements||[]).map(x=>`<p class="mp-carburant-alerte"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${escapeHtml(x)}</p>`).join('');
   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
     const h=heure(p.passage);
-    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}${_distanceStationTxt(s, p.role==='depart'?'votre départ':"l'étape "+p.ordre)}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
+    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> ${elec?'<span class="mp-prix"><i class="fa-solid fa-charging-station" aria-hidden="true"></i></span>':`<span class="mp-prix">${prix(s.prix)} €/L</span>`}<small>${k===0?(elec?'La plus proche · ':'Meilleur choix · '):''}${_distanceStationTxt(s, p.role==='depart'?'votre départ':"l'étape "+p.ordre)}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
     return `<div class="mp-carburant-point"><h4>${escapeHtml(titre)}${h?` <small>passage vers ${h}</small>`:''}</h4><ul>${lignes}</ul></div>`;
   }).join('');
   const maj=c.maj_donnees?new Date(c.maj_donnees).toLocaleDateString('fr-FR'):'';
-  return `<section class="mp-carburant"><h3><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> Préparez votre départ - carburant ${escapeHtml(c.carburant_libelle||'')}</h3><p class="mp-legende"><span class="mp-pastille carburant"></span> Meilleures stations repérées en orange sur la carte.</p>${conseils}${alertes}${points?`<details class="mp-carburant-details" open><summary>Stations conseillées par point du parcours</summary>${points}</details>`:''}<small class="mp-carburant-source">Prix relevés ${maj?`(donnée la plus récente : ${maj}) `:''}sur prix-carburants.gouv.fr. Ils peuvent avoir changé à la pompe.</small></section>`;
+  return `<section class="mp-carburant"><h3><i class="fa-solid ${elec?'fa-charging-station':'fa-gas-pump'}" aria-hidden="true"></i> ${elec?'Préparez votre recharge - véhicule électrique':'Préparez votre départ - carburant '+escapeHtml(c.carburant_libelle||'')}</h3><p class="mp-legende"><span class="mp-pastille carburant"></span> ${elec?'Bornes de recharge repérées en orange sur la carte.':'Meilleures stations repérées en orange sur la carte.'}</p>${conseils}${alertes}${points?`<details class="mp-carburant-details" open><summary>Stations conseillées par point du parcours</summary>${points}</details>`:''}<small class="mp-carburant-source">${elec?'Stations-service déclarant une borne de recharge (prix-carburants.gouv.fr). Liste non exhaustive.':`Prix relevés ${maj?`(donnée la plus récente : ${maj}) `:''}sur prix-carburants.gouv.fr. Ils peuvent avoir changé à la pompe.`}</small></section>`;
 }
 function afficherResultatMonParcours(data){
   const c=document.getElementById("mon-parcours-resultat");if(!c)return;
@@ -1039,6 +1045,7 @@ async function selectionnerFilm(filmId, elementCarte) {
 }
 
 function afficherLieuxSurCarte(film, lieux) {
+  _reafficherIconesFilms();   // filet de sécurité : la couche des films doit être sur la carte
   clusterGroup.clearLayers();
   clusterActivites.clearLayers();
   if (coucheCercleRayon) { map.removeLayer(coucheCercleRayon); coucheCercleRayon = null; }
@@ -1391,6 +1398,7 @@ async function afficherCategorie(categorie) {
     carburantStationInitialise = true;
     const choisi = state.monParcoursOptions?.carburant;
     if (CARBURANTS_STATION.some((c) => c[0] === choisi)) carburantStationChoisi = choisi;
+    if (choisi === "electrique") filtreBorneElectrique = true;   // véhicule électrique : bornes d'abord
   }
   if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
   effacerTrace();
@@ -2805,16 +2813,21 @@ function afficherAmenitiesParcoursV4(categories, data) {
     state.parcoursExtraMarkers.push(marker);
   });
 
-  // Stations-service : la meilleure de chaque point, en orange
+  // Stations-service (ou bornes de recharge) : la meilleure de chaque point, en orange
+  const elecCarte = data?.carburants?.type === "electrique";
   (data?.carburants?.points || []).forEach((p) => {
     const s = p.stations?.[0];
     if (!s) return;
+    const iconeFa = elecCarte ? "fa-charging-station" : "fa-gas-pump";
+    const ligneEnergie = elecCarte
+      ? `<b>Borne de recharge</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>`
+      : `<b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>`;
     const marker = L.marker([s.latitude, s.longitude], {
       zIndexOffset: 800,
-      icon: L.divIcon({ html: `<div class="icone-commodite carburant"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i></div>`, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
+      icon: L.divIcon({ html: `<div class="icone-commodite carburant"><i class="fa-solid ${iconeFa}" aria-hidden="true"></i></div>`, className: "", iconSize: [34, 34], iconAnchor: [17, 17] }),
     }).bindPopup(`
-      <b><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
-      <b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>
+      <b><i class="fa-solid ${iconeFa}" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
+      ${ligneEnergie}
       ${_distanceStationTxt(s, p.role === "depart" ? "votre départ" : "l'étape " + p.ordre)}<br>
       ${escapeHtml(s.maj_libelle || "")}<br>
       ${escapeHtml(s.ouverture?.libelle || "")}<br>${s.adresse ? escapeHtml(s.adresse) : ""}

@@ -358,7 +358,7 @@ async def _distances_precalculees(lieu_id) -> dict[int, dict]:
     }
 
 
-async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: float) -> list:
+async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: float, restreindre: bool = True) -> list:
     """Remplace, pour les meilleurs candidats d'un point, le vol d'oiseau par la distance
     de route de la Géoplateforme IGN. Le vol d'oiseau ne sert qu'à présélectionner."""
     if not stations:
@@ -366,7 +366,7 @@ async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: flo
     # Étape : on lit les distances IGN déjà stockées dans amenity_cache (aucun appel IGN).
     # Départ saisi par le visiteur : pas de précalcul possible, donc appel IGN en direct.
     deja = await _distances_precalculees(p.get("lieu_id")) if p["role"] == "etape" else {}
-    if deja:
+    if deja and restreindre:
         stations = [s for s in stations if int(s["id"]) in deja] or stations
     hors_autoroute = [s for s in stations if s.get("type_route") != "A"]
     pool = hors_autoroute or stations
@@ -403,9 +403,152 @@ def _txt_distance(st: dict, cible: str) -> str:
     return f"à environ {_km_txt(st['distance_m'])} de {cible} (estimation, itinéraire IGN indisponible)"
 
 
+# ── Véhicules électriques ────────────────────────────────────────────────────
+# Source : stations-service qui déclarent une borne de recharge dans prix-carburants.gouv.fr.
+# Ce n'est PAS un recensement complet des bornes (IRVE) : l'utilisateur en est averti.
+ELECTRIQUE_CLES = {"electrique", "électrique", "electric", "ev", "vehicule_electrique", "bev"}
+CONSO_DEFAUT_KWH_100 = 17.0
+RAYON_RECHARGE_DEPART_M = 12_000
+RAYON_RECHARGE_ETAPE_M = 8_000
+
+
+def est_electrique(valeur) -> bool:
+    return str(valeur or "").strip().lower() in ELECTRIQUE_CLES
+
+
+def _a_borne(services) -> bool:
+    for srv in (services or []):
+        t = unicodedata.normalize("NFKD", str(srv)).encode("ascii", "ignore").decode().lower()
+        if "borne" in t or "recharge" in t or "irve" in t or "vehicule electrique" in t:
+            return True
+    return False
+
+
+async def _stations_avec_borne_autour(lat: float, lon: float, rayon_m: float) -> list:
+    dlat = rayon_m / 111_320.0
+    dlon = rayon_m / (111_320.0 * max(0.2, math.cos(math.radians(lat))))
+    lignes = await fetch_all(
+        """
+        SELECT id, nom, marque, adresse, code_postal, commune, latitude, longitude,
+               type_route, automate_24_24, horaires, carburants_rupture, services
+        FROM stations_carburant
+        WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
+        """,
+        (lat - dlat, lat + dlat, lon - dlon, lon + dlon),
+    )
+    sortie = []
+    for s in lignes:
+        if not _a_borne(s.get("services")):
+            continue
+        d = haversine_metres(lat, lon, float(s["latitude"]), float(s["longitude"]))
+        if d > rayon_m:
+            continue
+        item = dict(s)
+        item["prix"] = 1.0                 # valeur neutre : seule la distance classe les bornes
+        item["distance_m"] = d
+        item["distance_vol_m"] = d         # présélection seulement ; remplacé par l'IGN ensuite
+        sortie.append(item)
+    return sortie
+
+
+def _format_recharge(s: dict, quand: datetime | None) -> dict:
+    return {
+        "id": s["id"], "nom": _nom_station(s), "marque": s.get("marque"), "adresse": _adresse(s),
+        "latitude": float(s["latitude"]), "longitude": float(s["longitude"]),
+        "prix": None, "distance_m": round(s["distance_m"]),
+        "duree_secondes": s.get("duree_s"),
+        "distance_source": s.get("distance_source", "vol_oiseau"),
+        "autoroute": s.get("type_route") == "A",
+        "automate_24_24": s.get("automate_24_24"),
+        "ouverture": statut_ouverture(s, quand),
+        "ruptures": [], "borne_electrique": True,
+        "services_principaux": _nettoyer_services(s.get("services"))[:6],
+        "maj_prix": None, "maj_libelle": None, "age_jours": None, "prix_ancien": False,
+        "economie_nette_eur": 0,
+    }
+
+
+async def _plan_recharge(*, depart, etapes, planning_horaire, distance_m, consommation,
+                         date_sortie, heure_depart) -> dict:
+    try:
+        conso = min(40.0, max(8.0, float(consommation)))
+    except (TypeError, ValueError):
+        conso = CONSO_DEFAUT_KWH_100
+    distance_km = float(distance_m) / 1000.0 if distance_m else None
+    kwh = distance_km * conso / 100.0 if distance_km else None
+
+    depart_dt, arrivees = _dates_planning(date_sortie, heure_depart, planning_horaire)
+    points = []
+    if depart and depart.get("latitude") is not None:
+        points.append({"role": "depart", "ordre": 0, "nom": depart.get("nom") or "Votre départ",
+                       "lat": float(depart["latitude"]), "lon": float(depart["longitude"]),
+                       "quand": depart_dt, "rayon": RAYON_RECHARGE_DEPART_M})
+    for i, e in enumerate(etapes, start=1):
+        points.append({"role": "etape", "ordre": i, "nom": e.get("nom") or f"Étape {i}",
+                       "lat": float(e["latitude"]), "lon": float(e["longitude"]), "lieu_id": e.get("id"),
+                       "quand": arrivees.get(i), "rayon": RAYON_RECHARGE_ETAPE_M})
+
+    candidates = await asyncio.gather(*(_stations_avec_borne_autour(p["lat"], p["lon"], p["rayon"]) for p in points))
+    if not any(candidates):
+        rempli = await fetch_one("SELECT count(*) AS n FROM stations_carburant")
+        if not rempli or not rempli.get("n"):
+            return {"actif": False, "raison": "Les données de stations ne sont pas encore chargées."}
+        return {"actif": False, "raison": (
+            "Aucune borne de recharge n'est référencée autour de ce parcours dans nos données "
+            "(stations-service avec borne). Consultez l'application de votre opérateur de recharge.")}
+
+    affinees = await asyncio.gather(*(
+        _affiner_par_route(p, c, 30.0, conso, restreindre=False) for p, c in zip(points, candidates)))
+
+    sorties, conseils, avertissements = [], [], []
+    for p, brutes, stations in zip(points, candidates, affinees):
+        formatees = [_format_recharge(s, p["quand"]) for s in stations]
+        ouvertes = [x for x in formatees if x["ouverture"]["etat"] != "fermee"]
+        formatees = ouvertes or formatees
+        formatees.sort(key=lambda x: x["distance_m"])
+        sorties.append({
+            "role": p["role"], "ordre": p["ordre"], "nom": p["nom"],
+            "latitude": p["lat"], "longitude": p["lon"],
+            "passage": p["quand"].isoformat() if p["quand"] else None,
+            "nb_stations": len(brutes), "nb_rupture": 0, "stations": formatees[:3],
+        })
+        if not formatees:
+            lieu = "votre départ" if p["role"] == "depart" else "l'étape %s - %s" % (p["ordre"], p["nom"])
+            avertissements.append(
+                "Aucune borne de recharge référencée près de %s : prévoyez une recharge avant ou après." % lieu)
+
+    if kwh:
+        conseils.append({"icone": "fa-charging-station", "texte": (
+            f"Pour {distance_km:.0f} km avec {str(round(conso, 1)).replace('.', ',')} kWh/100 km, comptez environ "
+            f"{kwh:.0f} kWh. Les tarifs de recharge dépendent de l'opérateur : Pelify ne les affiche pas.")})
+    depart_sortie = next((x for x in sorties if x["role"] == "depart"), None)
+    if depart_sortie and depart_sortie["stations"]:
+        st = depart_sortie["stations"][0]
+        conseils.append({"icone": "fa-flag-checkered", "texte": (
+            f"Avant de partir : {st['nom']}, {_txt_distance(st, 'votre départ')}, borne de recharge indiquée. "
+            f"{st['ouverture']['libelle']}.")})
+    avertissements.append(
+        "Cette liste vient des stations-service qui déclarent une borne de recharge : elle n'est pas "
+        "exhaustive. Vérifiez la disponibilité et la compatibilité de votre prise sur l'application de votre opérateur.")
+
+    return {
+        "actif": True, "type": "electrique", "carburant": "electrique", "carburant_libelle": "Électrique",
+        "consommation_kwh_100km": conso, "distance_km": round(distance_km, 1) if distance_km else None,
+        "energie_estimee_kwh": round(kwh, 1) if kwh else None,
+        "cout_estime_eur": None, "prix_moyen_zone": None,
+        "points": sorties, "conseils": conseils, "avertissements": avertissements,
+        "maj_donnees": None,
+        "source": "prix-carburants.gouv.fr (stations déclarant une borne de recharge)",
+    }
+
+
 async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carburant, consommation,
                          date_sortie, heure_depart, mode) -> dict | None:
     """Prépare les conseils carburant. Renvoie None si le sujet ne s'applique pas."""
+    if mode == "driving-car" and est_electrique(carburant):
+        return await _plan_recharge(
+            depart=depart, etapes=etapes, planning_horaire=planning_horaire, distance_m=distance_m,
+            consommation=consommation, date_sortie=date_sortie, heure_depart=heure_depart)
     cle = normaliser_carburant(carburant)
     if mode != "driving-car" or not cle:
         return None

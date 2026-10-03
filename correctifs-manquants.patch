@@ -1,0 +1,421 @@
+diff --git a/backend/carburants.py b/backend/carburants.py
+index df94b5b..fc9b131 100644
+--- a/backend/carburants.py
++++ b/backend/carburants.py
+@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
+ 
+ from db import fetch_all, fetch_one
+ from overpass import haversine_metres
++from distances_ign import distances_routieres, estimation
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -239,7 +240,8 @@ async def stations_autour(lat: float, lon: float, rayon_m: float, cle: str) -> d
+             continue
+         item = dict(s)
+         item["prix"] = float(s["prix"])
+-        item["distance_m"] = d
++        item["distance_m"] = d            # vol d'oiseau : présélection seulement, remplacé par l'IGN dans plan_carburant
++        item["distance_vol_m"] = d
+         item["maj_effective"] = maj
+         stations.append(item)
+     return {"stations": stations, "nb_rupture": ruptures, "nb_total": total, "nb_perimes": perimes}
+@@ -283,7 +285,8 @@ def _nom_station(s: dict) -> str:
+ 
+ 
+ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quand: datetime | None) -> dict:
+-    detour_km = 2 * FACTEUR_ROUTE * s["distance_m"] / 1000.0
++    # distance_m est ici une distance de ROUTE (IGN) : aller-retour = 2 × distance.
++    detour_km = 2 * s["distance_m"] / 1000.0
+     cout_detour = detour_km * conso / 100.0 * s["prix"]
+     economie = (prix_ref - s["prix"]) * achat_l - cout_detour
+     maj = s.get("maj_effective") or s.get("maj_prix")
+@@ -295,6 +298,8 @@ def _format_station(s: dict, achat_l: float, conso: float, prix_ref: float, quan
+         "adresse": _adresse(s),
+         "latitude": float(s["latitude"]), "longitude": float(s["longitude"]),
+         "prix": s["prix"], "distance_m": round(s["distance_m"]),
++        "duree_secondes": s.get("duree_s"),
++        "distance_source": s.get("distance_source", "vol_oiseau"),   # "ign" | "estimee" | "vol_oiseau"
+         "autoroute": s.get("type_route") == "A",
+         "automate_24_24": s.get("automate_24_24"),
+         "ouverture": statut_ouverture(s, quand),
+@@ -323,6 +328,81 @@ def _choisir(stations: list, achat_l: float, conso: float, prix_ref: float, quan
+     return formatees[:n]
+ 
+ 
++PRESELECTION_IGN = 5      # candidats interrogés auprès de l'IGN, par point du parcours
++
++
++async def _distances_precalculees(lieu_id) -> dict[int, dict]:
++    """Distances de route IGN déjà stockées (enrich_itineraires.py) entre un lieu et ses stations."""
++    if lieu_id is None:
++        return {}
++    try:
++        lignes = await fetch_all(
++            """
++            SELECT station_id, distance_voiture_metres, duree_voiture_secondes
++            FROM amenity_cache
++            WHERE lieu_tournage_id = %s AND categorie = 'station_service'
++              AND station_id IS NOT NULL AND distance_voiture_metres IS NOT NULL
++            """,
++            (int(lieu_id),),
++        )
++    except Exception:
++        logger.warning("Distances stations précalculées indisponibles (lieu %s)", lieu_id)
++        return {}
++    return {
++        int(x["station_id"]): {
++            "distance_metres": int(x["distance_voiture_metres"]),
++            "duree_secondes": x["duree_voiture_secondes"],
++            "source": "ign",
++        }
++        for x in lignes
++    }
++
++
++async def _affiner_par_route(p: dict, stations: list, achat_l: float, conso: float) -> list:
++    """Remplace, pour les meilleurs candidats d'un point, le vol d'oiseau par la distance
++    de route de la Géoplateforme IGN. Le vol d'oiseau ne sert qu'à présélectionner."""
++    if not stations:
++        return []
++    # Étape : on lit les distances IGN déjà stockées dans amenity_cache (aucun appel IGN).
++    # Départ saisi par le visiteur : pas de précalcul possible, donc appel IGN en direct.
++    deja = await _distances_precalculees(p.get("lieu_id")) if p["role"] == "etape" else {}
++    if deja:
++        stations = [s for s in stations if int(s["id"]) in deja] or stations
++    hors_autoroute = [s for s in stations if s.get("type_route") != "A"]
++    pool = hors_autoroute or stations
++    pool = sorted(
++        pool,
++        key=lambda s: s["prix"] * achat_l
++        + 2 * FACTEUR_ROUTE * s["distance_vol_m"] / 1000.0 * conso / 100.0 * s["prix"],
++    )[:PRESELECTION_IGN]
++
++    origine = (p["lat"], p["lon"])
++    a_calculer = [s for s in pool if int(s["id"]) not in deja]
++    mesures = await distances_routieres(
++        origine, [(float(s["latitude"]), float(s["longitude"])) for s in a_calculer],
++        "driving-car", delai_max_s=20.0,
++    )
++    par_id = {int(s["id"]): m for s, m in zip(a_calculer, mesures)}
++
++    affinees = []
++    for s in pool:
++        m = deja.get(int(s["id"])) or par_id.get(int(s["id"]))
++        if not m:  # IGN indisponible : estimation, signalée à l'utilisateur
++            m = estimation(origine, (float(s["latitude"]), float(s["longitude"])), "driving-car")
++        item = dict(s)
++        item["distance_m"] = float(m["distance_metres"])
++        item["duree_s"] = m.get("duree_secondes")
++        item["distance_source"] = m.get("source", "ign")
++        affinees.append(item)
++    return affinees
++
++
++def _txt_distance(st: dict, cible: str) -> str:
++    if st.get("distance_source") == "ign":
++        return f"à {_km_txt(st['distance_m'])} de {cible} par la route"
++    return f"à environ {_km_txt(st['distance_m'])} de {cible} (estimation, itinéraire IGN indisponible)"
++
++
+ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carburant, consommation,
+                          date_sortie, heure_depart, mode) -> dict | None:
+     """Prépare les conseils carburant. Renvoie None si le sujet ne s'applique pas."""
+@@ -346,7 +426,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+                        "quand": depart_dt, "rayon": RAYON_DEPART_M})
+     for i, e in enumerate(etapes, start=1):
+         points.append({"role": "etape", "ordre": i, "nom": e.get("nom") or f"Étape {i}",
+-                       "lat": float(e["latitude"]), "lon": float(e["longitude"]),
++                       "lat": float(e["latitude"]), "lon": float(e["longitude"]), "lieu_id": e.get("id"),
+                        "quand": arrivees.get(i), "rayon": RAYON_ETAPE_M})
+ 
+     async def chercher(p):
+@@ -380,8 +460,9 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+                 plus_recent = m
+ 
+     sorties, conseils, avertissements = [], [], []
+-    for p, r in zip(points, resultats):
+-        top = _choisir(r["stations"], achat_l, conso, prix_ref, p["quand"])
++    affinees = await asyncio.gather(*(_affiner_par_route(p, r["stations"], achat_l, conso) for p, r in zip(points, resultats)))
++    for p, r, stations_ign in zip(points, resultats, affinees):
++        top = _choisir(stations_ign, achat_l, conso, prix_ref, p["quand"])
+         sorties.append({
+             "role": p["role"], "ordre": p["ordre"], "nom": p["nom"],
+             "latitude": p["lat"], "longitude": p["lon"],
+@@ -413,7 +494,7 @@ async def plan_carburant(*, depart, etapes, planning_horaire, distance_m, carbur
+         st = depart_sortie["stations"][0]
+         eco = f", soit environ {_eur_txt(st['economie_nette_eur'])} € d'économie sur un plein" if st["economie_nette_eur"] >= 1 else ""
+         conseils.append({"icone": "fa-flag-checkered", "texte": (
+-            f"Avant de partir : {st['nom']}, à {_km_txt(st['distance_m'])} de votre départ, "
++            f"Avant de partir : {st['nom']}, {_txt_distance(st, 'votre départ')}, "
+             f"{_prix_txt(st['prix'])} €/L{eco}. {st['ouverture']['libelle']}.")})
+     if meilleurs:
+         s, st = min(meilleurs, key=lambda t: t[1]["prix"])
+diff --git a/backend/guides.py b/backend/guides.py
+index cc0fd4f..e9c2db4 100644
+--- a/backend/guides.py
++++ b/backend/guides.py
+@@ -9,6 +9,7 @@ import httpx
+ from fastapi import HTTPException, Request
+ from db import execute, fetch_all
+ from overpass import haversine_metres
++from distances_ign import distances_routieres, estimation, charger_distances_guides
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -187,9 +188,46 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
+             "photo_url": guide.get("photo_url"),
+             "source_donnee": guide.get("source_donnee") or "manuel",
+             "distance_metres": round(distance_min), "correspondance": _etiquette(score),
+-            "hors_zone": hors_zone, "_score": score,
++            "hors_zone": hors_zone, "_score": score, "_guide": guide,
+         })
+ 
++    # Distances de ROUTE (Géoplateforme IGN) : le vol d'oiseau ci-dessus ne sert qu'à
++    # présélectionner quelques guides ; les distances affichées, le score et la
++    # comparaison avec la zone d'intervention utilisent ensuite l'itinéraire réel.
++    resultats.sort(key=lambda x: (x["hors_zone"], -x["_score"], x["distance_metres"], x["nom"].lower()))
++    resultats = resultats[:limite + 2]
++    # 1) Trajets guide -> lieu précalculés chaque jour (precalculer_distances_routieres.py).
++    base = await charger_distances_guides(
++        [r["id"] for r in resultats], [e.get("id") for e in etapes]
++    )
++    for r in resultats:
++        origine = (r["latitude"], r["longitude"])
++        cibles = [(float(e["latitude"]), float(e["longitude"])) for e in etapes]
++        mesures = [base.get((int(r["id"]), int(e["id"]))) if e.get("id") is not None else None for e in etapes]
++        # 2) Repli : appel IGN en direct (mis en cache) pour les seuls trajets non précalculés.
++        manquants = [i for i, m in enumerate(mesures) if m is None]
++        if manquants:
++            live = await distances_routieres(origine, [cibles[i] for i in manquants], "driving-car", delai_max_s=25.0)
++            for i, m in zip(manquants, live):
++                mesures[i] = m
++        par_etape, sources = [], set()
++        for ordre, (etape, cible, m) in enumerate(zip(etapes, cibles, mesures), start=1):
++            m = m or estimation(origine, cible, "driving-car")
++            sources.add(m.get("source", "ign"))
++            d = float(m["distance_metres"])
++            par_etape.append({"ordre": ordre, "nom": etape.get("nom"), "distance_metres": round(d),
++                              "distance_km": round(d / 1000.0, 1), "source": m.get("source", "ign")})
++        r["distances_etapes"] = par_etape
++        r["etape_la_plus_proche"] = min(par_etape, key=lambda x: x["distance_metres"])
++        distance_min = r["etape_la_plus_proche"]["distance_metres"]
++        r["distance_metres"] = distance_min
++        r["distance_source"] = "ign" if sources == {"ign"} else "estimee"
++        rayon_m = (r["_guide"].get("rayon_intervention_km") or 0) * 1000
++        r["hors_zone"] = bool(rayon_m and distance_min > rayon_m)
++        r["_score"] = _score_guide(r["_guide"], distance_min, mode, langue, nb_personnes)
++        r["correspondance"] = _etiquette(r["_score"])
++    resultats = [r for r in resultats if not (r["hors_zone"] and r["distance_metres"] > RAYON_REPLI_M)]
++
+     # Guides dont la zone couvre le parcours d'abord. S'il n'y en a aucun, on
+     # propose les plus proches (dans RAYON_REPLI_M), clairement signalés
+     # « hors zone » : mieux qu'une section vide, sans faire croire à une
+@@ -205,6 +243,7 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
+     resultats = resultats[:limite]
+     for resultat in resultats:
+         resultat.pop("_score", None)
++        resultat.pop("_guide", None)
+         resultat["adresse"], resultat["commune"] = await _localiser(resultat)
+     return resultats
+ 
+diff --git a/backend/main.py b/backend/main.py
+index e99824c..3872c37 100644
+--- a/backend/main.py
++++ b/backend/main.py
+@@ -41,6 +41,7 @@ from db import init_db_pool, close_db_pool, fetch_all, fetch_one, execute
+ from overpass import phrase_recommandation, ICONES_CATEGORIE, haversine_metres, RAYON_RECHERCHE_M
+ from seo import slugify, url_film, json_ld_film, meta_description
+ from visites_cinetouristiques import creneaux_pour_date
++from distances_ign import ordre_plus_proche_voisin_ign, optimiser_etapes_ign
+ from carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
+ from guides import (guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
+                     SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
+@@ -1417,16 +1418,12 @@ async def api_itineraire(
+ 
+ async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
+     """
+-    Optimise l'ordre d'un petit circuit sans utiliser OSRM.
+-
+-    Pour rester léger côté API, on utilise une heuristique de plus
+-    proche voisin basée sur la distance géographique.
+-
+-    Les trajets réels entre les lieux sont ensuite calculés par
+-    Géoplateforme IGN dans _itineraire_multi_etapes().
++    Ordonne un petit circuit : à chaque pas, on va vers le lieu le plus proche
++    PAR LA ROUTE (Géoplateforme IGN, résultats mis en cache). Le vol d'oiseau ne
++    sert qu'à présélectionner quelques candidats avant d'interroger l'IGN.
+     """
+ 
+-    return _ordre_plus_proche_voisin(lieux)
++    return await ordre_plus_proche_voisin_ign(lieux, "driving-car")
+ 
+ 
+ 
+@@ -2178,7 +2175,7 @@ async def parcours_enrichi(request: Request, response: Response):
+     etapes_originales = list(etapes)
+     etapes_exclues_optimisation = []
+     if optimiser:
+-        etapes, etapes_exclues_optimisation = _optimiser_etapes_approx(
++        etapes, etapes_exclues_optimisation = await optimiser_etapes_ign(
+             etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart
+         )
+         if not etapes:
+@@ -2200,12 +2197,8 @@ async def parcours_enrichi(request: Request, response: Response):
+             cible = next((x for x in etapes if int(x["id"]) == guide_planifie["lieu_id"]), None)
+             if cible and etapes and int(etapes[0]["id"]) != guide_planifie["lieu_id"]:
+                 autres = [x for x in etapes if int(x["id"]) != guide_planifie["lieu_id"]]
+-                ordonnes = [cible]
+-                courant = cible
+-                while autres:
+-                    suivant = min(autres, key=lambda x: haversine_metres(float(courant["latitude"]), float(courant["longitude"]), float(x["latitude"]), float(x["longitude"])))
+-                    ordonnes.append(suivant); autres.remove(suivant); courant = suivant
+-                etapes = ordonnes
++                # Ordre des étapes suivantes : plus proche voisin PAR LA ROUTE (IGN).
++                etapes = await ordre_plus_proche_voisin_ign([cible] + autres, mode)
+ 
+     # Guides et médiateurs dont la zone d'intervention couvre ce parcours.
+     # Ne remplace jamais une visite guidée existante (visites_disponibles) :
+@@ -2254,7 +2247,7 @@ async def parcours_enrichi(request: Request, response: Response):
+         FROM amenity_cache
+         WHERE lieu_tournage_id IN ({placeholders})
+           AND categorie <> 'station_service'   -- les stations ont leur propre volet « carburants »
+-        ORDER BY lieu_tournage_id, categorie, distance_metres ASC
++        ORDER BY lieu_tournage_id, categorie
+         """,
+         tuple(lieu_ids),
+     )
+@@ -2266,10 +2259,19 @@ async def parcours_enrichi(request: Request, response: Response):
+     vus = {}
+     par_etape = {str(x): [] for x in lieu_ids}
+ 
++    # Classement des offres : distance de ROUTE IGN (précalculée) selon le mode de
++    # déplacement ; le vol d'oiseau (distance_metres) ne sert que si elle manque.
++    cle_route = "distance_voiture_metres" if mode == "driving-car" else "distance_pied_metres"
++
++    def _distance_classement(r):
++        d = r.get(cle_route)
++        return d if d is not None else r.get("distance_metres")
++
+     for row in rows:
+         categorie = row["categorie"]
+         item = dict(row)
+         item["lieu_tournage_id"] = int(row["lieu_tournage_id"])
++        item["distance_classement_metres"] = _distance_classement(row)
+         par_etape[str(item["lieu_tournage_id"])].append(item)
+ 
+         # Clé stable : osm_id n'est pas toujours disponible, donc on
+@@ -2284,11 +2286,11 @@ async def parcours_enrichi(request: Request, response: Response):
+             vus[cle] = {
+                 "item": item,
+                 "proche_de": [item["lieu_tournage_id"]],
+-                "meilleure_distance_metres": row["distance_metres"],
++                "meilleure_distance_metres": _distance_classement(row),
+             }
+         else:
+             vus[cle]["proche_de"].append(item["lieu_tournage_id"])
+-            d = row["distance_metres"]
++            d = _distance_classement(row)
+             if d is not None and (
+                 vus[cle]["meilleure_distance_metres"] is None
+                 or d < vus[cle]["meilleure_distance_metres"]
+@@ -2320,6 +2322,7 @@ async def parcours_enrichi(request: Request, response: Response):
+     # Réduire également le détail par étape afin de ne pas envoyer une
+     # réponse inutilement volumineuse au navigateur.
+     for cle, items in par_etape.items():
++        items.sort(key=lambda x: (x.get("distance_classement_metres") is None, x.get("distance_classement_metres") or 0))
+         par_etape[cle] = items[:limite]
+ 
+     duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0
+diff --git a/frontend/app.js b/frontend/app.js
+index 17e4a11..f0c595d 100644
+--- a/frontend/app.js
++++ b/frontend/app.js
+@@ -17,11 +17,41 @@ function _dateLocaleISO() {
+   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+ }
+ 
+-// ── Distance vers l'étape la plus proche (toujours calculée, à vol d'oiseau) ──
++// Distance d'une station : route IGN si disponible, sinon estimation signalée.
++function _distanceStationTxt(s, cible) {
++  const m = Number(s.distance_m) || 0;
++  const t = m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1).replace(".", ",")} km`;
++  if (s.distance_source === "ign") {
++    const duree = s.duree_secondes ? ` (${Math.max(1, Math.round(s.duree_secondes / 60))} min)` : "";
++    return `à ${t}${duree} de ${cible} par la route`;
++  }
++  return `à environ ${t} de ${cible} (estimation)`;
++}
++
++// ── Distance vers l'étape ──
++// Priorité aux distances d'itinéraire IGN (Géoplateforme) déjà calculées côté serveur
++// (distance_voiture_metres / distance_pied_metres). Repli sur le vol d'oiseau, signalé.
+ function _texteDistanceEtape(item, etapes, ordreImpose = null) {
+   const lat = Number(item?.latitude), lon = Number(item?.longitude);
+   const liste = Array.isArray(etapes) ? etapes : [];
+   if (!Number.isFinite(lat) || !Number.isFinite(lon) || !liste.length) return "Distance à l'étape indisponible";
++
++  const enVoiture = (state.monParcoursOptions?.mode || "driving-car") === "driving-car";
++  const distIGN = enVoiture ? item?.distance_voiture_metres : item?.distance_pied_metres;
++  const dureeIGN = enVoiture ? item?.duree_voiture_secondes : item?.duree_pied_secondes;
++
++  // Les valeurs IGN du serveur sont calculées depuis l'étape lieu_tournage_id : on s'y réfère.
++  let idx = -1;
++  if (distIGN != null && item?.lieu_tournage_id != null) {
++    idx = liste.findIndex((e) => Number(e.id) === Number(item.lieu_tournage_id));
++  }
++  if (distIGN != null && idx >= 0) {
++    const e = liste[idx];
++    const minutes = dureeIGN != null ? ` · ${Math.max(1, Math.round(Number(dureeIGN) / 60))} min ${enVoiture ? "en voiture" : "à pied"}` : "";
++    return `${formatDistance(Number(distIGN))} de l'étape ${idx + 1} (${e.nom || "Étape"}) par la route${minutes} · itinéraire IGN`;
++  }
++
++  // Repli : vol d'oiseau
+   const calc = (e, i) => ({ ordre: i + 1, nom: e.nom || "Étape", distance: haversineApprox(lat, lon, Number(e.latitude), Number(e.longitude)) });
+   let proche = null;
+   if (ordreImpose && liste[ordreImpose - 1]) proche = calc(liste[ordreImpose - 1], ordreImpose - 1);
+@@ -32,7 +62,7 @@ function _texteDistanceEtape(item, etapes, ordreImpose = null) {
+     });
+   }
+   if (!proche) return "Distance à l'étape indisponible";
+-  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau`;
++  return `${formatDistance(proche.distance)} de l'étape ${proche.ordre} (${proche.nom}) · à vol d'oiseau (itinéraire non calculé)`;
+ }
+ 
+ // ── Mémorisation du dernier calcul ──
+@@ -519,7 +549,7 @@ function construireScenarioCinetouristique(data){
+     const g=guidesReco[0];
+     const proche=g.etape_la_plus_proche;
+     const ou=[g.commune].filter(Boolean).join('');
+-    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
++    const distTxt=proche?`à ${String(Math.round((proche.distance_metres||0)/100)/10).replace('.',',')} km${proche.source==='ign'?' par la route':' (estimation)'} de l'étape ${proche.ordre} - ${proche.nom||''}`:'';
+     ajoute('fa-microphone-lines',g.hors_zone
+       ?`Aucun guide de l'annuaire n'est basé sur votre parcours. Le plus proche est ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}), ${distTxt}. Contactez-le pour savoir s'il peut se déplacer.`
+       :`Pour aller plus loin, ${g.nom} (${g.fonction||'guide'}${ou?`, basé à ${ou}`:''}) peut vous accompagner, ${distTxt}. Voir « Guides et médiateurs » ci-dessous.`);
+@@ -537,7 +567,7 @@ function construireCarburantsHtml(data){
+   const points=(c.points||[]).filter(p=>p.stations?.length).map(p=>{
+     const titre=p.role==='depart'?`Départ - ${p.nom}`:`Étape ${p.ordre} - ${p.nom}`;
+     const h=heure(p.passage);
+-    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}à ${s.distance_m<1000?s.distance_m+' m':(s.distance_m/1000).toFixed(1).replace('.',',')+' km'} de ${p.role==='depart'?'votre départ':"l'étape "+p.ordre}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
++    const lignes=p.stations.map((s,k)=>`<li class="${k===0?'meilleure':''}"><b>${escapeHtml(s.nom)}</b> <span class="mp-prix">${prix(s.prix)} €/L</span><small>${k===0?'Meilleur choix · ':''}${_distanceStationTxt(s, p.role==='depart'?'votre départ':"l'étape "+p.ordre)}${s.autoroute?' · autoroute':''}${s.automate_24_24===true?' · automate CB 24h/24':''} · ${escapeHtml(s.ouverture?.libelle||'')}${s.maj_libelle?' · '+escapeHtml(s.maj_libelle)+(s.prix_ancien?' - à vérifier':''):''}${s.adresse?`<br>${escapeHtml(s.adresse)}`:''}${s.ruptures?.length?`<br><span class="mp-carburant-alerte">Rupture signalée : ${escapeHtml(s.ruptures.join(', '))}</span>`:''}${s.services_principaux?.length?`<br>Services : ${escapeHtml(s.services_principaux.join(' · '))}`:''}</small></li>`).join('');
+     return `<div class="mp-carburant-point"><h4>${escapeHtml(titre)}${h?` <small>passage vers ${h}</small>`:''}</h4><ul>${lignes}</ul></div>`;
+   }).join('');
+   const maj=c.maj_donnees?new Date(c.maj_donnees).toLocaleDateString('fr-FR'):'';
+@@ -609,7 +639,7 @@ function afficherResultatMonParcours(data){
+     const lien=g.site_web||g.lien_contact;
+     const lieu=[g.adresse,g.commune].filter(Boolean).filter((v,k,t)=>t.findIndex(w=>String(w).includes(String(v)))===k);
+     const specs=(g.specialites_libelles||[]).join(', ');
+-    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b></li>`).join('');
++    const dists=(g.distances_etapes||[]).map(d=>`<li>Étape ${d.ordre} - ${escapeHtml(d.nom||'')} : <b>${escapeHtml(String(d.distance_km).replace('.',','))} km</b> ${d.source==='ign'?'par la route':'(estimation)'}</li>`).join('');
+     return `<article class="mp-visite-card mp-guide-card"><div><b>${escapeHtml(g.nom)}</b><small><i class="fa-solid fa-user-tie" aria-hidden="true"></i> ${escapeHtml(g.fonction||'Guide / médiateur')}${specs?` · ${escapeHtml(specs)}`:''}${g.tarif_indicatif?` · ${escapeHtml(g.tarif_indicatif)}`:''}</small>${lieu.length?`<small><i class="fa-solid fa-location-dot" aria-hidden="true"></i> Basé à : ${escapeHtml(lieu.join(', '))}</small>`:''}<small class="mp-guide-correspondance"><i class="fa-solid fa-check" aria-hidden="true"></i> ${escapeHtml(g.correspondance||'Correspond à vos critères')}</small>${dists?`<details class="mp-guide-distances"><summary>Distance de chaque étape</summary><ul>${dists}</ul></details>`:''}${g.bio?`<small>${escapeHtml(g.bio)}</small>`:''}</div>${lien?`<a class="mp-reco-action" href="${escapeAttr(lien)}" target="_blank" rel="noopener noreferrer">Contacter ↗</a>`:''}</article>`;
+   }).join('')}<p class="mp-guides-inscription"><button type="button" class="mp-guides-voir-tous" data-ouvrir-guides="parcours"><i class="fa-solid fa-address-book" aria-hidden="true"></i> Voir tous les guides et filtrer</button> <a href="/devenir-guide.html" target="_blank" rel="noopener noreferrer">Vous êtes guide ou médiateur ? Inscrivez-vous à l'annuaire →</a></p></section>`:'';
+ 
+@@ -2774,7 +2804,7 @@ function afficherAmenitiesParcoursV4(categories, data) {
+     }).bindPopup(`
+       <b><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(s.nom)}</b><br>
+       <b>${Number(s.prix).toFixed(3).replace(".", ",")} €/L</b> (${escapeHtml(data.carburants.carburant_libelle || "")})<br>
+-      À ${s.distance_m < 1000 ? s.distance_m + " m" : (s.distance_m / 1000).toFixed(1).replace(".", ",") + " km"} de ${p.role === "depart" ? "votre départ" : "l'étape " + p.ordre}<br>
++      ${_distanceStationTxt(s, p.role === "depart" ? "votre départ" : "l'étape " + p.ordre)}<br>
+       ${escapeHtml(s.maj_libelle || "")}<br>
+       ${escapeHtml(s.ouverture?.libelle || "")}<br>${s.adresse ? escapeHtml(s.adresse) : ""}
+     `).addTo(map);

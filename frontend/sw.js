@@ -9,7 +9,7 @@
 // - API (/api/*) : jamais de cache ici (Cloudflare s'en charge déjà
 //   sélectivement, voir main.py) — toujours le réseau direct.
 
-const CACHE_NAME = "cinetour-static-v4";
+const CACHE_NAME = "cinetour-static-v5";
 
 const COQUILLE_APP = [
   "/", "/index.html", "/analyse.html",

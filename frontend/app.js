@@ -284,8 +284,22 @@ function ajouterLieuAuParcours(film,lieu){ const item=lieuPourMonParcours(film,l
 function retirerLieuDuParcours(id){ const n=state.monParcours.length; state.monParcours=state.monParcours.filter(x=>Number(x.id)!==Number(id)); if(n!==state.monParcours.length)sauvegarderMonParcours(); mettreAJourCompteurMonParcours(); }
 function basculerLieuDansMonParcours(film,lieu){ const id=Number(lieu.id); if(state.monParcours.some(x=>Number(x.id)===id))retirerLieuDuParcours(id);else ajouterLieuAuParcours(film,lieu); afficherMonParcoursPanel(); mettreAJourCompteurMonParcours(); }
 function deplacerLieuDansMonParcours(i,d){const j=i+d;if(j<0||j>=state.monParcours.length)return;[state.monParcours[i],state.monParcours[j]]=[state.monParcours[j],state.monParcours[i]];sauvegarderMonParcours();afficherMonParcoursPanel();}
-function ouvrirMonParcours(){const o=document.getElementById("mon-parcours-overlay");if(!o)return;afficherMonParcoursPanel();o.classList.remove("hidden");o.setAttribute("aria-hidden","false");}
+// Page « Mon parcours » : seules les icônes du parcours sont visibles sur la carte.
+// Les icônes de films sont masquées à l'ouverture et réaffichées quand on quitte la page.
+function _masquerIconesFilms(){ if (typeof clusterGroup !== "undefined" && clusterGroup && map && map.hasLayer(clusterGroup)) map.removeLayer(clusterGroup); }
+function _reafficherIconesFilms(){ if (typeof clusterGroup !== "undefined" && clusterGroup && map && !map.hasLayer(clusterGroup)) map.addLayer(clusterGroup); }
+function ouvrirMonParcours(){const o=document.getElementById("mon-parcours-overlay");if(!o)return;_masquerIconesFilms();afficherMonParcoursPanel();o.classList.remove("hidden");o.setAttribute("aria-hidden","false");}
+// Fermeture « technique » (ex. capture de la carte) : le parcours reste dessiné.
 function fermerMonParcours(){const o=document.getElementById("mon-parcours-overlay");if(!o)return;o.classList.add("hidden");o.setAttribute("aria-hidden","true");}
+// L'utilisateur QUITTE la page parcours : ses icônes et son tracé disparaissent de la carte
+// et les icônes de films reviennent. Un nouveau clic sur « Mon parcours » les redessine.
+function quitterMonParcours(){
+  const o=document.getElementById("mon-parcours-overlay");
+  if(!o||o.classList.contains("hidden"))return;
+  fermerMonParcours();
+  nettoyerAffichageParcoursGlobal();
+  _reafficherIconesFilms();
+}
 function afficherMonParcoursPanel(){
   const c=document.getElementById("mon-parcours-contenu");if(!c)return;
   mettreAJourCompteurMonParcours();
@@ -465,12 +479,6 @@ function nettoyerAffichageParcoursGlobal() {
   (state.parcoursV4AmenityMarkers || []).forEach((m) => clusterActivites.removeLayer(m));
   state.parcoursV4AmenityMarkers = [];
   map.closePopup();
-}
-
-function effacerTrace() {
-  nettoyerAffichageParcoursGlobal();
-  const conteneurResultat = document.getElementById("resultat-trace");
-  if (conteneurResultat) conteneurResultat.innerHTML = "";
 }
 
 function construireVisitesGuideesPourParcours(){
@@ -2497,6 +2505,7 @@ function creerResumeRecherche(stats, nombreAffiche) {
 
 // ── "Sur les traces de {film}" : itinéraire réel entre tous les lieux ──
 function effacerTrace() {
+  nettoyerAffichageParcoursGlobal();   // départ, offres et suggestions du parcours compris
   if (state.traceLayer) {
     map.removeLayer(state.traceLayer);
     state.traceLayer = null;
@@ -3643,9 +3652,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-mon-parcours")?.addEventListener("click", ouvrirMonParcours);
-  document.getElementById("btn-fermer-mon-parcours")?.addEventListener("click", fermerMonParcours);
-  document.getElementById("mon-parcours-overlay")?.addEventListener("click", e => { if(e.target.id === "mon-parcours-overlay") fermerMonParcours(); });
-  document.addEventListener("keydown", e => { if(e.key === "Escape") fermerMonParcours(); });
+  document.getElementById("btn-fermer-mon-parcours")?.addEventListener("click", () => quitterMonParcours());
+  document.getElementById("mon-parcours-overlay")?.addEventListener("click", e => { if(e.target.id === "mon-parcours-overlay") quitterMonParcours(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape") quitterMonParcours(); });
   document.getElementById("btn-ajouter-parcours")?.addEventListener("click", () => { const id=Number(document.getElementById("popup-overlay")?.dataset?.lieuId); const lieu=state.lieuxCourants.find(x=>Number(x.id)===id); if(lieu) basculerLieuDansMonParcours(state.filmSelectionne,lieu); });
 
   document.getElementById("popup-fermer").addEventListener("click", fermerPopup);

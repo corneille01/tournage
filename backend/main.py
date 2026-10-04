@@ -2154,6 +2154,7 @@ async def parcours_enrichi(request: Request, response: Response):
     lieux = await fetch_all(
         f"""
         SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
+               l.description, l.anecdote,
                l.film_id, f.titre AS film_titre, f.media_type, f.annee, f.poster_url
         FROM lieux_tournage l
         LEFT JOIN films f ON f.id = l.film_id

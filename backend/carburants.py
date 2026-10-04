@@ -425,29 +425,37 @@ def _a_borne(services) -> bool:
 
 
 async def _stations_avec_borne_autour(lat: float, lon: float, rayon_m: float) -> list:
-    dlat = rayon_m / 111_320.0
-    dlon = rayon_m / (111_320.0 * max(0.2, math.cos(math.radians(lat))))
-    lignes = await fetch_all(
-        """
-        SELECT id, nom, marque, adresse, code_postal, commune, latitude, longitude,
-               type_route, automate_24_24, horaires, carburants_rupture, services
-        FROM stations_carburant
-        WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
-        """,
-        (lat - dlat, lat + dlat, lon - dlon, lon + dlon),
-    )
-    sortie = []
-    for s in lignes:
-        if not _a_borne(s.get("services")):
+    """Stations avec borne autour d'un point. Rayon progressif (rayon, puis 20 km, puis 40 km)
+    jusqu'à trouver au moins 3 stations : un parcours en zone rurale ne reste pas sans résultat."""
+    sortie: list = []
+    for rayon in sorted({float(rayon_m), 20_000.0, 40_000.0}):
+        if rayon < rayon_m:
             continue
-        d = haversine_metres(lat, lon, float(s["latitude"]), float(s["longitude"]))
-        if d > rayon_m:
-            continue
-        item = dict(s)
-        item["prix"] = 1.0                 # valeur neutre : seule la distance classe les bornes
-        item["distance_m"] = d
-        item["distance_vol_m"] = d         # présélection seulement ; remplacé par l'IGN ensuite
-        sortie.append(item)
+        dlat = rayon / 111_320.0
+        dlon = rayon / (111_320.0 * max(0.2, math.cos(math.radians(lat))))
+        lignes = await fetch_all(
+            """
+            SELECT id, nom, marque, adresse, code_postal, commune, latitude, longitude,
+                   type_route, automate_24_24, horaires, carburants_rupture, services
+            FROM stations_carburant
+            WHERE latitude BETWEEN %s AND %s AND longitude BETWEEN %s AND %s
+            """,
+            (lat - dlat, lat + dlat, lon - dlon, lon + dlon),
+        )
+        sortie = []
+        for s in lignes:
+            if not _a_borne(s.get("services")):
+                continue
+            d = haversine_metres(lat, lon, float(s["latitude"]), float(s["longitude"]))
+            if d > rayon:
+                continue
+            item = dict(s)
+            item["prix"] = 1.0                 # valeur neutre : seule la distance classe les bornes
+            item["distance_m"] = d
+            item["distance_vol_m"] = d         # présélection seulement ; remplacé par l'IGN ensuite
+            sortie.append(item)
+        if len(sortie) >= 3:
+            break
     return sortie
 
 
@@ -468,8 +476,17 @@ def _format_recharge(s: dict, quand: datetime | None) -> dict:
     }
 
 
-async def _plan_recharge(*, depart, etapes, planning_horaire, distance_m, consommation,
-                         date_sortie, heure_depart) -> dict:
+async def _plan_recharge(**kw) -> dict:
+    """Enveloppe : une erreur imprévue donne un message clair au lieu de faire disparaître le volet."""
+    try:
+        return await _plan_recharge_interne(**kw)
+    except Exception:
+        logger.exception("Volet recharge électrique indisponible")
+        return {"actif": False, "raison": "Les bornes de recharge sont momentanément indisponibles pour ce parcours."}
+
+
+async def _plan_recharge_interne(*, depart, etapes, planning_horaire, distance_m, consommation,
+                                 date_sortie, heure_depart) -> dict:
     try:
         conso = min(40.0, max(8.0, float(consommation)))
     except (TypeError, ValueError):

@@ -229,6 +229,7 @@ const state = {
   debounceRecherche: null,
   dernierBounds: null,
   marqueursEtapes: [],
+  parcoursActif: false,   // vrai tant qu'un parcours est dessiné sur la carte
   parcoursV4AmenityMarkers: [],
   monParcours: [],
   monParcoursDernierCalcul: null,
@@ -298,7 +299,7 @@ function quitterMonParcours(){
   const o=document.getElementById("mon-parcours-overlay");
   if(!o||o.classList.contains("hidden"))return;
   fermerMonParcours();
-  _reafficherIconesFilms();
+  if (!state.parcoursActif) _reafficherIconesFilms();   // parcours à l'écran : seules ses icônes restent
 }
 function afficherMonParcoursPanel(){
   const c=document.getElementById("mon-parcours-contenu");if(!c)return;
@@ -366,7 +367,7 @@ function afficherMonParcoursPanel(){
   document.getElementById("btn-effacer-mon-parcours")?.addEventListener("click",()=>{
     state.monParcours=[];state.monParcoursDernierCalcul=null;state.monParcoursDerniereGeneration=null;
     try{localStorage.removeItem(MON_PARCOURS_RESULT_KEY);}catch{}
-    sauvegarderMonParcours();nettoyerAffichageParcoursGlobal();afficherMonParcoursPanel();
+    sauvegarderMonParcours();nettoyerAffichageParcoursGlobal();_reafficherIconesFilms();afficherMonParcoursPanel();
   });
   c.querySelectorAll('input[name="mp-depart-type"]').forEach(x=>x.addEventListener('change',()=>{
     o.departType=x.value;
@@ -475,6 +476,7 @@ function construireDepartParcours() {
   return { nom: o.depart.nom, latitude: o.depart.latitude, longitude: o.depart.longitude };
 }
 function nettoyerAffichageParcoursGlobal() {
+  state.parcoursActif = false;
   nettoyerMarqueursParcoursExtra();
   if (state.marqueurDepartParcours) { map.removeLayer(state.marqueurDepartParcours); state.marqueurDepartParcours = null; }
   if (state.traceLayer) { map.removeLayer(state.traceLayer); state.traceLayer = null; }
@@ -1040,7 +1042,7 @@ async function selectionnerFilm(filmId, elementCarte) {
   state.lieuxCourants = data.lieux;
   state.plateformesCourantes = Array.isArray(data.plateformes) ? data.plateformes : [];
 
-  effacerTrace();
+  effacerTrace(true);   // nouveau film choisi : le parcours quitte la carte
   afficherLieuxSurCarte(data.film, data.lieux);
 }
 
@@ -2512,8 +2514,18 @@ function creerResumeRecherche(stats, nombreAffiche) {
 }
 
 // ── "Sur les traces de {film}" : itinéraire réel entre tous les lieux ──
-function effacerTrace() {
-  nettoyerAffichageParcoursGlobal();   // départ, offres et suggestions du parcours compris
+// effacerTrace(forcer) :
+//  - sans argument : appelée à l'ouverture d'une fiche lieu ou d'une catégorie de commodités.
+//    Si un PARCOURS est affiché, on n'y touche pas (cliquer sur un marqueur du parcours ne doit
+//    rien faire disparaître) ;
+//  - effacerTrace(true) : l'utilisateur choisit un nouveau film (liste) ou lance « Sur les
+//    traces » : tout ce qui concerne le parcours est retiré de la carte au profit du nouveau clic.
+function effacerTrace(forcer = false) {
+  if (state.parcoursActif && !forcer) return;
+  if (forcer) {
+    nettoyerAffichageParcoursGlobal();   // départ, offres, suggestions, bornes du parcours compris
+    _reafficherIconesFilms();
+  }
   if (state.traceLayer) {
     map.removeLayer(state.traceLayer);
     state.traceLayer = null;
@@ -2535,7 +2547,7 @@ async function afficherTraceFilm() {
   if (!filmId) return;
 
   const conteneurResultat = document.getElementById("resultat-trace");
-  effacerTrace();
+  effacerTrace(true);
 
   if (state.lieuxCourants.length === 0) {
     conteneurResultat.innerHTML = `<p style="color:#9a9ea8;">Aucun lieu de tournage recensé.</p>`;
@@ -2688,13 +2700,28 @@ function afficherGeometrieParcoursV4(data, parcoursInitial = false) {
     if (b.isValid()) points.push(b.getSouthWest(), b.getNorthEast());
   }
 
+  state.parcoursActif = true;
+  _masquerIconesFilms();     // pendant un parcours, seules ses icônes sont visibles
   state.marqueursEtapes = [];
   etapes.forEach((etape, index) => {
     const lat = Number(etape.latitude), lon = Number(etape.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
     const icone = L.divIcon({ html: `<div class="numero-etape">${index + 1}</div>`, className: "", iconSize: [28, 28], iconAnchor: [14, 14] });
     const mediaLabel = etape.media_type === "tv" ? "Série" : etape.media_type === "movie" ? "Film" : etape.media_type === "anime" ? "Animé" : "Œuvre";
-    const marker = L.marker([lat, lon], { icon: icone }).bindPopup(`<b>Étape ${index + 1}</b><br><strong>${escapeHtml(etape.film_titre || "Lieu de tournage")}</strong><br><small>${escapeHtml(mediaLabel)}${etape.annee ? ` · ${escapeHtml(etape.annee)}` : ""}</small><br>${escapeHtml(_adresseCompleteFrontend(etape))}`);
+    const nomLieu = etape.nom || etape.lieu_nom || "";
+    const localite = [etape.commune, etape.departement].filter(Boolean).join(", ");
+    const description = etape.description || etape.anecdote || "";
+    // Fiche d'étape : on garde les détails du lieu, mais ni affiche, ni provenance, ni date de sortie.
+    const popupEtape = `<div class="popup-etape">
+      <b>Étape ${index + 1}</b><br>
+      <strong>${escapeHtml(etape.film_titre || "Lieu de tournage")}</strong> <small>(${escapeHtml(mediaLabel)})</small>
+      ${nomLieu ? `<br><b>${escapeHtml(nomLieu)}</b>` : ""}
+      ${localite ? `<br><small>${escapeHtml(localite)}</small>` : ""}
+      <br>${escapeHtml(_adresseCompleteFrontend(etape))}
+      ${description ? `<div class="popup-etape-desc" style="max-height:140px;overflow:auto;margin-top:6px;font-size:.85em;">${escapeHtml(String(description))}</div>` : ""}
+    </div>`;
+    // Les numéros restent au-dessus de toutes les autres icônes de la carte.
+    const marker = L.marker([lat, lon], { icon: icone, zIndexOffset: 900 }).bindPopup(popupEtape, { maxWidth: 320 });
     marker.addTo(map);
     state.marqueursEtapes.push(marker);
     points.push([lat, lon]);

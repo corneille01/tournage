@@ -26,16 +26,19 @@ from urllib.parse import urljoin
 
 import httpx
 from dotenv import load_dotenv
+from shapely.geometry import Point, shape
 
 from db import close_db_pool, execute, init_db_pool
 
 API_URL = "https://api.datatourisme.fr/v1/catalog"
 # geo_bounding = haut_gauche_lat,haut_gauche_lon,bas_droite_lat,bas_droite_lon (doc officielle)
 OCCITANIE_BBOX = "45.2,-0.5,42.2,4.9"
-DEPARTEMENTS_INSEE = "09,11,12,30,31,32,34,46,48,65,66,81,82"
-FILTRE_DEPARTEMENTS = f"isLocatedAt.address.hasAddressCity.isPartOfDepartment.insee[in]={DEPARTEMENTS_INSEE}"
-OCC_LAT = (42.3, 45.05)
-OCC_LON = (-0.4, 4.9)
+
+OCCITANIE_GEOJSON = os.path.join(
+    os.path.dirname(__file__),
+    "../frontend/contour-occitanie.geojson"
+)
+
 PAGE_SIZE = 100
 TYPES = {
     "ProfessionalTourGuide": "guide_conferencier",
@@ -65,6 +68,27 @@ def _text(value: Any) -> str | None:
     return None
 
 
+
+
+
+
+def _charger_polygone_occitanie():
+    with open(OCCITANIE_GEOJSON, encoding="utf-8") as f:
+        data = json.load(f)
+
+    if data.get("type") == "FeatureCollection":
+        features = data.get("features") or []
+        if not features:
+            raise RuntimeError("Le GeoJSON Occitanie ne contient aucune feature.")
+        return shape(features[0]["geometry"])
+
+    if data.get("type") == "Feature":
+        return shape(data["geometry"])
+
+    return shape(data)
+
+
+OCCITANIE_POLYGON = _charger_polygone_occitanie()
 def _walk(value: Any):
     if isinstance(value, dict):
         yield value
@@ -173,7 +197,8 @@ def _cut(value: str | None, n: int) -> str | None:
 
 
 def _dans_occitanie(g: dict) -> bool:
-    return OCC_LAT[0] <= g["latitude"] <= OCC_LAT[1] and OCC_LON[0] <= g["longitude"] <= OCC_LON[1]
+    point = Point(g["longitude"], g["latitude"])
+    return OCCITANIE_POLYGON.covers(point)
 
 
 def _objets(data: dict) -> list:
@@ -195,13 +220,11 @@ async def _get(client: httpx.AsyncClient, api_key: str, url: str, params: dict |
     return r
 
 
-async def fetch_type(client, api_key, typ, mode, france, limit, dry_run) -> tuple[int, int]:
+async def fetch_type(client, api_key, typ, france, limit, dry_run) -> tuple[int, int]:
     """Parcourt TOUTES les pages d'un type en suivant meta.next jusqu'à null."""
     params = {"type": typ, "page_size": PAGE_SIZE, "fields": FIELDS, "lang": "fr,en"}
     if not france:
-        params["geo_bounding"] = OCCITANIE_BBOX
-        if mode == "departements":
-            params["filters"] = FILTRE_DEPARTEMENTS
+       params["geo_bounding"] = OCCITANIE_BBOX
     url, page, vus, lus, gardes = API_URL, 1, set(), 0, 0
     while url:
         r = await _get(client, api_key, url, params)
@@ -221,7 +244,7 @@ async def fetch_type(client, api_key, typ, mode, france, limit, dry_run) -> tupl
             g = extract(item)
             if not g:
                 continue
-            if not france and mode == "rectangle" and not _dans_occitanie(g):
+            if not france and not _dans_occitanie(g):
                 continue
             gardes += 1
             print(f"  {g['nom']} | {g['uuid']}")

@@ -2322,9 +2322,26 @@ async def parcours_enrichi(request: Request, response: Response):
 
     # Réduire également le détail par étape afin de ne pas envoyer une
     # réponse inutilement volumineuse au navigateur.
+    # `limite_par_categorie` s'applique PAR catégorie : avant, les `limite` offres les plus
+    # proches toutes catégories confondues étaient gardées, et des restaurants proches
+    # pouvaient évincer tous les hébergements d'une étape. Les offres dont la distance de
+    # route IGN est connue passent avant celles qui n'ont que le vol d'oiseau.
     for cle, items in par_etape.items():
-        items.sort(key=lambda x: (x.get("distance_classement_metres") is None, x.get("distance_classement_metres") or 0))
-        par_etape[cle] = items[:limite]
+        if categories_interet:
+            items = [x for x in items if x.get("categorie") in categories_interet]
+        items.sort(key=lambda x: (
+            x.get(cle_route) is None,
+            x.get("distance_classement_metres") is None,
+            x.get("distance_classement_metres") or 0,
+        ))
+        gardes, compte = [], {}
+        for it in items:
+            c = it.get("categorie")
+            if compte.get(c, 0) >= limite:
+                continue
+            compte[c] = compte.get(c, 0) + 1
+            gardes.append(it)
+        par_etape[cle] = gardes
 
     duree_trajet = resultat_route.get("duree_secondes") if resultat_route else 0
     duree_visite = len(etapes) * temps_visite_minutes * 60

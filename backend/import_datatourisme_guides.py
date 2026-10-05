@@ -27,6 +27,7 @@ from urllib.parse import urljoin
 import httpx
 from dotenv import load_dotenv
 from shapely.geometry import Point, shape
+from shapely.ops import unary_union
 
 from db import close_db_pool, execute, init_db_pool
 
@@ -73,6 +74,8 @@ def _text(value: Any) -> str | None:
 
 
 def _charger_polygone_occitanie():
+    """Contour de l'Occitanie. Le fichier contient un polygone PAR département : on les fusionne
+    tous (avant, seul le premier — l'Ariège — était retenu et tous les autres guides étaient écartés)."""
     with open(OCCITANIE_GEOJSON, encoding="utf-8") as f:
         data = json.load(f)
 
@@ -80,7 +83,8 @@ def _charger_polygone_occitanie():
         features = data.get("features") or []
         if not features:
             raise RuntimeError("Le GeoJSON Occitanie ne contient aucune feature.")
-        return shape(features[0]["geometry"])
+        # buffer(0) répare d'éventuels polygones légèrement invalides avant la fusion
+        return unary_union([shape(ft["geometry"]).buffer(0) for ft in features if ft.get("geometry")])
 
     if data.get("type") == "Feature":
         return shape(data["geometry"])
@@ -224,7 +228,7 @@ async def fetch_type(client, api_key, typ, france, limit, dry_run) -> tuple[int,
     """Parcourt TOUTES les pages d'un type en suivant meta.next jusqu'à null."""
     params = {"type": typ, "page_size": PAGE_SIZE, "fields": FIELDS, "lang": "fr,en"}
     if not france:
-       params["geo_bounding"] = OCCITANIE_BBOX
+        params["geo_bounding"] = OCCITANIE_BBOX
     url, page, vus, lus, gardes = API_URL, 1, set(), 0, 0
     while url:
         r = await _get(client, api_key, url, params)
@@ -294,7 +298,7 @@ async def main() -> None:
     p.add_argument("--dry-run", action="store_true", help="n'écrit rien (base non utilisée)")
     p.add_argument("--france", action="store_true", help="toute la France au lieu de l'Occitanie")
     p.add_argument("--rectangle-seul", action="store_true",
-                   help="geo_bounding + filtre local lat/lon, sans filtre département (si le filtre renvoie 0)")
+                   help="(conservé pour compatibilité, sans effet : le filtre utilise désormais le contour réel de l'Occitanie)")
     p.add_argument("--avec-greeters", action="store_true")
     p.add_argument("--statut", choices=["actif", "en_attente", "inactif"], default="actif",
                    help="statut des NOUVELLES fiches importées (défaut : actif)")
@@ -308,7 +312,6 @@ async def main() -> None:
         raise SystemExit("DATATOURISME_API_KEY est manquante")
 
     types = ["ProfessionalTourGuide", "TourGuideAgency"] + (["VolunteerTourGuideOrGreeter"] if args.avec_greeters else [])
-    mode = "rectangle" if args.rectangle_seul else "departements"
 
     if not args.dry_run:
         await init_db_pool()
@@ -316,7 +319,7 @@ async def main() -> None:
         async with httpx.AsyncClient() as client:
             tot_lus = tot_gardes = 0
             for typ in types:
-                lus, gardes = await fetch_type(client, api_key, typ, mode, args.france, args.limit, args.dry_run)
+                lus, gardes = await fetch_type(client, api_key, typ, args.france, args.limit, args.dry_run)
                 print(f"[{typ}] reçus : {lus} | retenus : {gardes}")
                 tot_lus += lus
                 tot_gardes += gardes

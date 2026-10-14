@@ -1,8 +1,8 @@
-﻿"""
-backend/main.py â€” API CinÃ©Tour.
+"""
+backend/main.py — API CinéTour.
 
-Tous les endpoints lisent des donnÃ©es dÃ©jÃ  en base (jamais d'appel
-Overpass en direct sur une requÃªte visiteur) â€” voir refresh_cache.py
+Tous les endpoints lisent des données déjà en base (jamais d'appel
+Overpass en direct sur une requête visiteur) — voir refresh_cache.py
 pour le remplissage du cache.
 """
 
@@ -43,31 +43,29 @@ from .seo import slugify, url_film, json_ld_film, meta_description
 from .visites_cinetouristiques import creneaux_pour_date
 from .distances_ign import ordre_plus_proche_voisin_ign, optimiser_etapes_ign
 from .carburants import plan_carburant, stations_autour, normaliser_carburant, fiches_stations_du_lieu, CARBURANTS
-from .guides import (
-    guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
-    SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES
-)
+from .guides import (guides_recommandes, exiger_admin, completer_localisation, fonction_guide,
+                    SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
 from .paysages import router as paysages_router
 from .droits import router as droits_router
 
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
-BASE_URL = "https://tournage.pelify.app"  # Ã  remplacer par le vrai domaine en prod
+BASE_URL = "https://tournage.pelify.app"  # à remplacer par le vrai domaine en prod
 
 _LABELS_CATEGORIE = {
-    "hebergement":     "L'hÃ©bergement",
+    "hebergement":     "L'hébergement",
     "restaurant":      "Le restaurant",
     "office_tourisme": "L'office de tourisme",
     "police":          "Le commissariat/gendarmerie",
-    "hopital":         "L'hÃ´pital",
+    "hopital":         "L'hôpital",
     "gare":            "La gare",
-    "aeroport":        "L'aÃ©roport",
-    "aerodrome":       "L'aÃ©rodrome",
-    "arret_bus":       "L'arrÃªt de bus",
+    "aeroport":        "L'aéroport",
+    "aerodrome":       "L'aérodrome",
+    "arret_bus":       "L'arrêt de bus",
     "parking":         "Le parking",
     "refuge":          "Le refuge",
     "distributeur":    "Le distributeur",
-    "activite":        "L'activitÃ©",
-     "fetes_manifestations": "L'Ã©vÃ©nement",
+    "activite":        "L'activité",
+     "fetes_manifestations": "L'événement",
     "station_service": "La station-service",
 }
 
@@ -82,11 +80,11 @@ def _hash_user_token(token: str) -> str:
 
 
 async def _ensure_profile(request: Request, response: Response) -> dict:
-    """Identifie un visiteur de faÃ§on pseudonyme pour sauvegarder ses parcours.
+    """Identifie un visiteur de façon pseudonyme pour sauvegarder ses parcours.
 
-    Aucun nom, email ou position GPS n'est exigÃ©. Le cookie contient un jeton
-    alÃ©atoire et la base ne conserve que son hash. Cela permet d'avoir un
-    historique par navigateur sans transformer Pelify en systÃ¨me de compte.
+    Aucun nom, email ou position GPS n'est exigé. Le cookie contient un jeton
+    aléatoire et la base ne conserve que son hash. Cela permet d'avoir un
+    historique par navigateur sans transformer Pelify en système de compte.
     """
     token = request.cookies.get(PELIFY_USER_COOKIE)
     created = False
@@ -164,15 +162,15 @@ async def _enregistrer_parcours_historique(request: Request, response: Response,
             "amenities": {k: v[:3] for k, v in (resultat.get("amenities") or {}).items()},
         }
         lieux = [{k: x.get(k) for k in ("id", "nom", "commune", "departement", "latitude", "longitude", "film_id", "film_titre")} for x in resultat.get("etapes", [])]
-        titre = " â†’ ".join(str(x.get("nom") or "Lieu") for x in resultat.get("etapes", [])[:3])
+        titre = " → ".join(str(x.get("nom") or "Lieu") for x in resultat.get("etapes", [])[:3])
         if len(resultat.get("etapes", [])) > 3:
-            titre += "â€¦"
+            titre += "…"
         await execute(
             """INSERT INTO pelify_parcours_history
                (user_id, titre, options_json, lieux_json, resultat_json, nb_etapes, distance_metres, duree_secondes, duree_totale_estimee_secondes, budget_level)
                VALUES (%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s,%s,%s,%s)""",
             (
-                user["id"], titre or "Mon parcours cinÃ©ma", json.dumps(_json_safe(options)),
+                user["id"], titre or "Mon parcours cinéma", json.dumps(_json_safe(options)),
                 json.dumps(_json_safe(lieux)), json.dumps(_json_safe(resume_resultat)),
                 len(lieux), resultat.get("distance_metres"), resultat.get("duree_secondes"),
                 resultat.get("duree_totale_estimee_secondes"), body.get("budget_level") or "equilibre",
@@ -188,12 +186,12 @@ async def lifespan(app: FastAPI):
     await close_db_pool()
 
 
-app = FastAPI(title="CinÃ©Tour API", lifespan=lifespan)
+app = FastAPI(title="CinéTour API", lifespan=lifespan)
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Ã  restreindre au domaine rÃ©el en prod
+    allow_origins=["*"],  # à restreindre au domaine réel en prod
     allow_methods=["GET", "POST"],
 )
 
@@ -206,21 +204,21 @@ async def api_analyse_indicateurs(
 ):
     """
     Retourne les indicateurs dynamiques de l'observatoire
-    du cinÃ©-tourisme pour la rÃ©gion demandÃ©e.
+    du ciné-tourisme pour la région demandée.
 
-    Les indicateurs sont recalculÃ©s Ã  partir des donnÃ©es
-    actuellement prÃ©sentes en base :
+    Les indicateurs sont recalculés à partir des données
+    actuellement présentes en base :
     - lieux de tournage
     - films
-    - Ã©quipements touristiques
-    - temps d'accÃ¨s
-    - isochrones IGN prÃ©-calculÃ©s
+    - équipements touristiques
+    - temps d'accès
+    - isochrones IGN pré-calculés
     """
     try:
         return await construire_indicateurs_cinetourisme(region)
     except Exception as exc:
         logger.exception(
-            "Erreur lors du calcul des indicateurs cinÃ©-tourisme"
+            "Erreur lors du calcul des indicateurs ciné-tourisme"
         )
 
         raise HTTPException(
@@ -234,12 +232,12 @@ async def api_analyse_observatoire(
     region: str = Query("Occitanie")
 ):
     """
-    Dictionnaire statistique complet (offre, proximitÃ©, carence,
-    diversitÃ© fonctionnelle, disparitÃ©s dÃ©partementales) par catÃ©gorie
-    DATAtourisme. Endpoint sÃ©parÃ© de /api/analyse/indicateurs pour ne
-    pas alourdir son cycle de rafraÃ®chissement principal : ce bloc fait
-    davantage de requÃªtes SQL agrÃ©gÃ©es (percentiles par catÃ©gorie et
-    par dÃ©partement) et change moins souvent que les KPI de tÃªte de page.
+    Dictionnaire statistique complet (offre, proximité, carence,
+    diversité fonctionnelle, disparités départementales) par catégorie
+    DATAtourisme. Endpoint séparé de /api/analyse/indicateurs pour ne
+    pas alourdir son cycle de rafraîchissement principal : ce bloc fait
+    davantage de requêtes SQL agrégées (percentiles par catégorie et
+    par département) et change moins souvent que les KPI de tête de page.
     """
     try:
         return await construire_observatoire_statistique(region)
@@ -252,9 +250,9 @@ async def api_analyse_observatoire(
             status_code=500,
             detail=f"Erreur lors du calcul de l'observatoire : {exc}"
         )
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────────────────────
 # ISOCHRONES D'UN LIEU DE TOURNAGE
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─────────────────────────────────────────────────────────────
 
 @app.get("/api/lieux/{lieu_id}/isochrones")
 async def isochrones_lieu(lieu_id: int):
@@ -364,7 +362,7 @@ async def _gerer_cache_api(request: Request, call_next):
 
 
 
-# â”€â”€ Liste des films (barre latÃ©rale) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Liste des films (barre latérale) ─────────────────────────────
 @app.get("/api/films")
 async def liste_films(
     region: str = Query("Occitanie"),
@@ -379,9 +377,9 @@ async def liste_films(
     par_page: int = Query(60, le=200),
 ):
     """
-    Liste des films/sÃ©ries pour la sidebar, avec le nombre de lieux de
-    tournage en Occitanie inclus directement (affichÃ© sur la carte
-    avant mÃªme de cliquer) â€” Ã©vite un aller-retour supplÃ©mentaire par
+    Liste des films/séries pour la sidebar, avec le nombre de lieux de
+    tournage en Occitanie inclus directement (affiché sur la carte
+    avant même de cliquer) — évite un aller-retour supplémentaire par
     film juste pour ce chiffre.
     """
     offset = (page - 1) * par_page
@@ -413,7 +411,7 @@ async def liste_films(
             params.append(commune)
 
     where = " AND ".join(conditions)
-    # Whitelist stricte : on n'insÃ¨re jamais le paramÃ¨tre "tri" tel
+    # Whitelist stricte : on n'insère jamais le paramètre "tri" tel
     # quel dans le SQL (protection contre l'injection).
     ordre_sql = "f.popularite DESC NULLS LAST, f.titre ASC" if tri == "popularite" else "f.titre ASC"
     films = await fetch_all(
@@ -437,9 +435,9 @@ async def liste_films(
 @app.get("/api/filtres")
 async def options_filtres(region: str = Query("Occitanie")):
     """
-    Valeurs disponibles pour peupler les menus dÃ©roulants (annÃ©e,
-    dÃ©partement, commune) â€” Ã©vite de coder ces listes en dur cÃ´tÃ©
-    frontend, elles reflÃ¨tent toujours les donnÃ©es rÃ©elles en base.
+    Valeurs disponibles pour peupler les menus déroulants (année,
+    département, commune) — évite de coder ces listes en dur côté
+    frontend, elles reflètent toujours les données réelles en base.
     """
     annees = await fetch_all(
         """
@@ -463,10 +461,10 @@ async def options_filtres(region: str = Query("Occitanie")):
         SELECT DISTINCT lt.commune FROM lieux_tournage lt
         JOIN films f ON f.id = lt.film_id
         WHERE f.region = %s AND f.statut = 'publie' AND lt.commune IS NOT NULL
-          -- Wikidata rÃ©sout parfois le lieu directement au niveau du
-          -- dÃ©partement plutÃ´t que de la commune prÃ©cise â€” on exclut
+          -- Wikidata résout parfois le lieu directement au niveau du
+          -- département plutôt que de la commune précise — on exclut
           -- ces valeurs du filtre "commune" pour ne pas les dupliquer
-          -- avec le filtre "dÃ©partement".
+          -- avec le filtre "département".
           AND lt.commune NOT IN (
               SELECT DISTINCT departement FROM lieux_tournage WHERE departement IS NOT NULL
           )
@@ -493,10 +491,10 @@ async def options_filtres(region: str = Query("Occitanie")):
 @app.get("/api/stats")
 async def stats_globales(region: str = Query("Occitanie")):
     """
-    Chiffres clÃ©s pour le panneau statistiques â€” c'est ce qui
+    Chiffres clés pour le panneau statistiques — c'est ce qui
     transforme l'outil de "carte sympa" en "outil d'observation" pour
-    l'Agence Unique : volumÃ©trie par dÃ©partement, par mÃ©dia, par
-    dÃ©cennie, complÃ©tude des donnÃ©es.
+    l'Agence Unique : volumétrie par département, par média, par
+    décennie, complétude des données.
     """
     par_departement = await fetch_all(
         """
@@ -546,10 +544,10 @@ async def stats_globales(region: str = Query("Occitanie")):
 def _recommandation_departement(d: dict) -> str:
     """
     Traduction en texte des indicateurs bruts, dans l'esprit "outil
-    d'aide Ã  la dÃ©cision" plutÃ´t que "carte sympa" : quelques rÃ¨gles
-    simples plutÃ´t qu'un score composite arbitraire, faciles Ã 
-    expliquer et Ã  faire Ã©voluer avec l'Agence Unique. Les chiffres
-    rÃ©els sont citÃ©s dans le texte, pas juste une Ã©tiquette qualitative.
+    d'aide à la décision" plutôt que "carte sympa" : quelques règles
+    simples plutôt qu'un score composite arbitraire, faciles à
+    expliquer et à faire évoluer avec l'Agence Unique. Les chiffres
+    réels sont cités dans le texte, pas juste une étiquette qualitative.
     """
     nb_lieux = d["nb_lieux"] or 0
     moy_heberg = d["moy_hebergement"] or 0
@@ -558,38 +556,38 @@ def _recommandation_departement(d: dict) -> str:
     part_isoles = round(100 * lieux_isoles / nb_lieux) if nb_lieux else 0
 
     if nb_lieux == 0:
-        return "Aucune donnÃ©e suffisante pour ce dÃ©partement."
+        return "Aucune donnée suffisante pour ce département."
     if moy_heberg >= 3 and moy_resto >= 3:
         return (
-            f"Avec {moy_heberg} hÃ©bergements et {moy_resto} restaurants en moyenne Ã  proximitÃ© des "
-            f"{nb_lieux} lieux recensÃ©s, ce dÃ©partement est bien Ã©quipÃ© pour une valorisation "
-            f"touristique immÃ©diate (circuit cinÃ©-touristique, signalÃ©tique) sans investissement prÃ©alable."
+            f"Avec {moy_heberg} hébergements et {moy_resto} restaurants en moyenne à proximité des "
+            f"{nb_lieux} lieux recensés, ce département est bien équipé pour une valorisation "
+            f"touristique immédiate (circuit ciné-touristique, signalétique) sans investissement préalable."
         )
     if part_isoles > 50:
         return (
-            f"{part_isoles}% des {nb_lieux} lieux recensÃ©s ({lieux_isoles} sur {nb_lieux}) n'ont "
-            f"aucun hÃ©bergement Ã  moins de 5 km â€” un amÃ©nagement (hÃ©bergement, signalÃ©tique, accÃ¨s) "
-            f"est nÃ©cessaire avant toute promotion touristique de ces sites."
+            f"{part_isoles}% des {nb_lieux} lieux recensés ({lieux_isoles} sur {nb_lieux}) n'ont "
+            f"aucun hébergement à moins de 5 km — un aménagement (hébergement, signalétique, accès) "
+            f"est nécessaire avant toute promotion touristique de ces sites."
         )
     if moy_heberg < 1:
         return (
-            f"Avec seulement {moy_heberg} hÃ©bergement en moyenne Ã  proximitÃ© des {nb_lieux} lieux, "
-            f"le potentiel cinÃ©-touristique existe mais nÃ©cessite des partenariats avec des "
-            f"hÃ©bergeurs locaux avant une valorisation Ã  grande Ã©chelle."
+            f"Avec seulement {moy_heberg} hébergement en moyenne à proximité des {nb_lieux} lieux, "
+            f"le potentiel ciné-touristique existe mais nécessite des partenariats avec des "
+            f"hébergeurs locaux avant une valorisation à grande échelle."
         )
     return (
-        f"Ã‰quipement intermÃ©diaire ({moy_heberg} hÃ©bergements, {moy_resto} restaurants en moyenne "
-        f"pour {nb_lieux} lieux) â€” Ã  Ã©valuer au cas par cas selon les lieux les plus emblÃ©matiques."
+        f"Équipement intermédiaire ({moy_heberg} hébergements, {moy_resto} restaurants en moyenne "
+        f"pour {nb_lieux} lieux) — à évaluer au cas par cas selon les lieux les plus emblématiques."
     )
 
 
 @app.get("/api/lieux/tous-points")
 async def tous_les_points(region: str = Query("Occitanie")):
     """
-    CoordonnÃ©es de tous les lieux de tournage publiÃ©s, sans dÃ©tail â€”
-    juste de quoi alimenter la carte de chaleur (densitÃ© visuelle des
-    zones les plus sollicitÃ©es, en complÃ©ment de la choroplÃ¨the par
-    dÃ©partement qui raisonne au niveau administratif).
+    Coordonnées de tous les lieux de tournage publiés, sans détail —
+    juste de quoi alimenter la carte de chaleur (densité visuelle des
+    zones les plus sollicitées, en complément de la choroplèthe par
+    département qui raisonne au niveau administratif).
     """
     points = await fetch_all(
         """
@@ -605,18 +603,18 @@ async def tous_les_points(region: str = Query("Occitanie")):
 
 def _classer_accessibilite(duree_secondes: int | None) -> tuple[str, str]:
     """
-    Seuils simples et dÃ©fendables (pas de score composite opaque) :
-    moins de 20 min en voiture = bien desservi, plus de 45 min = isolÃ©.
-    Retourne (Ã©tiquette, action recommandÃ©e).
+    Seuils simples et défendables (pas de score composite opaque) :
+    moins de 20 min en voiture = bien desservi, plus de 45 min = isolé.
+    Retourne (étiquette, action recommandée).
     """
     if duree_secondes is None:
-        return ("donnÃ©e manquante", "Lancer le prÃ©calcul des distances pour ce lieu (aucune donnÃ©e disponible actuellement).")
+        return ("donnée manquante", "Lancer le précalcul des distances pour ce lieu (aucune donnée disponible actuellement).")
     minutes = duree_secondes / 60
     if minutes <= 20:
-        return ("bien desservi", "Mettre ce lieu en avant dans la communication â€” l'expÃ©rience touristique y est dÃ©jÃ  fluide, sans amÃ©nagement prÃ©alable nÃ©cessaire.")
+        return ("bien desservi", "Mettre ce lieu en avant dans la communication — l'expérience touristique y est déjà fluide, sans aménagement préalable nécessaire.")
     if minutes <= 45:
-        return ("accessibilitÃ© modÃ©rÃ©e", "Signaler clairement les temps de trajet rÃ©els aux visiteurs avant leur venue, pour Ã©viter une dÃ©ception sur place.")
-    return ("isolÃ©", "NÃ©cessite une action avant valorisation : partenariat avec un hÃ©bergeur/restaurateur plus proche, navette dÃ©diÃ©e, ou signalÃ©tique renforcÃ©e sur les distances rÃ©elles.")
+        return ("accessibilité modérée", "Signaler clairement les temps de trajet réels aux visiteurs avant leur venue, pour éviter une déception sur place.")
+    return ("isolé", "Nécessite une action avant valorisation : partenariat avec un hébergeur/restaurateur plus proche, navette dédiée, ou signalétique renforcée sur les distances réelles.")
 
 
 CATEGORIES_ANALYSE_ACCESSIBILITE = (
@@ -628,23 +626,23 @@ CATEGORIES_ANALYSE_ACCESSIBILITE = (
 @app.get("/api/analyse/accessibilite")
 async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = Query(20)):
     """
-    Pour les films/sÃ©ries les plus connus (popularitÃ© TMDB), audit
-    d'Ã©quipement touristique complet â€” pas seulement hÃ©bergement et
-    restaurant, mais aussi activitÃ©s, parking, office de tourisme,
-    gare et aÃ©roport/aÃ©rodrome : une lecture pensÃ©e comme un vrai
-    diagnostic d'amÃ©nagement territorial, pas juste "y a-t-il un hÃ´tel
-    Ã  cÃ´tÃ©".
+    Pour les films/séries les plus connus (popularité TMDB), audit
+    d'équipement touristique complet — pas seulement hébergement et
+    restaurant, mais aussi activités, parking, office de tourisme,
+    gare et aéroport/aérodrome : une lecture pensée comme un vrai
+    diagnostic d'aménagement territorial, pas juste "y a-t-il un hôtel
+    à côté".
 
-    Toutes les donnÃ©es sont rÃ©cupÃ©rÃ©es en 4 requÃªtes groupÃ©es (pas une
-    par film) â€” l'ancienne version (~140 requÃªtes sÃ©quentielles pour
-    20 films) provoquait des lenteurs, voire des Ã©checs.
+    Toutes les données sont récupérées en 4 requêtes groupées (pas une
+    par film) — l'ancienne version (~140 requêtes séquentielles pour
+    20 films) provoquait des lenteurs, voire des échecs.
 
-    MÃ©thodologie pour un film Ã  PLUSIEURS lieux : chaque catÃ©gorie de
-    commoditÃ© est cherchÃ©e en tenant compte de TOUS les lieux du film
-    Ã  la fois (un touriste peut visiter n'importe lequel des lieux,
+    Méthodologie pour un film à PLUSIEURS lieux : chaque catégorie de
+    commodité est cherchée en tenant compte de TOUS les lieux du film
+    à la fois (un touriste peut visiter n'importe lequel des lieux,
     donc on retient la meilleure option parmi tous). Le nombre de
-    lieux du film est toujours indiquÃ© pour que cette agrÃ©gation soit
-    transparente plutÃ´t qu'implicite.
+    lieux du film est toujours indiqué pour que cette agrégation soit
+    transparente plutôt qu'implicite.
     """
     try:
         films = await fetch_all(
@@ -672,8 +670,8 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
         if not tous_lieu_ids:
             return {"francais": [], "autres": []}
 
-        # Une seule requÃªte pour TOUTES les commoditÃ©s, tous films et
-        # catÃ©gories confondus â€” regroupÃ© en Python ensuite.
+        # Une seule requête pour TOUTES les commodités, tous films et
+        # catégories confondus — regroupé en Python ensuite.
         toutes_commodites = await fetch_all(
             """
                 SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
@@ -699,7 +697,7 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
             (tous_lieu_ids, list(CATEGORIES_ANALYSE_ACCESSIBILITE)),
         )
 
-        # Index en mÃ©moire : (lieu_id, categorie) â†’ [commoditÃ©s triÃ©es par durÃ©e]
+        # Index en mémoire : (lieu_id, categorie) → [commodités triées par durée]
         commodites_par_lieu_categorie: dict[tuple[int, str], list[dict]] = {}
         for c in toutes_commodites:
             cle = (c["lieu_tournage_id"], c["categorie"])
@@ -759,30 +757,30 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
                 "categories": categories_analysees,
             }
 
-            # Risque de sur-frÃ©quentation : popularitÃ© forte + Ã©quipement
-            # faible = afflux Ã  anticiper plutÃ´t qu'Ã  subir (leÃ§on de
-            # Dubrovnik/San Juan de Gaztelugatxe aprÃ¨s Game of Thrones).
+            # Risque de sur-fréquentation : popularité forte + équipement
+            # faible = afflux à anticiper plutôt qu'à subir (leçon de
+            # Dubrovnik/San Juan de Gaztelugatxe après Game of Thrones).
             ratio_equipement = score_bien_dessservi / len(CATEGORIES_ANALYSE_ACCESSIBILITE)
             if film["popularite"] >= 20 and ratio_equipement < 0.375:
-                entree["risque_surfrequentation"] = "Ã©levÃ©"
-                entree["action_surfrequentation"] = "Anticiper dÃ¨s maintenant : renforcer l'offre locale (hÃ©bergement, transport, accÃ¨s) avant qu'un afflux imprÃ©vu ne dÃ©grade l'expÃ©rience et le site lui-mÃªme."
+                entree["risque_surfrequentation"] = "élevé"
+                entree["action_surfrequentation"] = "Anticiper dès maintenant : renforcer l'offre locale (hébergement, transport, accès) avant qu'un afflux imprévu ne dégrade l'expérience et le site lui-même."
             elif film["popularite"] >= 10 and ratio_equipement < 0.5:
-                entree["risque_surfrequentation"] = "modÃ©rÃ©"
-                entree["action_surfrequentation"] = "Ã€ surveiller : la notoriÃ©tÃ© du titre dÃ©passe dÃ©jÃ  lÃ©gÃ¨rement la capacitÃ© d'accueil locale actuelle."
+                entree["risque_surfrequentation"] = "modéré"
+                entree["action_surfrequentation"] = "À surveiller : la notoriété du titre dépasse déjà légèrement la capacité d'accueil locale actuelle."
             else:
                 entree["risque_surfrequentation"] = "faible"
-                entree["action_surfrequentation"] = "Ã‰quipement cohÃ©rent avec la notoriÃ©tÃ© actuelle â€” pas d'action urgente."
+                entree["action_surfrequentation"] = "Équipement cohérent avec la notoriété actuelle — pas d'action urgente."
 
-            categorie_liste = "francais" if film["nationalite"] and "FranÃ§ais" in film["nationalite"] else "autres"
+            categorie_liste = "francais" if film["nationalite"] and "Français" in film["nationalite"] else "autres"
             resultat[categorie_liste].append(entree)
 
         return resultat
     except Exception as e:
-        # Ne JAMAIS renvoyer null silencieusement â€” au moins un message
-        # d'erreur exploitable, visible dans l'onglet RÃ©seau du navigateur,
-        # plutÃ´t qu'un Ã©chec invisible.
+        # Ne JAMAIS renvoyer null silencieusement — au moins un message
+        # d'erreur exploitable, visible dans l'onglet Réseau du navigateur,
+        # plutôt qu'un échec invisible.
         import traceback
-        print(f"âŒ /api/analyse/accessibilite a Ã©chouÃ© : {e}", flush=True)
+        print(f"❌ /api/analyse/accessibilite a échoué : {e}", flush=True)
         traceback.print_exc()
         return JSONResponse(
             status_code=500,
@@ -793,10 +791,10 @@ async def analyse_accessibilite(region: str = Query("Occitanie"), limite: int = 
 @app.get("/api/analyse")
 async def analyse_territoriale(region: str = Query("Occitanie")):
     """
-    Version approfondie de /api/stats, pensÃ©e pour la page d'analyse
-    territoriale : compare les dÃ©partements sur des indicateurs
-    d'Ã©quipement rÃ©el (pas seulement le nombre de films), avec une
-    recommandation textuelle par dÃ©partement.
+    Version approfondie de /api/stats, pensée pour la page d'analyse
+    territoriale : compare les départements sur des indicateurs
+    d'équipement réel (pas seulement le nombre de films), avec une
+    recommandation textuelle par département.
     """
     par_departement = await fetch_all(
         """
@@ -827,7 +825,7 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
         d["recommandation"] = _recommandation_departement(d)
         resultat.append(d)
 
-    # Films les plus reconnus (popularitÃ© TMDB) â€” pour la section dÃ©diÃ©e
+    # Films les plus reconnus (popularité TMDB) — pour la section dédiée
     # de la page d'analyse, distincte de la comparaison territoriale.
     films_notables = await fetch_all(
         """
@@ -840,22 +838,22 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
         (region,),
     )
 
-    # SynthÃ¨se comparative chiffrÃ©e : pourquoi le 1er dÃ©partement est
-    # plus sollicitÃ© que le dernier, en s'appuyant uniquement sur des
-    # chiffres dÃ©jÃ  prÃ©sents en base (pas d'affirmation non vÃ©rifiable).
+    # Synthèse comparative chiffrée : pourquoi le 1er département est
+    # plus sollicité que le dernier, en s'appuyant uniquement sur des
+    # chiffres déjà présents en base (pas d'affirmation non vérifiable).
     synthese_comparative = None
     if len(resultat) >= 2:
         premier, dernier = resultat[0], resultat[-1]
         ratio = round(premier["nb_lieux"] / dernier["nb_lieux"], 1) if dernier["nb_lieux"] else None
         synthese_comparative = (
-            f"{premier['departement']} concentre {premier['nb_lieux']} lieux de tournage recensÃ©s "
-            f"({premier['part_pourcentage']}% du total rÃ©gional), contre seulement {dernier['nb_lieux']} "
+            f"{premier['departement']} concentre {premier['nb_lieux']} lieux de tournage recensés "
+            f"({premier['part_pourcentage']}% du total régional), contre seulement {dernier['nb_lieux']} "
             f"pour {dernier['departement']} ({dernier['part_pourcentage']}%)"
-            + (f" â€” soit {ratio} fois plus de lieux." if ratio else ".")
+            + (f" — soit {ratio} fois plus de lieux." if ratio else ".")
         )
 
-    # Films sans coordonnÃ©es / sans image / non validÃ©s â€” complÃ©tude
-    # des donnÃ©es, utile pour prioriser le travail Ã©ditorial restant.
+    # Films sans coordonnées / sans image / non validés — complétude
+    # des données, utile pour prioriser le travail éditorial restant.
     completude = await fetch_one(
         """
         SELECT
@@ -875,27 +873,27 @@ async def analyse_territoriale(region: str = Query("Occitanie")):
     }
 
 
-# â”€â”€ DÃ©tail d'un film + ses lieux de tournage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Détail d'un film + ses lieux de tournage ─────────────────────
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
 PLATEFORMES_CACHE_JOURS = 7
 
 
 async def _plateformes_streaming(film: dict) -> list[dict]:
     """
-    OÃ¹ regarder ce film en France (TMDB watch/providers), mis en cache
-    en base pour ne pas rappeler TMDB Ã  chaque visite. C'est ici que
-    les liens d'affiliation (Awin etc.) doivent Ãªtre insÃ©rÃ©s â€” chaque
-    entrÃ©e retournÃ©e a un champ "lien_affilie" vide Ã  remplir avec ton
-    vrai lien trackÃ© une fois les partenariats en place.
+    Où regarder ce film en France (TMDB watch/providers), mis en cache
+    en base pour ne pas rappeler TMDB à chaque visite. C'est ici que
+    les liens d'affiliation (Awin etc.) doivent être insérés — chaque
+    entrée retournée a un champ "lien_affilie" vide à remplir avec ton
+    vrai lien tracké une fois les partenariats en place.
     """
     if not film.get("tmdb_id"):
         return []
 
     def _parser_cache(valeur) -> list:
-        """asyncpg ne dÃ©code pas automatiquement JSONB : selon le driver
-        et la version, on peut recevoir soit dÃ©jÃ  une liste, soit une
-        chaÃ®ne JSON brute. On gÃ¨re les deux pour ne jamais planter le
-        frontend avec un .map() sur une chaÃ®ne."""
+        """asyncpg ne décode pas automatiquement JSONB : selon le driver
+        et la version, on peut recevoir soit déjà une liste, soit une
+        chaîne JSON brute. On gère les deux pour ne jamais planter le
+        frontend avec un .map() sur une chaîne."""
         if not valeur:
             return []
         if isinstance(valeur, str):
@@ -927,15 +925,15 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
         return _parser_cache(film.get("plateformes_json"))
 
     plateformes = []
-    lien_general = data.get("link")  # page TMDB "oÃ¹ regarder" pour ce film â€” repli tant qu'il n'y a pas de vrai lien d'affiliation
+    lien_general = data.get("link")  # page TMDB "où regarder" pour ce film — repli tant qu'il n'y a pas de vrai lien d'affiliation
     for categorie in ("flatrate", "rent", "buy"):
         for p in data.get(categorie, []):
             plateformes.append({
                 "nom": p["provider_name"],
                 "logo_url": f"https://image.tmdb.org/t/p/w92{p['logo_path']}",
                 "type": {"flatrate": "streaming", "rent": "location", "buy": "achat"}[categorie],
-                "lien_affilie": "",  # Ã  remplir : lien Awin/partenaire pour ce provider
-                "lien_repli": lien_general,  # utilisÃ© tant que lien_affilie est vide
+                "lien_affilie": "",  # à remplir : lien Awin/partenaire pour ce provider
+                "lien_repli": lien_general,  # utilisé tant que lien_affilie est vide
             })
 
     await _sauvegarder_plateformes_cache(film["id"], plateformes)
@@ -944,12 +942,12 @@ async def _plateformes_streaming(film: dict) -> list[dict]:
 
 async def _sauvegarder_plateformes_cache(film_id: int, plateformes: list[dict]) -> None:
     """
-    IsolÃ© dans sa propre fonction avec gestion d'erreur : si l'Ã©criture
-    du cache Ã©choue (mismatch de type, base indisponible...), la page
-    doit quand mÃªme s'afficher avec les plateformes fraÃ®chement
-    rÃ©cupÃ©rÃ©es â€” juste sans les mettre en cache cette fois-ci. Ne
+    Isolé dans sa propre fonction avec gestion d'erreur : si l'écriture
+    du cache échoue (mismatch de type, base indisponible...), la page
+    doit quand même s'afficher avec les plateformes fraîchement
+    récupérées — juste sans les mettre en cache cette fois-ci. Ne
     JAMAIS laisser un souci de cache secondaire faire planter la fiche
-    film entiÃ¨re (c'est ce qui causait le 500 sur tous les films).
+    film entière (c'est ce qui causait le 500 sur tous les films).
     """
     try:
         await execute(
@@ -957,13 +955,13 @@ async def _sauvegarder_plateformes_cache(film_id: int, plateformes: list[dict]) 
             (json.dumps(plateformes), datetime.now(timezone.utc), film_id),
         )
     except Exception as e:
-        print(f"âš ï¸ Cache plateformes non sauvegardÃ© pour film {film_id}: {e}", flush=True)
+        print(f"⚠️ Cache plateformes non sauvegardé pour film {film_id}: {e}", flush=True)
 
 
 def _parser_json(valeur):
-    """asyncpg renvoie JSONB comme une chaÃ®ne brute par dÃ©faut (pas de
-    codec enregistrÃ©) â€” on la parse nous-mÃªmes avant de la renvoyer,
-    sinon le frontend recevrait une chaÃ®ne au lieu d'un objet."""
+    """asyncpg renvoie JSONB comme une chaîne brute par défaut (pas de
+    codec enregistré) — on la parse nous-mêmes avant de la renvoyer,
+    sinon le frontend recevrait une chaîne au lieu d'un objet."""
     if not valeur:
         return None
     if isinstance(valeur, str):
@@ -1013,7 +1011,7 @@ async def detail_film(film_id: int):
     return {"film": film, "lieux": lieux, "plateformes": plateformes}
 
 
-# â”€â”€ Amenities proches d'un lieu (appelÃ© au clic sur l'icÃ´ne) â”€â”€â”€â”€â”€
+# ── Amenities proches d'un lieu (appelé au clic sur l'icône) ─────
 def _formater_distance(m: int) -> str:
     return f"{m} m" if m < 1000 else f"{m / 1000:.1f}".replace(".0", "") + " km"
 
@@ -1069,9 +1067,9 @@ async def amenities_proches(lieu_id: int):
         )
         amenities_par_categorie.setdefault(item["categorie"], []).append(item)
 
-    # Stations-service : on joint la fiche complÃ¨te (prix, ruptures, horaires, services...)
-    # lue dans stations_carburant. En cas de souci (migration pas encore jouÃ©e...), le reste
-    # des commoditÃ©s du lieu reste servi normalement.
+    # Stations-service : on joint la fiche complète (prix, ruptures, horaires, services...)
+    # lue dans stations_carburant. En cas de souci (migration pas encore jouée...), le reste
+    # des commodités du lieu reste servi normalement.
     if amenities_par_categorie.get("station_service"):
         try:
             fiches = await fiches_stations_du_lieu(lieu_id)
@@ -1085,7 +1083,7 @@ async def amenities_proches(lieu_id: int):
 
 def _ordre_plus_proche_voisin(lieux: list[dict]) -> list[dict]:
     """Ordonne les lieux par plus proche voisin (heuristique simple,
-    pas un vrai TSP optimal â€” largement suffisant pour quelques lieux
+    pas un vrai TSP optimal — largement suffisant pour quelques lieux
     par film et beaucoup plus lisible qu'un ordre arbitraire)."""
     if len(lieux) <= 2:
         return lieux
@@ -1115,28 +1113,28 @@ async def api_itineraire(
     etapes: bool = True,
 ):
     """
-    Calcule un itinÃ©raire rÃ©el via la GÃ©oplateforme IGN.
+    Calcule un itinéraire réel via la Géoplateforme IGN.
 
     Architecture :
 
         Client
-           â†“
+           ↓
         FastAPI
-           â†“
+           ↓
         Redis / Upstash
-           â†“
-        IGN GÃ©oplateforme uniquement en cas de cache miss
+           ↓
+        IGN Géoplateforme uniquement en cas de cache miss
 
-    Le cache Redis est utilisÃ© uniquement pour les itinÃ©raires
+    Le cache Redis est utilisé uniquement pour les itinéraires
     dynamiques des utilisateurs.
 
-    Les donnÃ©es d'accessibilitÃ© aux Ã©quipements touristiques
-    restent gÃ©rÃ©es sÃ©parÃ©ment par amenity_cache/PostgreSQL.
+    Les données d'accessibilité aux équipements touristiques
+    restent gérées séparément par amenity_cache/PostgreSQL.
     """
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 0. VALIDATION DES PARAMÃˆTRES
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
+    # 0. VALIDATION DES PARAMÈTRES
+    # ─────────────────────────────────────────────────────────
 
     modes_acceptes = {
         "pedestrian",
@@ -1149,13 +1147,13 @@ async def api_itineraire(
             detail={
                 "code": "INVALID_MODE",
                 "message": (
-                    "Le mode doit Ãªtre 'pedestrian' "
+                    "Le mode doit être 'pedestrian' "
                     "ou 'car'."
                 ),
             },
         )
 
-    # VÃ©rification basique des coordonnÃ©es.
+    # Vérification basique des coordonnées.
     if not (
         -90 <= depart_lat <= 90
         and -180 <= depart_lon <= 180
@@ -1166,12 +1164,12 @@ async def api_itineraire(
             status_code=400,
             detail={
                 "code": "INVALID_COORDINATES",
-                "message": "Les coordonnÃ©es GPS sont invalides.",
+                "message": "Les coordonnées GPS sont invalides.",
             },
         )
 
-    # Ã‰vite de demander un itinÃ©raire vers exactement le
-    # mÃªme point.
+    # Évite de demander un itinéraire vers exactement le
+    # même point.
     if (
         abs(depart_lat - arrivee_lat) < 0.000001
         and abs(depart_lon - arrivee_lon) < 0.000001
@@ -1181,23 +1179,23 @@ async def api_itineraire(
             detail={
                 "code": "SAME_ORIGIN_DESTINATION",
                 "message": (
-                    "Le point de dÃ©part et le point d'arrivÃ©e "
+                    "Le point de départ et le point d'arrivée "
                     "sont identiques."
                 ),
             },
         )
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
     # 1. CACHE NAVIGATION
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
 
-    # Si Upstash Redis est configurÃ©, on construit une clÃ©
-    # normalisÃ©e.
+    # Si Upstash Redis est configuré, on construit une clé
+    # normalisée.
     #
     # IMPORTANT :
-    # navigation_cache.enabled Ã©vite de faire attendre
+    # navigation_cache.enabled évite de faire attendre
     # inutilement l'utilisateur lorsque Redis n'est pas
-    # configurÃ© ou temporairement indisponible.
+    # configuré ou temporairement indisponible.
 
     cache_key = navigation_cache.construire_cle(
         depart_lat=depart_lat,
@@ -1210,9 +1208,9 @@ async def api_itineraire(
 
     lock_key = f"{cache_key}:lock"
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
     # 2. CACHE HIT
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
 
     if navigation_cache.enabled:
         resultat = await navigation_cache.get(cache_key)
@@ -1223,9 +1221,9 @@ async def api_itineraire(
 
             return resultat
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 3. CACHE MISS â†’ VERROU ANTI-RAFALE
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
+    # 3. CACHE MISS → VERROU ANTI-RAFALE
+    # ─────────────────────────────────────────────────────────
 
     if navigation_cache.enabled:
 
@@ -1235,10 +1233,10 @@ async def api_itineraire(
 
         if not verrou_obtenu:
 
-            # Une autre requÃªte est dÃ©jÃ  en train de calculer
-            # exactement le mÃªme itinÃ©raire.
+            # Une autre requête est déjà en train de calculer
+            # exactement le même itinéraire.
             #
-            # On attend son rÃ©sultat plutÃ´t que de lancer
+            # On attend son résultat plutôt que de lancer
             # plusieurs appels identiques vers IGN.
 
             resultat = await navigation_cache.wait_for_result(
@@ -1252,25 +1250,25 @@ async def api_itineraire(
 
                 return resultat
 
-            # Si aucun rÃ©sultat n'est apparu aprÃ¨s l'attente,
+            # Si aucun résultat n'est apparu après l'attente,
             # on tente de reprendre le verrou.
             #
-            # Cela Ã©vite autant que possible que plusieurs
-            # requÃªtes frappent IGN simultanÃ©ment.
+            # Cela évite autant que possible que plusieurs
+            # requêtes frappent IGN simultanément.
 
             verrou_obtenu = await navigation_cache.acquire_lock(
                 lock_key
             )
 
-            # Si le verrou est toujours occupÃ©, on continue
+            # Si le verrou est toujours occupé, on continue
             # exceptionnellement vers IGN.
             #
-            # Le verrou possÃ¨de un TTL automatique et ne peut
-            # donc pas rester bloquÃ© dÃ©finitivement.
+            # Le verrou possède un TTL automatique et ne peut
+            # donc pas rester bloqué définitivement.
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
     # 4. APPEL IGN
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
 
     try:
 
@@ -1286,8 +1284,8 @@ async def api_itineraire(
     except GeoplateformeError as exc:
 
         print(
-            "âŒ GÃ©oplateforme indisponible pour "
-            f"l'itinÃ©raire : {exc}",
+            "❌ Géoplateforme indisponible pour "
+            f"l'itinéraire : {exc}",
             flush=True,
         )
 
@@ -1296,9 +1294,9 @@ async def api_itineraire(
             detail={
                 "code": "GEOPLATEFORME_UNAVAILABLE",
                 "message": (
-                    "Le service d'itinÃ©raire IGN est "
+                    "Le service d'itinéraire IGN est "
                     "temporairement indisponible. Aucun "
-                    "itinÃ©raire de substitution n'a Ã©tÃ© utilisÃ©."
+                    "itinéraire de substitution n'a été utilisé."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1308,7 +1306,7 @@ async def api_itineraire(
     except Exception as exc:
 
         print(
-            "âŒ Erreur inattendue calcul itinÃ©raire : "
+            "❌ Erreur inattendue calcul itinéraire : "
             f"{exc}",
             flush=True,
         )
@@ -1319,16 +1317,16 @@ async def api_itineraire(
                 "code": "ITINERARY_ERROR",
                 "message": (
                     "Une erreur inattendue est survenue "
-                    "pendant le calcul de l'itinÃ©raire."
+                    "pendant le calcul de l'itinéraire."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
             },
         ) from exc
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 5. VÃ‰RIFICATION DE LA RÃ‰PONSE IGN
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
+    # 5. VÉRIFICATION DE LA RÉPONSE IGN
+    # ─────────────────────────────────────────────────────────
 
     if not resultat or not isinstance(resultat, dict):
 
@@ -1337,8 +1335,8 @@ async def api_itineraire(
             detail={
                 "code": "INVALID_GEOPLATEFORME_RESPONSE",
                 "message": (
-                    "La GÃ©oplateforme a rÃ©pondu mais le "
-                    "rÃ©sultat d'itinÃ©raire est invalide."
+                    "La Géoplateforme a répondu mais le "
+                    "résultat d'itinéraire est invalide."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
@@ -1354,17 +1352,17 @@ async def api_itineraire(
             detail={
                 "code": "NO_ROUTE_GEOMETRY",
                 "message": (
-                    "La GÃ©oplateforme n'a retournÃ© aucune "
-                    "gÃ©omÃ©trie d'itinÃ©raire exploitable."
+                    "La Géoplateforme n'a retourné aucune "
+                    "géométrie d'itinéraire exploitable."
                 ),
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
             },
         )
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
     # 6. FORMAT STANDARD POUR LE FRONTEND
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
 
     resultat["type"] = "route_reelle"
 
@@ -1374,7 +1372,7 @@ async def api_itineraire(
 
     resultat["mode"] = mode
 
-    # Le frontend de navigation utilise cette propriÃ©tÃ©.
+    # Le frontend de navigation utilise cette propriété.
 
     if etapes:
 
@@ -1388,9 +1386,9 @@ async def api_itineraire(
 
         resultat["etapes_navigation"] = []
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
     # 7. INFORMATIONS DE DIAGNOSTIC
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
 
     resultat["cache"] = (
         "redis"
@@ -1400,9 +1398,9 @@ async def api_itineraire(
 
     resultat["cache_hit"] = False
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 8. Ã‰CRITURE DANS REDIS
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
+    # 8. ÉCRITURE DANS REDIS
+    # ─────────────────────────────────────────────────────────
 
     if navigation_cache.enabled:
 
@@ -1411,18 +1409,18 @@ async def api_itineraire(
             resultat,
         )
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # 9. RÃ‰PONSE
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ─────────────────────────────────────────────────────────
+    # 9. RÉPONSE
+    # ─────────────────────────────────────────────────────────
 
     return resultat   
 
 
 async def _ordre_optimise(lieux: list[dict]) -> list[dict]:
     """
-    Ordonne un petit circuit : Ã  chaque pas, on va vers le lieu le plus proche
-    PAR LA ROUTE (GÃ©oplateforme IGN, rÃ©sultats mis en cache). Le vol d'oiseau ne
-    sert qu'Ã  prÃ©sÃ©lectionner quelques candidats avant d'interroger l'IGN.
+    Ordonne un petit circuit : à chaque pas, on va vers le lieu le plus proche
+    PAR LA ROUTE (Géoplateforme IGN, résultats mis en cache). Le vol d'oiseau ne
+    sert qu'à présélectionner quelques candidats avant d'interroger l'IGN.
     """
 
     return await ordre_plus_proche_voisin_ign(lieux, "driving-car")
@@ -1437,15 +1435,15 @@ def _adresse_complete(lieu: dict) -> str:
 
 
 # tarif_min (DATAtourisme) est le prix le plus BAS de toute la fiche : il peut
-# correspondre Ã  une taxe de sÃ©jour, un menu enfant ou une option. En dessous
+# correspondre à une taxe de séjour, un menu enfant ou une option. En dessous
 # de ces seuils on le juge peu fiable et on ne l'utilise ni pour le score, ni
 # pour le budget, ni pour l'affichage.
 _SEUIL_TARIF_MIN_FIABLE = {"hebergement": 15.0, "restaurant": 5.0}
 _LABELS_CATEGORIE_SINGULIER = {
-    "restaurant": "restaurant", "hebergement": "hÃ©bergement", "activite": "activitÃ©",
+    "restaurant": "restaurant", "hebergement": "hébergement", "activite": "activité",
     "office_tourisme": "office de tourisme", "parking": "parking", "gare": "gare",
-    "aeroport": "aÃ©roport", "refuge": "refuge", "arret_bus": "arrÃªt de bus",
-    "fetes_manifestations": "Ã©vÃ©nement",
+    "aeroport": "aéroport", "refuge": "refuge", "arret_bus": "arrêt de bus",
+    "fetes_manifestations": "événement",
 }
 
 
@@ -1465,18 +1463,18 @@ def _tarif_fiable(item, categorie):
 
 def _fmt_eur(valeur):
     txt = f"{valeur:.2f}".rstrip("0").rstrip(".")
-    return txt.replace(".", ",") + " â‚¬"
+    return txt.replace(".", ",") + " €"
 
 
 def _libelle_tarif(item, categorie):
-    """Texte de prix honnÃªte : dit ce que reprÃ©sente le chiffre affichÃ©."""
+    """Texte de prix honnête : dit ce que représente le chiffre affiché."""
     mn, mx = _tarif_fiable(item, categorie), _nombre(item.get("tarif_max"))
     if mn is not None:
         if mx and mx > mn * 1.05:
-            return f"Tarifs relevÃ©s : de {_fmt_eur(mn)} Ã  {_fmt_eur(mx)}"
-        return f"Ã€ partir de {_fmt_eur(mn)}"
+            return f"Tarifs relevés : de {_fmt_eur(mn)} à {_fmt_eur(mx)}"
+        return f"À partir de {_fmt_eur(mn)}"
     if categorie == "restaurant" and mx:
-        return f"Tarifs relevÃ©s jusqu'Ã  {_fmt_eur(mx)}"
+        return f"Tarifs relevés jusqu'à {_fmt_eur(mx)}"
     return None
 
 
@@ -1492,18 +1490,18 @@ def _tokens_nom(texte):
 
 
 def _est_l_etape_elle_meme(item, etape_nom):
-    """Ã‰vite de suggÃ©rer, pour Â« ChÃ¢teau X Â», l'offre Â« ChÃ¢teau et remparts de X Â»."""
+    """Évite de suggérer, pour « Château X », l'offre « Château et remparts de X »."""
     commun = _tokens_nom(item.get("nom")) & _tokens_nom(etape_nom)
     return len(commun) >= 3 and float(item.get("distance_metres") or 0) < 300
 
 
 def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite=False,
                         mode="driving-car", extremite=False):
-    """Score dÃ©terministe d'une commoditÃ© pour une personnalisation lÃ©gÃ¨re.
+    """Score déterministe d'une commodité pour une personnalisation légère.
 
-    Le score sert Ã  ordonner les offres selon les prÃ©fÃ©rences choisies ; ce
-    n'est pas une note de qualitÃ© universelle. Les points de transport ne
-    sont pertinents qu'au dÃ©but ou Ã  la fin du parcours.
+    Le score sert à ordonner les offres selon les préférences choisies ; ce
+    n'est pas une note de qualité universelle. Les points de transport ne
+    sont pertinents qu'au début ou à la fin du parcours.
     """
     score = 0.0
     distance = float(item.get("meilleure_distance_metres") or item.get("distance_metres") or 999999)
@@ -1531,7 +1529,7 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
             score += max(0.0, 16.0 - min(tarif, 100.0) * 0.12)
 
     texte_access = " ".join(str(item.get(k) or "") for k in ("equipements", "labels_qualite", "description", "lien_accessibilite")).lower()
-    accessible = bool(item.get("lien_accessibilite")) or any(x in texte_access for x in ("pmr", "accessible", "accessibilitÃ©", "handicap"))
+    accessible = bool(item.get("lien_accessibilite")) or any(x in texte_access for x in ("pmr", "accessible", "accessibilité", "handicap"))
     if accessibilite:
         score += 28.0 if accessible else -28.0
     elif accessible:
@@ -1546,42 +1544,42 @@ def _profil_score_offre(item, categorie, budget_level="equilibre", accessibilite
 
 def _phrase_recommandation_offre(item, categorie, profil, etape_nom, mode="driving-car",
                                  accessibilite=False, etape_ordre=None):
-    """Raison affichÃ©e sous la suggestion. Elle dit toujours de QUELLE Ã©tape
-    l'offre est proche (numÃ©ro et nom) et ce que reprÃ©sente chaque chiffre.
-    Ex. : Â« Ã€ 1 min en voiture de l'Ã©tape 3 - SommiÃ¨res Â· Tarifs relevÃ©s jusqu'Ã  25,5 â‚¬ Â»."""
+    """Raison affichée sous la suggestion. Elle dit toujours de QUELLE étape
+    l'offre est proche (numéro et nom) et ce que représente chaque chiffre.
+    Ex. : « À 1 min en voiture de l'étape 3 - Sommières · Tarifs relevés jusqu'à 25,5 € »."""
     a_pied = mode != "driving-car"
     duree = item.get("duree_pied_secondes") if a_pied else item.get("duree_voiture_secondes")
     distance = item.get("meilleure_distance_metres") or item.get("distance_metres")
     de_etape = ""
     if etape_ordre:
-        de_etape = f" de l'Ã©tape {etape_ordre}" + (f" - {etape_nom}" if etape_nom else "")
+        de_etape = f" de l'étape {etape_ordre}" + (f" - {etape_nom}" if etape_nom else "")
     elif etape_nom:
-        de_etape = f" de Â« {etape_nom} Â»"
+        de_etape = f" de « {etape_nom} »"
     raisons = []
     if duree is not None:
         mn = max(1, round(float(duree) / 60))
-        raisons.append(f"Ã€ {mn} min {'Ã  pied' if a_pied else 'en voiture'}{de_etape}")
+        raisons.append(f"À {mn} min {'à pied' if a_pied else 'en voiture'}{de_etape}")
     elif distance is not None:
         d = float(distance)
-        raisons.append((f"Ã€ {round(d)} m" if d < 1000 else f"Ã€ {d / 1000:.1f} km".replace(".", ",")) + de_etape)
+        raisons.append((f"À {round(d)} m" if d < 1000 else f"À {d / 1000:.1f} km".replace(".", ",")) + de_etape)
     else:
-        raisons.append(f"Proche{de_etape}" if de_etape else "Proche de l'Ã©tape")
+        raisons.append(f"Proche{de_etape}" if de_etape else "Proche de l'étape")
     libelle = _libelle_tarif(item, categorie)
     if libelle:
-        raisons.append(libelle + (" (budget serrÃ©)" if profil == "economique" and _tarif_fiable(item, categorie) else ""))
+        raisons.append(libelle + (" (budget serré)" if profil == "economique" and _tarif_fiable(item, categorie) else ""))
     note = _nombre(item.get("note_etoiles"))
     if note is not None:
-        raisons.append(f"{note:g} Ã©toile(s)")
+        raisons.append(f"{note:g} étoile(s)")
     texte_access = " ".join(str(item.get(k) or "") for k in ("equipements", "labels_qualite", "lien_accessibilite")).lower()
     if accessibilite and (item.get("lien_accessibilite") or any(x in texte_access for x in ("pmr", "accessible", "handicap"))):
-        raisons.append("accessibilitÃ© renseignÃ©e")
-    return " Â· ".join(raisons)
+        raisons.append("accessibilité renseignée")
+    return " · ".join(raisons)
 
 
 def _recommandations_par_etape(etapes, categories, par_etape, budget_level, accessibilite, mode, seuil=15.0, max_par_etape=3):
-    """Jusqu'Ã  `max_par_etape` suggestions par Ã©tape, une par catÃ©gorie, triÃ©es
-    par score. Les catÃ©gories retenues sont celles de `categories` (donc
-    dÃ©jÃ  filtrÃ©es par les centres d'intÃ©rÃªt de l'utilisateur)."""
+    """Jusqu'à `max_par_etape` suggestions par étape, une par catégorie, triées
+    par score. Les catégories retenues sont celles de `categories` (donc
+    déjà filtrées par les centres d'intérêt de l'utilisateur)."""
     resultat = {}
     n = len(etapes)
     for idx, etape in enumerate(etapes):
@@ -1590,7 +1588,7 @@ def _recommandations_par_etape(etapes, categories, par_etape, budget_level, acce
         propositions = []
         for categorie in categories.keys():
             if categorie in ("arret_bus", "refuge", "aerodrome"):
-                continue  # visibles dans Â« Toutes les offres Â», pas des suggestions d'Ã©tape
+                continue  # visibles dans « Toutes les offres », pas des suggestions d'étape
             if categorie in ("gare", "aeroport") and not extremite:
                 continue
             candidats = []
@@ -1616,7 +1614,7 @@ def _recommandations_par_etape(etapes, categories, par_etape, budget_level, acce
             rec["tarif_libelle"] = _libelle_tarif(rec, categorie)
             rec["raison"] = _phrase_recommandation_offre(rec, categorie, budget_level, etape.get("nom"), mode, accessibilite, idx + 1)
             rec["action_url"] = rec.get("site_web") or None
-            rec["action_label"] = "Voir / rÃ©server" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
+            rec["action_label"] = "Voir / réserver" if rec.get("site_web") else ("Appeler" if rec.get("telephone") else None)
             propositions.append(rec)
         propositions.sort(key=lambda x: x["score_personnalise"], reverse=True)
         resultat[eid] = propositions[:max_par_etape]
@@ -1624,10 +1622,10 @@ def _recommandations_par_etape(etapes, categories, par_etape, budget_level, acce
 
 
 def _optimiser_etapes_approx(etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart):
-    """PrÃ©-sÃ©lection rapide avant les appels IGN.
+    """Pré-sélection rapide avant les appels IGN.
 
-    On Ã©vite une explosion du nombre d'appels rÃ©seau : l'heuristique utilise
-    les distances gÃ©ographiques puis l'itinÃ©raire IGN est recalculÃ© ensuite.
+    On évite une explosion du nombre d'appels réseau : l'heuristique utilise
+    les distances géographiques puis l'itinéraire IGN est recalculé ensuite.
     """
     if not temps_disponible_minutes or len(etapes) <= 1:
         return list(etapes), []
@@ -1645,7 +1643,7 @@ def _optimiser_etapes_approx(etapes, depart, mode, temps_disponible_minutes, tem
     else:
         points.append(etapes[0])
     restants = list(etapes)
-    # Si le dÃ©part est dÃ©jÃ  une Ã©tape, elle doit rester la premiÃ¨re.
+    # Si le départ est déjà une étape, elle doit rester la première.
     if not depart and restants:
         choisi = [restants.pop(0)]
     else:
@@ -1677,24 +1675,24 @@ def _optimiser_etapes_approx(etapes, depart, mode, temps_disponible_minutes, tem
 
 async def _itineraire_multi_etapes(lieux_ordonnes, mode):
     """
-    Calcule un itinÃ©raire rÃ©el entre plusieurs lieux avec
-    la GÃ©oplateforme IGN.
+    Calcule un itinéraire réel entre plusieurs lieux avec
+    la Géoplateforme IGN.
 
-    La GÃ©oplateforme est l'unique fournisseur d'itinÃ©raire.
+    La Géoplateforme est l'unique fournisseur d'itinéraire.
 
     Aucun fallback :
     - pas d'OSRM public
     - pas d'OpenRouteService
     - pas de ligne droite
 
-    Si un seul tronÃ§on Ã©choue, l'itinÃ©raire complet est considÃ©rÃ©
+    Si un seul tronçon échoue, l'itinéraire complet est considéré
     comme indisponible.
     """
 
     if not lieux_ordonnes or len(lieux_ordonnes) < 2:
         raise GeoplateformeError(
-            "Au moins deux lieux sont nÃ©cessaires pour calculer "
-            "un itinÃ©raire."
+            "Au moins deux lieux sont nécessaires pour calculer "
+            "un itinéraire."
         )
 
     geometries = []
@@ -1729,30 +1727,30 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
 
         except GeoplateformeError as exc:
             raise GeoplateformeError(
-                f"Ã‰chec du tronÃ§on {i + 1}/{nb_troncons} "
-                f"avec la GÃ©oplateforme IGN : {exc}"
+                f"Échec du tronçon {i + 1}/{nb_troncons} "
+                f"avec la Géoplateforme IGN : {exc}"
             ) from exc
 
         except Exception as exc:
             raise GeoplateformeError(
-                f"Erreur inattendue sur le tronÃ§on "
+                f"Erreur inattendue sur le tronçon "
                 f"{i + 1}/{nb_troncons} : {exc}"
             ) from exc
 
         # IMPORTANT :
-        # Aucun fallback gÃ©omÃ©trique.
+        # Aucun fallback géométrique.
         if not resultat:
             raise GeoplateformeError(
-                f"La GÃ©oplateforme IGN n'a retournÃ© aucun itinÃ©raire "
-                f"pour le tronÃ§on {i + 1}/{nb_troncons}."
+                f"La Géoplateforme IGN n'a retourné aucun itinéraire "
+                f"pour le tronçon {i + 1}/{nb_troncons}."
             )
 
         geometry = resultat.get("geometry")
 
         if not geometry:
             raise GeoplateformeError(
-                f"La GÃ©oplateforme IGN n'a retournÃ© aucune gÃ©omÃ©trie "
-                f"pour le tronÃ§on {i + 1}/{nb_troncons}."
+                f"La Géoplateforme IGN n'a retourné aucune géométrie "
+                f"pour le tronçon {i + 1}/{nb_troncons}."
             )
 
         distance = resultat.get("distance_metres", 0)
@@ -1805,7 +1803,7 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
         })
 
     # ---------------------------------------------------------
-    # Fusion des gÃ©omÃ©tries
+    # Fusion des géométries
     # ---------------------------------------------------------
 
     coordinates = []
@@ -1847,14 +1845,14 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
 
         else:
             raise GeoplateformeError(
-                f"Type de gÃ©omÃ©trie IGN non supportÃ© : "
+                f"Type de géométrie IGN non supporté : "
                 f"{geometry_type}"
             )
 
     if len(coordinates) < 2:
         raise GeoplateformeError(
-            "La GÃ©oplateforme IGN a retournÃ© une gÃ©omÃ©trie "
-            "insuffisante pour construire l'itinÃ©raire."
+            "La Géoplateforme IGN a retourné une géométrie "
+            "insuffisante pour construire l'itinéraire."
         )
 
     return {
@@ -1884,7 +1882,7 @@ async def api_carburants_autour(
     rayon_km: float = Query(10, gt=0, le=30), carburant: str = Query("e10"),
     limite: int = Query(20, ge=1, le=50),
 ):
-    """Stations les moins chÃ¨res autour d'un point (donnÃ©es importÃ©es chaque jour)."""
+    """Stations les moins chères autour d'un point (données importées chaque jour)."""
     cle = normaliser_carburant(carburant)
     if not cle:
         raise HTTPException(400, f"Carburant inconnu. Valeurs : {', '.join(CARBURANTS)}")
@@ -1904,10 +1902,10 @@ async def api_carburants_autour(
 
 @app.get("/api/geocodage")
 async def api_geocodage(q: str = Query(..., min_length=3, max_length=200)):
-    """Recherche d'adresse via le service de gÃ©ocodage IGN.
+    """Recherche d'adresse via le service de géocodage IGN.
 
     Le navigateur ne contacte pas directement le service IGN : le backend
-    joue le rÃ´le de proxy afin de garder une intÃ©gration homogÃ¨ne avec Pelify.
+    joue le rôle de proxy afin de garder une intégration homogène avec Pelify.
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1919,8 +1917,8 @@ async def api_geocodage(q: str = Query(..., min_length=3, max_length=200)):
         response.raise_for_status()
         data = response.json()
     except Exception as exc:
-        logger.warning("GÃ©ocodage IGN indisponible: %s", exc)
-        raise HTTPException(502, "Le service de recherche d'adresse IGN est momentanÃ©ment indisponible.") from exc
+        logger.warning("Géocodage IGN indisponible: %s", exc)
+        raise HTTPException(502, "Le service de recherche d'adresse IGN est momentanément indisponible.") from exc
 
     features = data.get("features", []) if isinstance(data, dict) else []
     resultats = []
@@ -1936,18 +1934,18 @@ async def api_geocodage(q: str = Query(..., min_length=3, max_length=200)):
             "longitude": float(coords[0]),
             "type": props.get("type"),
             "idban": props.get("idban") or props.get("id"),
-            "source": "BAN via GÃ©oplateforme",
+            "source": "BAN via Géoplateforme",
         })
     return {"resultats": resultats}
 
 
 async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=False):
-    """Construit un parcours IGN depuis un point arbitraire puis les Ã©tapes.
+    """Construit un parcours IGN depuis un point arbitraire puis les étapes.
 
     lieu_depart doit contenir latitude/longitude et peut avoir id=None.
     """
     if not etapes:
-        raise GeoplateformeError("Aucune Ã©tape sÃ©lectionnÃ©e.")
+        raise GeoplateformeError("Aucune étape sélectionnée.")
 
     segments = []
     distance_totale = 0
@@ -1970,7 +1968,7 @@ async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=Fals
             avec_etapes=False,
         )
         if not resultat or not resultat.get("geometry"):
-            raise GeoplateformeError(f"Aucune gÃ©omÃ©trie IGN pour le tronÃ§on {i + 1}.")
+            raise GeoplateformeError(f"Aucune géométrie IGN pour le tronçon {i + 1}.")
         distance = float(resultat.get("distance_metres") or 0)
         duree = resultat.get("duree_secondes")
         if duree is None:
@@ -1979,8 +1977,8 @@ async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=Fals
             duree_totale += float(duree)
         distance_totale += distance
         segments.append({
-            "depart": {"id": depart.get("id"), "nom": depart.get("nom") or "Point de dÃ©part", "latitude": float(depart["latitude"]), "longitude": float(depart["longitude"])},
-            "arrivee": {"id": arrivee.get("id"), "nom": arrivee.get("nom") or "Ã‰tape", "latitude": float(arrivee["latitude"]), "longitude": float(arrivee["longitude"])},
+            "depart": {"id": depart.get("id"), "nom": depart.get("nom") or "Point de départ", "latitude": float(depart["latitude"]), "longitude": float(depart["longitude"])},
+            "arrivee": {"id": arrivee.get("id"), "nom": arrivee.get("nom") or "Étape", "latitude": float(arrivee["latitude"]), "longitude": float(arrivee["longitude"])},
             "distance_metres": round(distance),
             "duree_secondes": round(float(duree)) if duree is not None else None,
             "geometry": resultat["geometry"],
@@ -2014,10 +2012,10 @@ async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=Fals
 @app.get("/api/films/{film_id}/trace")
 async def trace_film(film_id: int):
     """
-    "Sur les traces de {film}" â€” relie tous les lieux de tournage d'un
+    "Sur les traces de {film}" — relie tous les lieux de tournage d'un
     film en Occitanie par le trajet EN VOITURE le plus rapide (pas
-    juste le plus proche voisin), calculÃ© tronÃ§on par tronÃ§on pour
-    rester fiable mÃªme avec beaucoup de lieux (voir
+    juste le plus proche voisin), calculé tronçon par tronçon pour
+    rester fiable même avec beaucoup de lieux (voir
     _itineraire_multi_etapes pour le pourquoi).
     """
     lieux = await fetch_all(
@@ -2028,7 +2026,7 @@ async def trace_film(film_id: int):
         (film_id,),
     )
     if len(lieux) < 2:
-        raise HTTPException(400, "Ce film n'a qu'un seul lieu recensÃ© â€” pas de tracÃ© possible.")
+        raise HTTPException(400, "Ce film n'a qu'un seul lieu recensé — pas de tracé possible.")
 
     lieux_ordonnes = await _ordre_optimise(lieux)
     resultat = await _itineraire_multi_etapes(lieux_ordonnes, "driving-car")
@@ -2040,13 +2038,13 @@ async def trace_film(film_id: int):
 @app.post("/api/parcours/enrichi")
 async def parcours_enrichi(request: Request, response: Response):
     """
-    V4 â€” construit un parcours cinÃ©touristique personnalisÃ© Ã  partir
-    d'une sÃ©lection de lieux de tournage et renvoie les offres
-    touristiques dÃ©jÃ  prÃ©sentes dans amenity_cache autour de chaque
-    Ã©tape.
+    V4 — construit un parcours cinétouristique personnalisé à partir
+    d'une sélection de lieux de tournage et renvoie les offres
+    touristiques déjà présentes dans amenity_cache autour de chaque
+    étape.
 
-    Le calcul est volontairement basÃ© sur les donnÃ©es dÃ©jÃ  en cache :
-    aucune requÃªte Overpass/DATAtourisme en direct depuis une requÃªte
+    Le calcul est volontairement basé sur les données déjà en cache :
+    aucune requête Overpass/DATAtourisme en direct depuis une requête
     visiteur.
 
     Body JSON :
@@ -2056,10 +2054,10 @@ async def parcours_enrichi(request: Request, response: Response):
         "limite_par_categorie": 4
       }
 
-    L'ordre reÃ§u est conservÃ© : c'est le choix de l'utilisateur.
-    L'endpoint recalcule ensuite les tronÃ§ons routiers avec la
-    GÃ©oplateforme IGN et agrÃ¨ge hÃ©bergements, restaurants, activitÃ©s,
-    offices de tourisme et autres catÃ©gories disponibles dans le cache.
+    L'ordre reçu est conservé : c'est le choix de l'utilisateur.
+    L'endpoint recalcule ensuite les tronçons routiers avec la
+    Géoplateforme IGN et agrège hébergements, restaurants, activités,
+    offices de tourisme et autres catégories disponibles dans le cache.
     """
     try:
         body = await request.json()
@@ -2083,7 +2081,7 @@ async def parcours_enrichi(request: Request, response: Response):
     date_sortie = str(body.get("date_sortie") or "")
     budget_max_euros = body.get("budget_max_euros")
     inclure_guides = bool(body.get("inclure_guides", True))
-    carburant = body.get("carburant") or "e10"          # "aucun" dÃ©sactive le volet carburant
+    carburant = body.get("carburant") or "e10"          # "aucun" désactive le volet carburant
     consommation_l_100km = body.get("consommation_l_100km")
     inclure_carburant = bool(body.get("inclure_carburant", True))
     langue_guide = body.get("langue") or None
@@ -2096,17 +2094,17 @@ async def parcours_enrichi(request: Request, response: Response):
         nb_personnes = None
 
     if not isinstance(lieu_ids, list):
-        raise HTTPException(400, "lieu_ids doit Ãªtre une liste")
+        raise HTTPException(400, "lieu_ids doit être une liste")
 
     try:
         lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))
     except (TypeError, ValueError):
-        raise HTTPException(400, "Les identifiants de lieux doivent Ãªtre numÃ©riques")
+        raise HTTPException(400, "Les identifiants de lieux doivent être numériques")
 
     if not lieu_ids:
-        raise HTTPException(400, "SÃ©lectionnez au moins un lieu")
+        raise HTTPException(400, "Sélectionnez au moins un lieu")
     if len(lieu_ids) > 30:
-        raise HTTPException(400, "Un parcours ne peut pas contenir plus de 30 Ã©tapes")
+        raise HTTPException(400, "Un parcours ne peut pas contenir plus de 30 étapes")
     if mode not in {"driving-car", "foot-walking"}:
         raise HTTPException(400, "Mode invalide")
 
@@ -2136,7 +2134,7 @@ async def parcours_enrichi(request: Request, response: Response):
                 duree = max(1, min(int(v.get("duree_minutes")), 600))
             except (TypeError, ValueError, AttributeError):
                 continue
-            visites_guidees_nettoyees.append({"film_id": film_id, "nom": str(v.get("nom") or "Visite guidÃ©e"), "duree_minutes": duree, "lien": v.get("lien"), "heure_debut": v.get("heure_debut"), "heure_fin": v.get("heure_fin")})
+            visites_guidees_nettoyees.append({"film_id": film_id, "nom": str(v.get("nom") or "Visite guidée"), "duree_minutes": duree, "lien": v.get("lien"), "heure_debut": v.get("heure_debut"), "heure_fin": v.get("heure_fin")})
     visites_guidees = visites_guidees_nettoyees
 
     try:
@@ -2182,11 +2180,11 @@ async def parcours_enrichi(request: Request, response: Response):
             etapes, depart, mode, temps_disponible_minutes, temps_visite_minutes, retour_depart
         )
         if not etapes:
-            raise HTTPException(400, "Aucune Ã©tape ne peut tenir dans les critÃ¨res choisis.")
+            raise HTTPException(400, "Aucune étape ne peut tenir dans les critères choisis.")
 
-    # Les visites datÃ©es sont traitÃ©es comme de vraies contraintes horaires.
-    # Si une visite est disponible Ã  une heure prÃ©cise et que l'optimisation est
-    # demandÃ©e, on peut faire passer l'Ã©tape concernÃ©e en prioritÃ©.
+    # Les visites datées sont traitées comme de vraies contraintes horaires.
+    # Si une visite est disponible à une heure précise et que l'optimisation est
+    # demandée, on peut faire passer l'étape concernée en priorité.
     guide_planifie = None
     if inclure_visites_guidees and visites_disponibles and optimiser:
         for guide in visites_disponibles:
@@ -2200,13 +2198,13 @@ async def parcours_enrichi(request: Request, response: Response):
             cible = next((x for x in etapes if int(x["id"]) == guide_planifie["lieu_id"]), None)
             if cible and etapes and int(etapes[0]["id"]) != guide_planifie["lieu_id"]:
                 autres = [x for x in etapes if int(x["id"]) != guide_planifie["lieu_id"]]
-                # Ordre des Ã©tapes suivantes : plus proche voisin PAR LA ROUTE (IGN).
+                # Ordre des étapes suivantes : plus proche voisin PAR LA ROUTE (IGN).
                 etapes = await ordre_plus_proche_voisin_ign([cible] + autres, mode)
 
-    # Guides et mÃ©diateurs dont la zone d'intervention couvre ce parcours.
-    # Ne remplace jamais une visite guidÃ©e existante (visites_disponibles) :
-    # c'est une piste complÃ©mentaire quand aucune offre packagÃ©e n'existe,
-    # ou simplement une option supplÃ©mentaire Ã  cÃ´tÃ©.
+    # Guides et médiateurs dont la zone d'intervention couvre ce parcours.
+    # Ne remplace jamais une visite guidée existante (visites_disponibles) :
+    # c'est une piste complémentaire quand aucune offre packagée n'existe,
+    # ou simplement une option supplémentaire à côté.
     guides_pertinents = (
         await guides_recommandes(etapes, mode=mode, langue=langue_guide, nb_personnes=nb_personnes)
         if inclure_guides else []
@@ -2220,24 +2218,24 @@ async def parcours_enrichi(request: Request, response: Response):
             depart_lon = float(depart.get("longitude"))
             if not (-90 <= depart_lat <= 90 and -180 <= depart_lon <= 180):
                 raise ValueError
-            depart_effectif = {"id": None, "nom": depart.get("nom") or "Point de dÃ©part", "latitude": depart_lat, "longitude": depart_lon}
+            depart_effectif = {"id": None, "nom": depart.get("nom") or "Point de départ", "latitude": depart_lat, "longitude": depart_lon}
         except (TypeError, ValueError, AttributeError):
-            raise HTTPException(400, "Point de dÃ©part invalide")
+            raise HTTPException(400, "Point de départ invalide")
 
     if depart_effectif:
         try:
             resultat_route = await _itineraire_depuis_point(depart_effectif, etapes, mode, retour_depart)
         except GeoplateformeError as exc:
-            raise HTTPException(502, f"ItinÃ©raire IGN indisponible : {exc}") from exc
+            raise HTTPException(502, f"Itinéraire IGN indisponible : {exc}") from exc
     elif len(etapes) >= 2:
         try:
             resultat_route = await _itineraire_multi_etapes(etapes, mode)
         except GeoplateformeError as exc:
-            raise HTTPException(502, f"ItinÃ©raire IGN indisponible : {exc}") from exc
+            raise HTTPException(502, f"Itinéraire IGN indisponible : {exc}") from exc
 
-    # Les catÃ©gories sont celles rÃ©ellement prÃ©sentes dans amenity_cache.
-    # Cela permet Ã  V4 d'Ã©voluer sans changer cet endpoint lorsque de
-    # nouvelles catÃ©gories sont importÃ©es.
+    # Les catégories sont celles réellement présentes dans amenity_cache.
+    # Cela permet à V4 d'évoluer sans changer cet endpoint lorsque de
+    # nouvelles catégories sont importées.
     rows = await fetch_all(
         f"""
         SELECT lieu_tournage_id, categorie, nom, latitude, longitude,
@@ -2249,21 +2247,21 @@ async def parcours_enrichi(request: Request, response: Response):
                distance_voiture_metres, duree_voiture_secondes
         FROM amenity_cache
         WHERE lieu_tournage_id IN ({placeholders})
-          AND categorie <> 'station_service'   -- les stations ont leur propre volet Â« carburants Â»
+          AND categorie <> 'station_service'   -- les stations ont leur propre volet « carburants »
         ORDER BY lieu_tournage_id, categorie
         """,
         tuple(lieu_ids),
     )
 
-    # AgrÃ©gation globale sans doublons. Un mÃªme Ã©tablissement peut Ãªtre
-    # proche de plusieurs Ã©tapes ; on le garde une seule fois dans la
-    # synthÃ¨se globale et on conserve ses Ã©tapes de proximitÃ©.
+    # Agrégation globale sans doublons. Un même établissement peut être
+    # proche de plusieurs étapes ; on le garde une seule fois dans la
+    # synthèse globale et on conserve ses étapes de proximité.
     categories = {}
     vus = {}
     par_etape = {str(x): [] for x in lieu_ids}
 
-    # Classement des offres : distance de ROUTE IGN (prÃ©calculÃ©e) selon le mode de
-    # dÃ©placement ; le vol d'oiseau (distance_metres) ne sert que si elle manque.
+    # Classement des offres : distance de ROUTE IGN (précalculée) selon le mode de
+    # déplacement ; le vol d'oiseau (distance_metres) ne sert que si elle manque.
     cle_route = "distance_voiture_metres" if mode == "driving-car" else "distance_pied_metres"
 
     def _distance_classement(r):
@@ -2277,8 +2275,8 @@ async def parcours_enrichi(request: Request, response: Response):
         item["distance_classement_metres"] = _distance_classement(row)
         par_etape[str(item["lieu_tournage_id"])].append(item)
 
-        # ClÃ© stable : osm_id n'est pas toujours disponible, donc on
-        # utilise catÃ©gorie + coordonnÃ©es + nom normalisÃ©.
+        # Clé stable : osm_id n'est pas toujours disponible, donc on
+        # utilise catégorie + coordonnées + nom normalisé.
         cle = (
             categorie,
             round(float(row["latitude"]), 5),
@@ -2316,17 +2314,17 @@ async def parcours_enrichi(request: Request, response: Response):
         items.sort(key=lambda x: (x.get("score_personnalise", 0), -(x.get("meilleure_distance_metres") or 10**9)), reverse=True)
         categories[categorie] = items[:limite]
 
-    # Recommandations individualisÃ©es : score par Ã©tape, sans inventer de
-    # lien de rÃ©servation.
+    # Recommandations individualisées : score par étape, sans inventer de
+    # lien de réservation.
     recommandations_par_etape = _recommandations_par_etape(
         etapes, categories, par_etape, budget_level, accessibilite, mode
     )
 
-    # RÃ©duire Ã©galement le dÃ©tail par Ã©tape afin de ne pas envoyer une
-    # rÃ©ponse inutilement volumineuse au navigateur.
-    # `limite_par_categorie` s'applique PAR catÃ©gorie : avant, les `limite` offres les plus
-    # proches toutes catÃ©gories confondues Ã©taient gardÃ©es, et des restaurants proches
-    # pouvaient Ã©vincer tous les hÃ©bergements d'une Ã©tape. Les offres dont la distance de
+    # Réduire également le détail par étape afin de ne pas envoyer une
+    # réponse inutilement volumineuse au navigateur.
+    # `limite_par_categorie` s'applique PAR catégorie : avant, les `limite` offres les plus
+    # proches toutes catégories confondues étaient gardées, et des restaurants proches
+    # pouvaient évincer tous les hébergements d'une étape. Les offres dont la distance de
     # route IGN est connue passent avant celles qui n'ont que le vol d'oiseau.
     for cle, items in par_etape.items():
         if categories_interet:
@@ -2356,7 +2354,7 @@ async def parcours_enrichi(request: Request, response: Response):
         }
     duree_visites_guidees = sum(int(v["duree_minutes"]) for v in film_guides.values())
 
-    # Planning horaire indicatif : il utilise les durÃ©es IGN des tronÃ§ons et
+    # Planning horaire indicatif : il utilise les durées IGN des tronçons et
     # le temps de visite choisi. Il s'agit d'un planning estimatif, pas d'une
     # promesse d'horaires d'ouverture.
     def _minutes_hhmm(hhmm):
@@ -2383,8 +2381,8 @@ async def parcours_enrichi(request: Request, response: Response):
             "temps_visite_minutes": int(temps_visite_minutes),
         })
         guide = film_guides.get(int(etape.get("film_id") or 0))
-        # Une visite guidÃ©e liÃ©e Ã  une Å“uvre n'est ajoutÃ©e qu'une seule fois,
-        # sur la premiÃ¨re Ã©tape de cette Å“uvre prÃ©sente dans le parcours.
+        # Une visite guidée liée à une œuvre n'est ajoutée qu'une seule fois,
+        # sur la première étape de cette œuvre présente dans le parcours.
         if guide and not any(x.get("type") == "visite_guidee" and x.get("film_id") == int(etape.get("film_id") or 0) for x in planning_horaire):
             debut_guide = minute_courante
             attente = 0
@@ -2406,13 +2404,13 @@ async def parcours_enrichi(request: Request, response: Response):
                 "lien": guide.get("lien"),
             })
 
-    # Seules les visites guidÃ©es rÃ©ellement placÃ©es dans le planning comptent.
+    # Seules les visites guidées réellement placées dans le planning comptent.
     duree_visites_guidees = sum(
         int(x.get("temps_visite_minutes") or 0)
         for x in planning_horaire if x.get("type") == "visite_guidee"
     )
 
-    # Calcul final aprÃ¨s construction du planning.
+    # Calcul final après construction du planning.
     attente_visites_guidees_minutes = sum(
         int(x.get("attente_minutes") or 0)
         for x in planning_horaire
@@ -2430,7 +2428,7 @@ async def parcours_enrichi(request: Request, response: Response):
         else duree_totale_estimee <= temps_disponible_minutes * 60
     )
 
-    # Volet carburant : prix des stations autour du dÃ©part et de chaque Ã©tape.
+    # Volet carburant : prix des stations autour du départ et de chaque étape.
     carburants = None
     if inclure_carburant and mode == "driving-car":
         try:
@@ -2444,9 +2442,9 @@ async def parcours_enrichi(request: Request, response: Response):
             logging.getLogger(__name__).exception("Volet carburant indisponible")
             carburants = None
 
-    # Budget indicatif : offre la moins chÃ¨re parmi celles dont le tarif est
-    # jugÃ© fiable (voir _tarif_fiable), plus le carburant estimÃ©. Pelify ne
-    # transforme jamais une absence de tarif en prix inventÃ©.
+    # Budget indicatif : offre la moins chère parmi celles dont le tarif est
+    # jugé fiable (voir _tarif_fiable), plus le carburant estimé. Pelify ne
+    # transforme jamais une absence de tarif en prix inventé.
     budget_items = []
     for categorie in ("restaurant", "activite", "hebergement"):
         candidats = [(_tarif_fiable(x, categorie), x) for x in (categories.get(categorie) or [])]
@@ -2458,7 +2456,7 @@ async def parcours_enrichi(request: Request, response: Response):
     if carburants and carburants.get("actif") and carburants.get("cout_estime_eur") is not None:
         budget_items.append({
             "categorie": "carburant", "estimation": True, "devise": "EUR",
-            "nom": f"{carburants['carburant_libelle']}, {carburants['litres_estimes']} L estimÃ©s",
+            "nom": f"{carburants['carburant_libelle']}, {carburants['litres_estimes']} L estimés",
             "tarif_min": float(carburants["cout_estime_eur"]),
         })
     budget_estime_euros = round(sum(x["tarif_min"] for x in budget_items), 2) if budget_items else None
@@ -2483,7 +2481,7 @@ async def parcours_enrichi(request: Request, response: Response):
         "date_sortie": date_sortie or None,
         "scenario_recommande": {
             "type": "visite_guidee" if guide_planifie else "parcours_personnalise",
-            "message": (f"Commencez par {guide_planifie['nom']} Ã  {guide_planifie.get('heure_debut')} puis poursuivez avec les Ã©tapes optimisÃ©es." if guide_planifie and guide_planifie.get("heure_debut") else "Parcours calculÃ© selon vos critÃ¨res."),
+            "message": (f"Commencez par {guide_planifie['nom']} à {guide_planifie.get('heure_debut')} puis poursuivez avec les étapes optimisées." if guide_planifie and guide_planifie.get("heure_debut") else "Parcours calculé selon vos critères."),
         },
         "budget_respecte": budget_respecte,
         "categories_interet": categories_interet,
@@ -2515,29 +2513,29 @@ async def parcours_enrichi(request: Request, response: Response):
     return reponse
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# V5 â€” ANNUAIRE DES GUIDES ET MÃ‰DIATEURS CINÃ‰TOURISTIQUES
+# ══════════════════════════════════════════════════════════════
+# V5 — ANNUAIRE DES GUIDES ET MÉDIATEURS CINÉTOURISTIQUES
 #
-# MVP volontairement simple : pas de compte guide, pas de rÃ©servation
+# MVP volontairement simple : pas de compte guide, pas de réservation
 # ni de messagerie in-app. Un guide est une fiche saisie manuellement
-# (via POST, protÃ©gÃ© par ADMIN_TOKEN, ou directement en base), avec
-# une zone d'intervention = un point + un rayon en kilomÃ¨tres. Le
+# (via POST, protégé par ADMIN_TOKEN, ou directement en base), avec
+# une zone d'intervention = un point + un rayon en kilomètres. Le
 # matching (backend/guides.py) filtre par zone puis trie par
-# pertinence ; il ne renvoie jamais de score chiffrÃ© au visiteur.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# pertinence ; il ne renvoie jamais de score chiffré au visiteur.
+# ══════════════════════════════════════════════════════════════
 
 @app.get("/api/guides")
 async def liste_guides(statut: str = Query("actif")):
     """
-    Annuaire public. `statut=actif` (par dÃ©faut) ne montre que les
-    fiches publiÃ©es ; `statut=tous` permet Ã  l'admin de voir aussi les
-    fiches en_attente/inactives (pas de donnÃ©es sensibles dans cette
-    table, donc pas besoin de protÃ©ger la lecture elle-mÃªme).
+    Annuaire public. `statut=actif` (par défaut) ne montre que les
+    fiches publiées ; `statut=tous` permet à l'admin de voir aussi les
+    fiches en_attente/inactives (pas de données sensibles dans cette
+    table, donc pas besoin de protéger la lecture elle-même).
 
-    Chaque fiche porte en plus : `fonction` et `specialites_libelles` (libellÃ©s prÃªts Ã 
-    afficher), `commune`, `code_postal` et `departement` (dÃ©duit du code postal). L'adresse
-    postale n'est pas exposÃ©e. Commune et code postal manquants sont complÃ©tÃ©s une fois par
-    gÃ©ocodage inverse puis mÃ©morisÃ©s.
+    Chaque fiche porte en plus : `fonction` et `specialites_libelles` (libellés prêts à
+    afficher), `commune`, `code_postal` et `departement` (déduit du code postal). L'adresse
+    postale n'est pas exposée. Commune et code postal manquants sont complétés une fois par
+    géocodage inverse puis mémorisés.
     """
     if statut == "tous":
         where, params = "", ()
@@ -2557,7 +2555,7 @@ async def liste_guides(statut: str = Query("actif")):
     try:
         lignes = await fetch_all(requete.format(extra=", commune, code_postal"), params)
     except Exception:
-        # Colonnes commune/code_postal absentes (migration v29 pas encore appliquÃ©e).
+        # Colonnes commune/code_postal absentes (migration v29 pas encore appliquée).
         logging.getLogger(__name__).warning("Colonnes commune/code_postal absentes de guides")
         lignes = await fetch_all(requete.format(extra=""), params)
     lignes = [dict(g) for g in lignes]
@@ -2574,12 +2572,12 @@ async def liste_guides(statut: str = Query("actif")):
 @app.post("/api/guides")
 async def creer_guide(request: Request):
     """
-    CrÃ©ation d'une fiche guide. ProtÃ©gÃ© par un jeton d'administration
-    simple (en-tÃªte X-Admin-Token = variable d'env ADMIN_TOKEN) : il
+    Création d'une fiche guide. Protégé par un jeton d'administration
+    simple (en-tête X-Admin-Token = variable d'env ADMIN_TOKEN) : il
     n'y a pour l'instant aucun compte utilisateur guide, donc pas de
-    self-service â€” c'est Pelify (ou l'office de tourisme partenaire)
-    qui saisit les fiches vÃ©rifiÃ©es, comme convenu pour le lancement
-    limitÃ© Ã  l'Occitanie.
+    self-service — c'est Pelify (ou l'office de tourisme partenaire)
+    qui saisit les fiches vérifiées, comme convenu pour le lancement
+    limité à l'Occitanie.
     """
     exiger_admin(request)
     try:
@@ -2606,7 +2604,7 @@ async def creer_guide(request: Request):
     def _liste_valeurs(cle: str, valides: set[str]) -> list[str]:
         valeurs = body.get(cle) or []
         if not isinstance(valeurs, list):
-            raise HTTPException(400, f"{cle} doit Ãªtre une liste")
+            raise HTTPException(400, f"{cle} doit être une liste")
         valeurs = [str(x) for x in valeurs]
         invalides = [x for x in valeurs if x not in valides]
         if invalides:
@@ -2650,18 +2648,18 @@ async def creer_guide(request: Request):
             body.get("photo_url"), statut,
         ),
     )
-    return {"id": guide_id, "message": "Guide crÃ©Ã©"}
+    return {"id": guide_id, "message": "Guide créé"}
 
 
 @app.post("/api/guides/candidature")
 async def candidature_guide(request: Request):
     """
-    Formulaire public d'inscription Ã  l'annuaire â€” voir
-    frontend/devenir-guide.html. Contrairement Ã  POST /api/guides,
+    Formulaire public d'inscription à l'annuaire — voir
+    frontend/devenir-guide.html. Contrairement à POST /api/guides,
     aucun jeton n'est requis : n'importe qui peut candidater, mais la
-    fiche est TOUJOURS crÃ©Ã©e avec statut='en_attente' et n'apparaÃ®t
+    fiche est TOUJOURS créée avec statut='en_attente' et n'apparaît
     donc jamais dans le matching (guides_recommandes ne lit que les
-    fiches statut='actif') tant qu'elle n'a pas Ã©tÃ© validÃ©e Ã  la main
+    fiches statut='actif') tant qu'elle n'a pas été validée à la main
     via PATCH /api/guides/{id}/statut.
     """
     try:
@@ -2669,9 +2667,9 @@ async def candidature_guide(request: Request):
     except Exception:
         raise HTTPException(400, "JSON invalide")
 
-    # PiÃ¨ge Ã  robots : un champ cachÃ© cÃ´tÃ© formulaire, que seul un bot
+    # Piège à robots : un champ caché côté formulaire, que seul un bot
     # remplit habituellement. On ne le dit pas dans le message d'erreur
-    # pour ne pas aider Ã  le contourner.
+    # pour ne pas aider à le contourner.
     if str(body.get("site_web_confirmation") or "").strip():
         raise HTTPException(400, "Candidature invalide")
 
@@ -2703,7 +2701,7 @@ async def candidature_guide(request: Request):
         if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
             raise ValueError
     except (TypeError, ValueError):
-        raise HTTPException(400, "Indiquez la zone oÃ¹ vous intervenez (latitude/longitude)")
+        raise HTTPException(400, "Indiquez la zone où vous intervenez (latitude/longitude)")
 
     rayon_intervention_km = body.get("rayon_intervention_km")
     try:
@@ -2733,12 +2731,12 @@ async def candidature_guide(request: Request):
             None, "en_attente",
         ),
     )
-    return {"id": guide_id, "message": "Merci ! Votre candidature a Ã©tÃ© enregistrÃ©e et sera vÃ©rifiÃ©e avant publication."}
+    return {"id": guide_id, "message": "Merci ! Votre candidature a été enregistrée et sera vérifiée avant publication."}
 
 
 @app.patch("/api/guides/{guide_id}/statut")
 async def changer_statut_guide(guide_id: int, request: Request):
-    """Publier/dÃ©publier une fiche (ex: passer 'en_attente' Ã  'actif' aprÃ¨s vÃ©rification)."""
+    """Publier/dépublier une fiche (ex: passer 'en_attente' à 'actif' après vérification)."""
     exiger_admin(request)
     try:
         body = await request.json()
@@ -2756,15 +2754,15 @@ async def changer_statut_guide(guide_id: int, request: Request):
     return {"id": guide_id, "statut": statut}
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# V5.1 â€” VISITES CINÃ‰TOURISTIQUES (100% BASE DE DONNÃ‰ES)
+# ══════════════════════════════════════════════════════════════
+# V5.1 — VISITES CINÉTOURISTIQUES (100% BASE DE DONNÉES)
 #
-# Depuis migration_v27, plus aucune visite n'est codÃ©e en dur dans
-# visites_cinetouristiques.py : tout vient de la table du mÃªme nom.
-# MÃªmes principes que pour les guides : lecture publique, Ã©criture
-# protÃ©gÃ©e par ADMIN_TOKEN (pas de self-service ici, les crÃ©neaux
-# datÃ©s engagent la crÃ©dibilitÃ© de Pelify).
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Depuis migration_v27, plus aucune visite n'est codée en dur dans
+# visites_cinetouristiques.py : tout vient de la table du même nom.
+# Mêmes principes que pour les guides : lecture publique, écriture
+# protégée par ADMIN_TOKEN (pas de self-service ici, les créneaux
+# datés engagent la crédibilité de Pelify).
+# ══════════════════════════════════════════════════════════════
 
 def _slugifier_visite(nom: str) -> str:
     import re as _re
@@ -2814,9 +2812,9 @@ async def creer_visite(request: Request):
     try:
         film_ids = list(dict.fromkeys(int(x) for x in (body.get("film_ids") or [])))
     except (TypeError, ValueError):
-        raise HTTPException(400, "film_ids doit Ãªtre une liste d'identifiants numÃ©riques")
+        raise HTTPException(400, "film_ids doit être une liste d'identifiants numériques")
     if not film_ids:
-        raise HTTPException(400, "SÃ©lectionnez au moins un film")
+        raise HTTPException(400, "Sélectionnez au moins un film")
     try:
         duree_minutes = max(1, min(int(body.get("duree_minutes")), 600))
     except (TypeError, ValueError):
@@ -2825,7 +2823,7 @@ async def creer_visite(request: Request):
     creneaux = body.get("creneaux") or []
     creneaux_regles = body.get("creneaux_regles") or []
     if not isinstance(creneaux, list) or not isinstance(creneaux_regles, list):
-        raise HTTPException(400, "creneaux et creneaux_regles doivent Ãªtre des listes")
+        raise HTTPException(400, "creneaux et creneaux_regles doivent être des listes")
 
     slug = str(body.get("slug") or _slugifier_visite(nom))
     statut = str(body.get("statut") or "actif")
@@ -2849,16 +2847,16 @@ async def creer_visite(request: Request):
         )
     except Exception as exc:
         if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
-            raise HTTPException(409, f"Le slug Â« {slug} Â» existe dÃ©jÃ , prÃ©cisez-en un autre.")
+            raise HTTPException(409, f"Le slug « {slug} » existe déjà, précisez-en un autre.")
         raise
-    return {"id": visite_id, "slug": slug, "message": "Visite crÃ©Ã©e"}
+    return {"id": visite_id, "slug": slug, "message": "Visite créée"}
 
 
 @app.patch("/api/visites/{visite_id}")
 async def modifier_visite(visite_id: int, request: Request):
     """
-    Mise Ã  jour partielle : n'envoyer que les champs Ã  changer. Utile
-    pour corriger un crÃ©neau (`creneaux`) sans retaper toute la fiche.
+    Mise à jour partielle : n'envoyer que les champs à changer. Utile
+    pour corriger un créneau (`creneaux`) sans retaper toute la fiche.
     """
     exiger_admin(request)
     try:
@@ -2870,7 +2868,7 @@ async def modifier_visite(visite_id: int, request: Request):
     if "nom" in body:
         nom = str(body["nom"] or "").strip()
         if not nom:
-            raise HTTPException(400, "nom ne peut pas Ãªtre vide")
+            raise HTTPException(400, "nom ne peut pas être vide")
         champs.append("nom = %s"); valeurs.append(nom)
     if "description" in body:
         champs.append("description = %s"); valeurs.append(body["description"])
@@ -2887,15 +2885,15 @@ async def modifier_visite(visite_id: int, request: Request):
         except (TypeError, ValueError):
             raise HTTPException(400, "film_ids invalide")
         if not film_ids:
-            raise HTTPException(400, "film_ids ne peut pas Ãªtre vide")
+            raise HTTPException(400, "film_ids ne peut pas être vide")
         champs.append("film_ids = %s"); valeurs.append(film_ids)
     if "creneaux" in body:
         if not isinstance(body["creneaux"], list):
-            raise HTTPException(400, "creneaux doit Ãªtre une liste")
+            raise HTTPException(400, "creneaux doit être une liste")
         champs.append("creneaux = %s::jsonb"); valeurs.append(json.dumps(body["creneaux"]))
     if "creneaux_regles" in body:
         if not isinstance(body["creneaux_regles"], list):
-            raise HTTPException(400, "creneaux_regles doit Ãªtre une liste")
+            raise HTTPException(400, "creneaux_regles doit être une liste")
         champs.append("creneaux_regles = %s::jsonb"); valeurs.append(json.dumps(body["creneaux_regles"]))
     if "statut" in body:
         if body["statut"] not in {"actif", "inactif", "en_attente"}:
@@ -2903,7 +2901,7 @@ async def modifier_visite(visite_id: int, request: Request):
         champs.append("statut = %s"); valeurs.append(body["statut"])
 
     if not champs:
-        raise HTTPException(400, "Aucun champ Ã  mettre Ã  jour")
+        raise HTTPException(400, "Aucun champ à mettre à jour")
 
     valeurs.append(visite_id)
     resultat = await execute(
@@ -2912,12 +2910,12 @@ async def modifier_visite(visite_id: int, request: Request):
     )
     if not resultat:
         raise HTTPException(404, "Visite introuvable")
-    return {"id": visite_id, "message": "Visite mise Ã  jour"}
+    return {"id": visite_id, "message": "Visite mise à jour"}
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# V4.7 â€” HISTORIQUE, TABLEAU DE BORD ET GÃ‰NÃ‰RATEUR DE PARCOURS
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# V4.7 — HISTORIQUE, TABLEAU DE BORD ET GÉNÉRATEUR DE PARCOURS
+# ══════════════════════════════════════════════════════════════
 
 @app.get("/api/me")
 async def api_me(request: Request, response: Response):
@@ -3012,25 +3010,25 @@ async def api_historique_supprimer(parcours_id: int, request: Request, response:
 
 
 def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_minutes, max_scenarios=4, max_etapes=5):
-    """Construit des scÃ©narios gÃ©ographiques lisibles, sans prÃ©tendre optimiser l'itinÃ©raire IGN.
+    """Construit des scénarios géographiques lisibles, sans prétendre optimiser l'itinéraire IGN.
 
-    Le but est de proposer des familles de lieux cohÃ©rentes avant le calcul IGN final.
-    On regroupe les candidats autour de plusieurs noyaux gÃ©ographiques et on dÃ©doublonne
-    les coordonnÃ©es quasi identiques (un mÃªme lieu peut Ãªtre associÃ© Ã  plusieurs Å“uvres).
+    Le but est de proposer des familles de lieux cohérentes avant le calcul IGN final.
+    On regroupe les candidats autour de plusieurs noyaux géographiques et on dédoublonne
+    les coordonnées quasi identiques (un même lieu peut être associé à plusieurs œuvres).
     """
     if not candidats:
         return []
     dlat = float(depart.get("latitude")); dlon = float(depart.get("longitude"))
     mode = mode or "driving-car"
-    # Rayon de cohÃ©rence du scÃ©nario. Plus serrÃ© Ã  pied.
+    # Rayon de cohérence du scénario. Plus serré à pied.
     rayon = 18000 if mode == "foot-walking" else 55000
     temps_h = max(0.5, float(temps_minutes or 240) / 60.0)
-    # Le nombre de lieux qu'un scÃ©nario peut raisonnablement contenir avant IGN.
+    # Le nombre de lieux qu'un scénario peut raisonnablement contenir avant IGN.
     max_places_temps = max(2, min(max_etapes, int((temps_minutes or 240) / max(15, int(temps_visite_minutes or 45)))))
     max_places_temps = min(max_places_temps, 6)
 
-    # DÃ©doublonnage gÃ©ographique : un mÃªme point de tournage liÃ© Ã  plusieurs Å“uvres
-    # ne doit pas consommer deux Ã©tapes dans un scÃ©nario.
+    # Dédoublonnage géographique : un même point de tournage lié à plusieurs œuvres
+    # ne doit pas consommer deux étapes dans un scénario.
     uniques = []
     vus = set()
     for x in candidats:
@@ -3047,13 +3045,13 @@ def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_m
         uniques.append(x)
 
     uniques.sort(key=lambda x: x["distance_depart_metres"])
-    # On garde un vivier raisonnable : assez large pour proposer plusieurs scÃ©narios.
+    # On garde un vivier raisonnable : assez large pour proposer plusieurs scénarios.
     vivier = uniques[:40]
     if not vivier:
         return []
 
-    # Noyaux : le dÃ©part + les candidats espacÃ©s. Cela produit des scÃ©narios
-    # gÃ©ographiques diffÃ©rents plutÃ´t qu'une simple liste triÃ©e par distance.
+    # Noyaux : le départ + les candidats espacés. Cela produit des scénarios
+    # géographiques différents plutôt qu'une simple liste triée par distance.
     noyaux = []
     for x in vivier:
         if all(haversine_metres(float(x["latitude"]), float(x["longitude"]), float(n["latitude"]), float(n["longitude"])) > rayon * 0.55 for n in noyaux):
@@ -3080,7 +3078,7 @@ def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_m
                 break
         if not lieux:
             continue
-        # Estimation prudente et explicite : visites + une approximation gÃ©ographique.
+        # Estimation prudente et explicite : visites + une approximation géographique.
         distance_approx = 0.0
         prev = (dlat, dlon)
         for x in lieux:
@@ -3088,7 +3086,7 @@ def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_m
             prev = (float(x["latitude"]), float(x["longitude"]))
         if retour := False:
             distance_approx += haversine_metres(prev[0], prev[1], dlat, dlon)
-        # Coefficient de prudence : on ne prÃ©sente jamais ceci comme le temps IGN rÃ©el.
+        # Coefficient de prudence : on ne présente jamais ceci comme le temps IGN réel.
         vitesse_kmh = 35 if mode == "driving-car" else 4.2
         deplacement_min = int((distance_approx / 1000) / vitesse_kmh * 60 * 1.25)
         visite_min = len(lieux) * int(temps_visite_minutes or 45)
@@ -3113,7 +3111,7 @@ def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_m
             "distance_depuis_depart_metres": int(haversine_metres(dlat, dlon, float(noyau["latitude"]), float(noyau["longitude"]))),
             "distance_depuis_depart_km": depart_km,
             "compatible_temps": total_min <= int(temps_minutes or 240),
-            "note": "Estimation indicative avant calcul IGN ; le trajet rÃ©el sera recalculÃ© aprÃ¨s votre sÃ©lection.",
+            "note": "Estimation indicative avant calcul IGN ; le trajet réel sera recalculé après votre sélection.",
         })
     scenarios.sort(key=lambda s: (not s["compatible_temps"], s["temps_approx_minutes"], s["distance_depuis_depart_metres"]))
     return scenarios[:max_scenarios]
@@ -3121,11 +3119,11 @@ def _construire_scenarios(candidats, depart, mode, temps_minutes, temps_visite_m
 
 @app.post("/api/parcours/generer")
 async def api_generer_parcours(request: Request, response: Response):
-    """GÃ©nÃ¨re des possibilitÃ©s/scÃ©narios Ã  partir des critÃ¨res utilisateur.
+    """Génère des possibilités/scénarios à partir des critères utilisateur.
 
-    Cette Ã©tape ne remplace pas le calcul IGN : elle construit un vivier et des
-    scÃ©narios gÃ©ographiquement cohÃ©rents. Le calcul IGN final intervient aprÃ¨s
-    sÃ©lection des lieux.
+    Cette étape ne remplace pas le calcul IGN : elle construit un vivier et des
+    scénarios géographiquement cohérents. Le calcul IGN final intervient après
+    sélection des lieux.
     """
     try:
         body = await request.json()
@@ -3137,10 +3135,10 @@ async def api_generer_parcours(request: Request, response: Response):
         retour = bool(body.get("retour_depart", False))
         max_etapes = max(2, min(int(body.get("max_etapes") or 8), 15))
         if not depart or depart.get("latitude") is None or depart.get("longitude") is None:
-            raise HTTPException(400, "Un point de dÃ©part est nÃ©cessaire pour gÃ©nÃ©rer automatiquement des possibilitÃ©s.")
+            raise HTTPException(400, "Un point de départ est nécessaire pour générer automatiquement des possibilités.")
 
-        # Avec des lieux dÃ©jÃ  choisis, on construit les scÃ©narios sur ce vivier.
-        # Sans lieux, on cherche autour du point de dÃ©part.
+        # Avec des lieux déjà choisis, on construit les scénarios sur ce vivier.
+        # Sans lieux, on cherche autour du point de départ.
         if lieu_ids:
             lieu_ids = list(dict.fromkeys(int(x) for x in lieu_ids))[:40]
         else:
@@ -3158,9 +3156,9 @@ async def api_generer_parcours(request: Request, response: Response):
             lieu_ids = [int(x["id"]) for x in candidates[:60]]
 
         if not lieu_ids:
-            raise HTTPException(404, "Aucun lieu de tournage trouvÃ© autour du dÃ©part.")
+            raise HTTPException(404, "Aucun lieu de tournage trouvé autour du départ.")
 
-        # RequÃªte IN paramÃ©trÃ©e, compatible asyncpg/psycopg selon le driver utilisÃ©.
+        # Requête IN paramétrée, compatible asyncpg/psycopg selon le driver utilisé.
         placeholders = ",".join([f"%s"] * len(lieu_ids))
         candidats_lieux = await fetch_all(
             f"""SELECT l.id, l.nom, l.commune, l.departement, l.latitude, l.longitude,
@@ -3197,39 +3195,39 @@ async def api_generer_parcours(request: Request, response: Response):
         }
 
     except HTTPException:
-        # DÃ©jÃ  une erreur volontaire (400/404 ci-dessus) : FastAPI la
-        # sÃ©rialise dÃ©jÃ  correctement en JSON, on la laisse remonter.
+        # Déjà une erreur volontaire (400/404 ci-dessus) : FastAPI la
+        # sérialise déjà correctement en JSON, on la laisse remonter.
         raise
 
     except Exception as exc:
-        # Toute autre exception non prÃ©vue plantait silencieusement et
-        # Starlette renvoyait "Internal Server Error" en texte brut â€”
-        # ce que le frontend ne peut pas parser en JSON (d'oÃ¹ l'erreur
+        # Toute autre exception non prévue plantait silencieusement et
+        # Starlette renvoyait "Internal Server Error" en texte brut —
+        # ce que le frontend ne peut pas parser en JSON (d'où l'erreur
         # "Unexpected token 'I', 'Internal S'... is not valid JSON").
-        # On journalise la trace complÃ¨te cÃ´tÃ© serveur (visible dans
-        # les logs de dÃ©ploiement) et on renvoie une VRAIE erreur JSON,
-        # avec le message affichÃ© tel quel cÃ´tÃ© app pour diagnostiquer
-        # prÃ©cisÃ©ment la cause au prochain essai.
+        # On journalise la trace complète côté serveur (visible dans
+        # les logs de déploiement) et on renvoie une VRAIE erreur JSON,
+        # avec le message affiché tel quel côté app pour diagnostiquer
+        # précisément la cause au prochain essai.
         logger.exception(
             "Erreur inattendue dans /api/parcours/generer"
         )
         raise HTTPException(
             500,
-            f"Erreur lors de la gÃ©nÃ©ration des possibilitÃ©s : {exc}",
+            f"Erreur lors de la génération des possibilités : {exc}",
         )
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# PAGES RENDUES CÃ”TÃ‰ SERVEUR (SEO)
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ══════════════════════════════════════════════════════════════
+# PAGES RENDUES CÔTÉ SERVEUR (SEO)
+# ══════════════════════════════════════════════════════════════
 
 @app.get("/films/{slug_id}", response_class=HTMLResponse)
 async def page_film(request: Request, slug_id: str):
     """
     URL du type /films/le-pacte-des-loups-42. Le slug n'est pas
-    utilisÃ© pour la recherche en base (juste l'id final) â€” s'il ne
-    correspond pas au slug canonique du film (titre changÃ©, faute de
+    utilisé pour la recherche en base (juste l'id final) — s'il ne
+    correspond pas au slug canonique du film (titre changé, faute de
     frappe dans un lien externe...), on redirige en 301 vers la bonne
-    URL plutÃ´t que d'afficher une page dupliquÃ©e sous deux adresses
+    URL plutôt que d'afficher une page dupliquée sous deux adresses
     (mauvais pour le SEO).
     """
     try:
@@ -3273,8 +3271,8 @@ async def page_film(request: Request, slug_id: str):
 async def sitemap():
     """
     Sitemap XML dynamique pour Google.
-    Inclut uniquement les contenus publiÃ©s en Occitanie.
-    Les URLs des films sont gÃ©nÃ©rÃ©es avec la mÃªme logique canonique
+    Inclut uniquement les contenus publiés en Occitanie.
+    Les URLs des films sont générées avec la même logique canonique
     que les pages /films/{slug}-{id}.
     """
     films = await fetch_all(
@@ -3336,9 +3334,8 @@ Sitemap: {BASE_URL}/sitemap.xml
 """
 
 
-# Doit rester la DERNIÃˆRE route dÃ©clarÃ©e : sert index.html, style.css,
-# app.js, manifest.json, sw.jsâ€¦ Si elle Ã©tait dÃ©clarÃ©e plus haut, elle
-# intercepterait toutes les requÃªtes avant que /films/{slug_id},
+# Doit rester la DERNIÈRE route déclarée : sert index.html, style.css,
+# app.js, manifest.json, sw.js… Si elle était déclarée plus haut, elle
+# intercepterait toutes les requêtes avant que /films/{slug_id},
 # /sitemap.xml etc. n'aient une chance de matcher.
 app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..", "frontend"), html=True), name="static")
-

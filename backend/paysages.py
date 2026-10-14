@@ -1,22 +1,22 @@
-﻿"""
-backend/paysages.py â€” Module "Landscape Studio" : repÃ©rage et gestion
-de paysages pour projets audiovisuels, greffÃ© sur Pelify.
+"""
+backend/paysages.py — Module "Landscape Studio" : repérage et gestion
+de paysages pour projets audiovisuels, greffé sur Pelify.
 
 V1 volontairement sans IA (cf. cahier des charges) : base de paysages
-+ mÃ©tadonnÃ©es + recherche multicritÃ¨re + carte + import Openverse.
-Extension dÃ´me 3D : chaque paysage porte un `media_type` (photo /
++ métadonnées + recherche multicritère + carte + import Openverse.
+Extension dôme 3D : chaque paysage porte un `media_type` (photo /
 panorama / 360 / video_360 / a_capturer) et un `type_reference`
-(personnelle / artiste / open_source / panorama_360), et chaque scÃ¨ne
+(personnelle / artiste / open_source / panorama_360), et chaque scène
 porte une `intention_artistique` + un `format_souhaite`. Pas de score
-de compatibilitÃ© automatique pour l'instant (volontaire â€” cf. rÃ©ponse
-sur le dispositif de projection non encore spÃ©cifiÃ©) : on affiche
+de compatibilité automatique pour l'instant (volontaire — cf. réponse
+sur le dispositif de projection non encore spécifié) : on affiche
 juste les formats disponibles, le front s'occupe des pictos.
 
-RattachÃ© Ã  l'identitÃ© pseudonyme existante de main.py (cookie
-`pelify_user` â†’ table pelify_users) plutÃ´t qu'un second systÃ¨me de
-comptes. `_ensure_profile` est dupliquÃ©e ici Ã  l'identique (et non
-importÃ©e depuis main.py) pour Ã©viter un import circulaire, puisque
-main.py importe ce module â€” si tu fais Ã©voluer la logique de profil
+Rattaché à l'identité pseudonyme existante de main.py (cookie
+`pelify_user` → table pelify_users) plutôt qu'un second système de
+comptes. `_ensure_profile` est dupliquée ici à l'identique (et non
+importée depuis main.py) pour éviter un import circulaire, puisque
+main.py importe ce module — si tu fais évoluer la logique de profil
 dans main.py, reporte le changement ici aussi.
 """
 
@@ -51,7 +51,7 @@ STATUTS_VERIFICATION_LICENCE = {
 }
 
 # Licences Creative Commons qui autorisent l'usage commercial
-# selon les conditions propres Ã  chaque licence.
+# selon les conditions propres à chaque licence.
 LICENCES_COMMERCIALES = {
     "cc0",
     "pdm",
@@ -77,7 +77,7 @@ LICENCES_ATTRIBUTION = {
     "by-nc-nd",
 }
 
-# Licences qui interdisent les Å“uvres dÃ©rivÃ©es / modifications.
+# Licences qui interdisent les œuvres dérivées / modifications.
 LICENCES_SANS_DERIVES = {
     "by-nd",
     "by-nc-nd",
@@ -117,7 +117,7 @@ async def _ensure_profile(request: Request, response: Response) -> dict:
 
 
 def _defaut_statut_droits(type_reference: str, source_type: str) -> str:
-    """Une image d'artiste n'est jamais prÃ©sumÃ©e utilisable par dÃ©faut."""
+    """Une image d'artiste n'est jamais présumée utilisable par défaut."""
     if type_reference == "artiste":
         return "a_negocier"
     if source_type == "user" and type_reference == "personnelle":
@@ -133,21 +133,21 @@ def analyser_licence(
     licence_url: str | None = None,
 ) -> dict:
     """
-    Analyse une licence dÃ©clarÃ©e.
+    Analyse une licence déclarée.
 
     IMPORTANT :
     cette fonction ne constitue pas une validation juridique.
-    Elle interprÃ¨te les mÃ©tadonnÃ©es de licence fournies par la source.
+    Elle interprète les métadonnées de licence fournies par la source.
 
-    Retourne les droits techniques dÃ©duits de la licence.
+    Retourne les droits techniques déduits de la licence.
     """
 
     code = (licence or "").strip().lower()
 
-    # Normalisation de quelques variantes frÃ©quentes.
+    # Normalisation de quelques variantes fréquentes.
     code = code.replace("_", "-").replace(" ", "-")
 
-    # Certaines sources renvoient "cc-by" plutÃ´t que "by".
+    # Certaines sources renvoient "cc-by" plutôt que "by".
     if code.startswith("cc-"):
         code = code[3:]
 
@@ -160,7 +160,7 @@ def analyser_licence(
             "attribution_requise": False,
             "statut_droits": "utilisable",
             "niveau": "compatible",
-            "raison": "Domaine public ou CC0 dÃ©clarÃ©.",
+            "raison": "Domaine public ou CC0 déclaré.",
         }
 
     if code in LICENCES_NON_COMMERCIALES:
@@ -182,7 +182,7 @@ def analyser_licence(
             "attribution_requise": code in LICENCES_ATTRIBUTION,
             "statut_droits": "utilisable",
             "niveau": "compatible",
-            "raison": "La licence dÃ©clarÃ©e autorise l'usage commercial sous ses conditions.",
+            "raison": "La licence déclarée autorise l'usage commercial sous ses conditions.",
         }
 
     # Licence absente ou inconnue.
@@ -196,7 +196,7 @@ def analyser_licence(
         "raison": "Licence absente ou non reconnue automatiquement.",
     }
 # ---------------------------------------------------------------------------
-# SchÃ©mas
+# Schémas
 # ---------------------------------------------------------------------------
 
 class ProjetCreation(BaseModel):
@@ -282,11 +282,11 @@ class PaysageDepuisOpenverse(BaseModel):
     # Openverse
     provider: str | None = None
 
-    # Informations complÃ©mentaires Ã©ventuelles
+    # Informations complémentaires éventuelles
     largeur: int | None = None
     hauteur: int | None = None
 
-    # RenseignÃ©s par l'utilisateur
+    # Renseignés par l'utilisateur
     nom: str | None = None
     latitude: float | None = None
     longitude: float | None = None
@@ -300,11 +300,11 @@ class PaysageDepuisOpenverse(BaseModel):
 
 
 class PaysageMiseAJour(BaseModel):
-    """Ã‰dition partielle (PATCH) â€” tous les champs sont optionnels, seuls
-    ceux effectivement fournis par le client sont mis Ã  jour (cf.
-    `exclude_unset` dans la route). C'est ce qui manquait pour complÃ©ter
-    un paysage aprÃ¨s import Openverse (gÃ©olocalisation, statut de droits)
-    ou aprÃ¨s ajout manuel rapide."""
+    """Édition partielle (PATCH) — tous les champs sont optionnels, seuls
+    ceux effectivement fournis par le client sont mis à jour (cf.
+    `exclude_unset` dans la route). C'est ce qui manquait pour compléter
+    un paysage après import Openverse (géolocalisation, statut de droits)
+    ou après ajout manuel rapide."""
     nom: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     latitude: float | None = None
@@ -378,15 +378,15 @@ async def obtenir_projet(projet_id: str, request: Request, response: Response):
 
 @router.delete("/projets/{projet_id}", status_code=204)
 async def supprimer_projet(projet_id: str, request: Request, response: Response):
-    """Supprime un projet et tout ce qui lui appartient (scÃ¨nes, liens
-    vers des paysages) â€” mais jamais les paysages eux-mÃªmes, qui sont
-    des fiches de bibliothÃ¨que partagÃ©es indÃ©pendantes du projet.
+    """Supprime un projet et tout ce qui lui appartient (scènes, liens
+    vers des paysages) — mais jamais les paysages eux-mêmes, qui sont
+    des fiches de bibliothèque partagées indépendantes du projet.
 
-    Route manquante comme l'Ã©tait PATCH /paysages/{id} : rien ne
-    permettait de supprimer un dossier de projet, seulement d'en crÃ©er
-    et d'en lister. Suppression explicite des lignes filles plutÃ´t que
-    de compter uniquement sur un Ã©ventuel ON DELETE CASCADE en base,
-    au cas oÃ¹ les contraintes de clÃ© Ã©trangÃ¨re ne l'auraient pas prÃ©vu.
+    Route manquante comme l'était PATCH /paysages/{id} : rien ne
+    permettait de supprimer un dossier de projet, seulement d'en créer
+    et d'en lister. Suppression explicite des lignes filles plutôt que
+    de compter uniquement sur un éventuel ON DELETE CASCADE en base,
+    au cas où les contraintes de clé étrangère ne l'auraient pas prévu.
     """
     user = await _ensure_profile(request, response)
     projet = await fetch_one(
@@ -407,7 +407,7 @@ async def supprimer_projet(projet_id: str, request: Request, response: Response)
 
 
 # ---------------------------------------------------------------------------
-# ScÃ¨nes
+# Scènes
 # ---------------------------------------------------------------------------
 
 async def _verifier_proprietaire_projet(projet_id: str, user_id: str) -> None:
@@ -453,7 +453,7 @@ async def obtenir_scene(scene_id: int, request: Request, response: Response):
         (scene_id, user["id"]),
     )
     if not scene:
-        raise HTTPException(404, "ScÃ¨ne introuvable")
+        raise HTTPException(404, "Scène introuvable")
     liens = await fetch_all(
         """SELECT l.id AS lien_id, l.statut, l.notes, pa.*
            FROM paysage_scene_liens l
@@ -467,7 +467,7 @@ async def obtenir_scene(scene_id: int, request: Request, response: Response):
 
 
 # ---------------------------------------------------------------------------
-# Recherche multicritÃ¨re de paysages dÃ©jÃ  enregistrÃ©s
+# Recherche multicritère de paysages déjà enregistrés
 # ---------------------------------------------------------------------------
 
 @router.get("")
@@ -484,7 +484,7 @@ async def rechercher_paysages(
     lon: float | None = None,
     distance_max_km: float | None = None,
 ):
-    """Recherche multicritÃ¨re (V1, sans IA) dans les paysages dÃ©jÃ  enregistrÃ©s."""
+    """Recherche multicritère (V1, sans IA) dans les paysages déjà enregistrés."""
     conditions = []
     params: list = []
     if type:
@@ -539,7 +539,7 @@ async def paysages_pour_carte(
     ambiance: str | None = None,
     media_type: str | None = None,
 ):
-    """Liste allÃ©gÃ©e (id, nom, coords, type, format) pour affichage Leaflet."""
+    """Liste allégée (id, nom, coords, type, format) pour affichage Leaflet."""
     conditions = ["latitude IS NOT NULL", "longitude IS NOT NULL"]
     params: list = []
     if type:
@@ -611,20 +611,20 @@ async def creer_paysage(payload: PaysageCreation, request: Request, response: Re
 async def modifier_paysage(
     paysage_id: int, payload: PaysageMiseAJour, request: Request, response: Response,
 ):
-    """Ã‰dition partielle d'un paysage existant.
+    """Édition partielle d'un paysage existant.
 
-    Route qui manquait purement et simplement : rien cÃ´tÃ© API ne
-    permettait de complÃ©ter un paysage aprÃ¨s sa crÃ©ation. RÃ©sultat
-    concret â€” un import Openverse arrive sans lat/lon (Openverse ne
-    gÃ©olocalise pas) et sans critÃ¨res de recherche (type/environnement/
+    Route qui manquait purement et simplement : rien côté API ne
+    permettait de compléter un paysage après sa création. Résultat
+    concret — un import Openverse arrive sans lat/lon (Openverse ne
+    géolocalise pas) et sans critères de recherche (type/environnement/
     ambiance), et restait donc invisible sur /carte (qui exige lat/lon
     non nulles) et introuvable via /api/paysages (dont les filtres
-    comparent Ã  des colonnes NULL, qui ne matchent jamais).
+    comparent à des colonnes NULL, qui ne matchent jamais).
 
-    BibliothÃ¨que partagÃ©e entre tous les visiteurs identifiÃ©s (comme la
+    Bibliothèque partagée entre tous les visiteurs identifiés (comme la
     recherche GET "" plus haut, qui ne filtre pas non plus par
-    utilisateur) : `_ensure_profile` sert seulement Ã  garder une session
-    active, pas Ã  restreindre l'Ã©dition au crÃ©ateur de la fiche.
+    utilisateur) : `_ensure_profile` sert seulement à garder une session
+    active, pas à restreindre l'édition au créateur de la fiche.
     """
     user = await _ensure_profile(request, response)
     existant = await fetch_one("SELECT * FROM paysages WHERE id = %s", (paysage_id,))
@@ -633,17 +633,17 @@ async def modifier_paysage(
 
     champs = payload.model_dump(exclude_unset=True)
     if not champs:
-        raise HTTPException(400, "Aucun champ Ã  mettre Ã  jour")
+        raise HTTPException(400, "Aucun champ à mettre à jour")
 
     media_type = champs.get("media_type", existant["media_type"])
     type_reference = champs.get("type_reference", existant["type_reference"])
     statut_droits = champs.get("statut_droits", existant["statut_droits"])
     _valider_enums_paysage(media_type, type_reference, statut_droits)
 
-    # Si le statut de droits (ou le type de rÃ©fÃ©rence, qui pilote son
-    # dÃ©faut â€” cf. _defaut_statut_droits) change, on resynchronise le
-    # drapeau droits_a_verifier hÃ©ritÃ© de migration_v21 en plus de la
-    # colonne statut_droits plus prÃ©cise, comme le fait creer_paysage.
+    # Si le statut de droits (ou le type de référence, qui pilote son
+    # défaut — cf. _defaut_statut_droits) change, on resynchronise le
+    # drapeau droits_a_verifier hérité de migration_v21 en plus de la
+    # colonne statut_droits plus précise, comme le fait creer_paysage.
     if "statut_droits" in champs or "type_reference" in champs:
         champs["statut_droits"] = statut_droits
         champs["droits_a_verifier"] = statut_droits in ("a_verifier", "a_negocier")
@@ -662,7 +662,7 @@ async def rechercher_images(
     q: str = Query(..., min_length=2, description="Recherche de paysage (Openverse)"),
     page: int = Query(1, ge=1),
 ):
-    """Proxy vers Openverse (mis en cache Redis) â€” ne modifie rien en base."""
+    """Proxy vers Openverse (mis en cache Redis) — ne modifie rien en base."""
     try:
         return await rechercher_openverse(q, page=page)
     except Exception as exc:
@@ -678,18 +678,18 @@ async def enregistrer_depuis_openverse(
     """
     Enregistre une image Openverse.
 
-    La licence est analysÃ©e automatiquement Ã  partir des mÃ©tadonnÃ©es
-    retournÃ©es par Openverse.
+    La licence est analysée automatiquement à partir des métadonnées
+    retournées par Openverse.
 
     IMPORTANT :
-    Openverse prÃ©cise que ses informations de licence peuvent Ãªtre
+    Openverse précise que ses informations de licence peuvent être
     inexactes. On conserve donc :
         - la licence originale ;
         - la source ;
         - l'URL originale ;
         - le statut metadata_openverse.
 
-    Pelify ne prÃ©sente jamais cette analyse comme une garantie juridique.
+    Pelify ne présente jamais cette analyse comme une garantie juridique.
     """
 
     user = await _ensure_profile(request, response)
@@ -705,11 +705,11 @@ async def enregistrer_depuis_openverse(
         payload.licence_url,
     )
 
-    # Une licence dÃ©clarÃ©e compatible ne devient pas
+    # Une licence déclarée compatible ne devient pas
     # "droits_confirmes".
     verification_statut = "metadata_openverse"
 
-    # Sans licence, on reste trÃ¨s prudent.
+    # Sans licence, on reste très prudent.
     if not payload.licence:
         verification_statut = "a_verifier"
 
@@ -830,7 +830,7 @@ async def enregistrer_depuis_openverse(
         },
     }
 # ---------------------------------------------------------------------------
-# Association scÃ¨ne â†” paysage
+# Association scène ↔ paysage
 # ---------------------------------------------------------------------------
 
 @router.post("/scenes/{scene_id}/lier", status_code=201)
@@ -843,7 +843,7 @@ async def lier_paysage_a_scene(scene_id: int, payload: LienScenePaysage, request
         (scene_id, user["id"]),
     )
     if not scene:
-        raise HTTPException(404, "ScÃ¨ne introuvable")
+        raise HTTPException(404, "Scène introuvable")
     if payload.statut not in STATUTS_LIEN_VALIDES:
         raise HTTPException(400, f"Statut invalide, attendu parmi {sorted(STATUTS_LIEN_VALIDES)}")
 

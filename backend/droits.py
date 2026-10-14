@@ -1,4 +1,4 @@
-﻿"""
+"""
 backend/droits.py — workflow Pelify Landscape "Demander les droits".
 
 V1 :
@@ -562,6 +562,3 @@ async def repondre_demande_publique(
     )
 
     return {"id": message_id, "statut": statut}
-
-
-

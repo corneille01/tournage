@@ -1,13 +1,13 @@
 """
-backend/overpass.py â€” Recherche des lieux Ã  proximitÃ© via Overpass API
-(OpenStreetMap), gratuit et sans clÃ© API.
+backend/overpass.py — Recherche des lieux à proximité via Overpass API
+(OpenStreetMap), gratuit et sans clé API.
 
-Ce module ne s'exÃ©cute JAMAIS sur une requÃªte visiteur. Il alimente
-`amenity_cache` en tÃ¢che de fond (cron / script manuel), pour que le
-site serve uniquement des donnÃ©es dÃ©jÃ  en base.
+Ce module ne s'exécute JAMAIS sur une requête visiteur. Il alimente
+`amenity_cache` en tâche de fond (cron / script manuel), pour que le
+site serve uniquement des données déjà en base.
 
-Cela permet de tenir la charge sans dÃ©pendre de la disponibilitÃ© ou
-des limites d'Overpass au moment oÃ¹ les visiteurs utilisent le site.
+Cela permet de tenir la charge sans dépendre de la disponibilité ou
+des limites d'Overpass au moment où les visiteurs utilisent le site.
 """
 
 import asyncio
@@ -18,41 +18,41 @@ import httpx
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
-# Identification de l'application auprÃ¨s du serveur Overpass.
+# Identification de l'application auprès du serveur Overpass.
 OVERPASS_HEADERS = {
     "User-Agent": "Pelify-Tournage/1.0 (https://pelify.app)"
 }
 
 
-# Tags OpenStreetMap correspondant Ã  chaque catÃ©gorie affichÃ©e.
-# LibellÃ© affichÃ© quand une commoditÃ© n'a pas de nom OSM â€” mieux vaut
-# publier le point avec une Ã©tiquette gÃ©nÃ©rique que de le perdre.
+# Tags OpenStreetMap correspondant à chaque catégorie affichée.
+# Libellé affiché quand une commodité n'a pas de nom OSM — mieux vaut
+# publier le point avec une étiquette générique que de le perdre.
 _LABEL_GENERIQUE = {
-    "hebergement": "HÃ©bergement",
+    "hebergement": "Hébergement",
     "refuge": "Refuge",
     "restaurant": "Restaurant",
     "office_tourisme": "Office de tourisme",
     "police": "Police / gendarmerie",
-    "hopital": "Ã‰tablissement de santÃ©",
+    "hopital": "Établissement de santé",
     "gare": "Gare",
-    "aeroport": "AÃ©roport",
-    "aerodrome": "AÃ©rodrome",
-    "arret_bus": "ArrÃªt de transport",
+    "aeroport": "Aéroport",
+    "aerodrome": "Aérodrome",
+    "arret_bus": "Arrêt de transport",
     "parking": "Parking",
     "distributeur": "Distributeur / banque",
-    "activite": "Point d'intÃ©rÃªt",
+    "activite": "Point d'intérêt",
 }
 
 _CATEGORY_TAGS = {
     # hebergement, restaurant, office_tourisme et activite sont repris
-    # par DATAtourisme (donnÃ©es officielles, plus complÃ¨tes) depuis
-    # juillet 2026 â€” retirÃ©s d'ici pour ne plus solliciter Overpass
-    # inutilement sur ces catÃ©gories. Les dicts ci-dessous (labels,
-    # rayons, phrases) gardent leurs entrÃ©es pour ces 4 catÃ©gories â€”
-    # inoffensif, elles ne sont juste plus jamais consultÃ©es puisque
-    # la boucle dans refresh_cache.py itÃ¨re sur _CATEGORY_TAGS.
+    # par DATAtourisme (données officielles, plus complètes) depuis
+    # juillet 2026 — retirés d'ici pour ne plus solliciter Overpass
+    # inutilement sur ces catégories. Les dicts ci-dessous (labels,
+    # rayons, phrases) gardent leurs entrées pour ces 4 catégories —
+    # inoffensif, elles ne sont juste plus jamais consultées puisque
+    # la boucle dans refresh_cache.py itère sur _CATEGORY_TAGS.
 
-    # Refuges et Ã©tapes de randonnÃ©e
+    # Refuges et étapes de randonnée
     "refuge": [
         "tourism=alpine_hut",
         "tourism=wilderness_hut",
@@ -95,7 +95,7 @@ _CATEGORY_TAGS = {
 }
 
 
-# Rayon maximal utilisÃ© pour chaque catÃ©gorie.
+# Rayon maximal utilisé pour chaque catégorie.
 RAYON_RECHERCHE_M = {
     "hebergement": 15_000,
     "refuge": 25_000,
@@ -113,81 +113,81 @@ RAYON_RECHERCHE_M = {
 }
 
 
-# IcÃ´ne et couleur par catÃ©gorie.
-# Elles sont utilisÃ©es par le frontend pour les marqueurs et les popups.
+# Icône et couleur par catégorie.
+# Elles sont utilisées par le frontend pour les marqueurs et les popups.
 ICONES_CATEGORIE = {
     "hebergement": {
-        "emoji": "ðŸ¨",
+        "emoji": "🏨",
         "couleur": "#2a9d8f",
     },
 
     "refuge": {
-        "emoji": "ðŸ¥¾",
+        "emoji": "🥾",
         "couleur": "#588157",
     },
 
     "restaurant": {
-        "emoji": "ðŸ½ï¸",
+        "emoji": "🍽️",
         "couleur": "#e76f51",
     },
 
     "office_tourisme": {
-        "emoji": "â„¹ï¸",
+        "emoji": "ℹ️",
         "couleur": "#264653",
     },
 
     "police": {
-        "emoji": "ðŸš“",
+        "emoji": "🚓",
         "couleur": "#023e8a",
     },
 
     "hopital": {
-        "emoji": "ðŸ¥",
+        "emoji": "🏥",
         "couleur": "#d00000",
     },
 
     "gare": {
-        "emoji": "ðŸš‰",
+        "emoji": "🚉",
         "couleur": "#6a4c93",
     },
 
     "aeroport": {
-        "emoji": "âœˆï¸",
+        "emoji": "✈️",
         "couleur": "#4361ee",
     },
 
     "aerodrome": {
-        "emoji": "ðŸ›©ï¸",
+        "emoji": "🛩️",
         "couleur": "#7209b7",
     },
 
     "arret_bus": {
-        "emoji": "ðŸšŒ",
+        "emoji": "🚌",
         "couleur": "#f4a261",
     },
 
     "parking": {
-        "emoji": "ðŸ…¿ï¸",
+        "emoji": "🅿️",
         "couleur": "#3a3a3a",
     },
 
     "distributeur": {
-        "emoji": "ðŸ§",
+        "emoji": "🏧",
         "couleur": "#06923e",
     },
 
      "activite": {
-        "emoji": "ðŸŽ¡",
+        "emoji": "🎡",
         "couleur": "#9b5de5",
     },
 
     "fetes_manifestations": {
-        "emoji": "ðŸŽ‰",
+        "emoji": "🎉",
         "couleur": "#f15bb5",
     },
 
     "station_service": {
-        "emoji": "â›½",
+        "emoji": "⛽",
         "couleur": "#f97316",
     },
 
@@ -201,9 +201,9 @@ def haversine_metres(
     lon2: float,
 ) -> int:
     """
-    Calcule la distance Ã  vol d'oiseau entre deux points GPS.
+    Calcule la distance à vol d'oiseau entre deux points GPS.
 
-    La distance retournÃ©e est exprimÃ©e en mÃ¨tres.
+    La distance retournée est exprimée en mètres.
     """
 
     rayon_terre = 6_371_000
@@ -232,7 +232,7 @@ def _build_query(
     categorie: str,
 ) -> str:
     """
-    Construit la requÃªte Overpass QL pour une catÃ©gorie.
+    Construit la requête Overpass QL pour une catégorie.
 
     La recherche concerne :
     - les nodes ;
@@ -241,24 +241,24 @@ def _build_query(
     """
 
     if categorie not in _CATEGORY_TAGS:
-        raise ValueError(f"CatÃ©gorie inconnue : {categorie}")
+        raise ValueError(f"Catégorie inconnue : {categorie}")
 
     if categorie not in RAYON_RECHERCHE_M:
         raise ValueError(
-            f"Aucun rayon configurÃ© pour la catÃ©gorie : {categorie}"
+            f"Aucun rayon configuré pour la catégorie : {categorie}"
         )
 
     rayon = RAYON_RECHERCHE_M[categorie]
-    # Format dÃ©cimal fixe : Ã©vite la notation scientifique Python sur
-    # les coordonnÃ©es trÃ¨s proches de 0 (l'Occitanie est proche du
-    # mÃ©ridien de Greenwich), qu'Overpass ne saurait pas interprÃ©ter.
+    # Format décimal fixe : évite la notation scientifique Python sur
+    # les coordonnées très proches de 0 (l'Occitanie est proche du
+    # méridien de Greenwich), qu'Overpass ne saurait pas interpréter.
     lat = f"{lat:.7f}"
     lon = f"{lon:.7f}"
     clauses = []
 
-    # AÃ©roport et aÃ©rodrome utilisent le mÃªme tag OSM de base
-    # (aeroway=aerodrome) â€” la prÃ©sence d'un code IATA distingue un
-    # vrai aÃ©roport commercial d'un simple terrain d'aviation lÃ©gÃ¨re.
+    # Aéroport et aérodrome utilisent le même tag OSM de base
+    # (aeroway=aerodrome) — la présence d'un code IATA distingue un
+    # vrai aéroport commercial d'un simple terrain d'aviation légère.
     filtre_supplementaire = ""
     if categorie == "aeroport":
         filtre_supplementaire = '["iata"]'
@@ -300,11 +300,11 @@ async def _appeler_overpass_avec_retry(
     tentatives_max: int = 4,
 ) -> dict:
     """
-    Le serveur public overpass-api.de limite le dÃ©bit (429) et time out
-    parfois sous charge (503/504) â€” normal pour un service public
-    gratuit et partagÃ©. On rÃ©essaie avec un dÃ©lai croissant plutÃ´t que
-    d'abandonner immÃ©diatement, ce qui Ã©vite de perdre des lieux entiers
-    juste parce qu'Overpass Ã©tait temporairement occupÃ©.
+    Le serveur public overpass-api.de limite le débit (429) et time out
+    parfois sous charge (503/504) — normal pour un service public
+    gratuit et partagé. On réessaie avec un délai croissant plutôt que
+    d'abandonner immédiatement, ce qui évite de perdre des lieux entiers
+    juste parce qu'Overpass était temporairement occupé.
     """
     derniere_erreur = None
     for tentative in range(1, tentatives_max + 1):
@@ -328,8 +328,8 @@ async def _appeler_overpass_avec_retry(
             if tentative < tentatives_max:
                 attente = 10 * tentative  # 10s, 20s, 30s...
                 print(
-                    f"  â³ Overpass indisponible (tentative {tentative}/{tentatives_max}), "
-                    f"nouvelle tentative dans {attente}sâ€¦",
+                    f"  ⏳ Overpass indisponible (tentative {tentative}/{tentatives_max}), "
+                    f"nouvelle tentative dans {attente}s…",
                     flush=True,
                 )
                 await asyncio.sleep(attente)
@@ -343,13 +343,13 @@ async def find_nearby(
     top_n: int = 10,
 ) -> dict:
     """
-    Recherche les lieux d'une catÃ©gorie autour d'un point GPS.
+    Recherche les lieux d'une catégorie autour d'un point GPS.
 
     La fonction retourne :
 
-    - les `top_n` lieux nommÃ©s les plus proches ;
-    - les statistiques calculÃ©es sur tous les rÃ©sultats nommÃ©s et
-      exploitables retournÃ©s par Overpass.
+    - les `top_n` lieux nommés les plus proches ;
+    - les statistiques calculées sur tous les résultats nommés et
+      exploitables retournés par Overpass.
 
     Exemple :
 
@@ -362,20 +362,20 @@ async def find_nearby(
     """
 
     if categorie not in _CATEGORY_TAGS:
-        raise ValueError(f"CatÃ©gorie inconnue : {categorie}")
+        raise ValueError(f"Catégorie inconnue : {categorie}")
 
     if categorie not in RAYON_RECHERCHE_M:
         raise ValueError(
-            f"Aucun rayon dÃ©fini pour la catÃ©gorie : {categorie}"
+            f"Aucun rayon défini pour la catégorie : {categorie}"
         )
 
     if top_n < 1:
-        raise ValueError("top_n doit Ãªtre supÃ©rieur ou Ã©gal Ã  1")
+        raise ValueError("top_n doit être supérieur ou égal à 1")
 
     # Postgres (via asyncpg) renvoie les colonnes DECIMAL sous forme de
-    # decimal.Decimal, pas de float â€” soustraire un Decimal et un float
-    # (coordonnÃ©es venant d'Overpass, en JSON donc dÃ©jÃ  float) lÃ¨ve une
-    # TypeError. On normalise ici, Ã  l'entrÃ©e, une fois pour toutes.
+    # decimal.Decimal, pas de float — soustraire un Decimal et un float
+    # (coordonnées venant d'Overpass, en JSON donc déjà float) lève une
+    # TypeError. On normalise ici, à l'entrée, une fois pour toutes.
     lat = float(lat)
     lon = float(lon)
 
@@ -391,8 +391,8 @@ async def find_nearby(
 
     tous: list[dict] = []
 
-    # EmpÃªche qu'un mÃªme objet OSM soit ajoutÃ© plusieurs fois s'il
-    # correspond Ã  plusieurs clauses de la requÃªte.
+    # Empêche qu'un même objet OSM soit ajouté plusieurs fois s'il
+    # correspond à plusieurs clauses de la requête.
     objets_deja_vus: set[tuple[str, int]] = set()
 
     for element in data.get("elements", []):
@@ -409,8 +409,8 @@ async def find_nearby(
 
         objets_deja_vus.add(cle_unique)
 
-        # Les nodes possÃ¨dent directement lat/lon.
-        # Les ways et relations utilisent gÃ©nÃ©ralement center.
+        # Les nodes possèdent directement lat/lon.
+        # Les ways et relations utilisent généralement center.
         element_latitude = element.get("lat")
         element_longitude = element.get("lon")
 
@@ -425,7 +425,7 @@ async def find_nearby(
 
         tags = element.get("tags", {})
 
-        # On privilÃ©gie le nom franÃ§ais lorsqu'il est disponible.
+        # On privilégie le nom français lorsqu'il est disponible.
         nom = (
             tags.get("name:fr")
             or tags.get("name")
@@ -433,10 +433,10 @@ async def find_nearby(
             or tags.get("brand")
         )
 
-        # Un lieu sans nom reste utile (au moins sa position) â€” on lui
-        # donne un intitulÃ© gÃ©nÃ©rique plutÃ´t que de l'exclure, comme
-        # demandÃ© : mieux vaut afficher "Distributeur" sans nom propre
-        # que de perdre le point entiÃ¨rement.
+        # Un lieu sans nom reste utile (au moins sa position) — on lui
+        # donne un intitulé générique plutôt que de l'exclure, comme
+        # demandé : mieux vaut afficher "Distributeur" sans nom propre
+        # que de perdre le point entièrement.
         if not nom:
             nom = f"{_LABEL_GENERIQUE.get(categorie, 'Point')} (sans nom)"
 
@@ -468,7 +468,7 @@ async def find_nearby(
             "capacite": int(tags["capacity"]) if tags.get("capacity", "").isdigit() else None,
         })
 
-    # Classement du plus proche au plus Ã©loignÃ©.
+    # Classement du plus proche au plus éloigné.
     tous.sort(
         key=lambda resultat: resultat["distance_metres"]
     )
@@ -483,7 +483,7 @@ async def find_nearby(
     stats = {
         "rayon_metres": rayon,
 
-        # Nombre total de lieux nommÃ©s et exploitables.
+        # Nombre total de lieux nommés et exploitables.
         "nombre_total": len(tous),
 
         "nombre_500m": sum(
@@ -522,7 +522,7 @@ async def find_nearby(
 
 def _format_adresse(tags: dict) -> str | None:
     """
-    Construit une adresse lisible Ã  partir des tags OSM.
+    Construit une adresse lisible à partir des tags OSM.
     """
 
     numero = tags.get("addr:housenumber", "")
@@ -557,14 +557,14 @@ def phrase_recommandation(
     distance_metres: int,
 ) -> str:
     """
-    GÃ©nÃ¨re une phrase prÃ©sentant le lieu le plus proche.
+    Génère une phrase présentant le lieu le plus proche.
 
     Exemples :
 
-    - L'hÃ´tel X est Ã  2 km du lieu de tournage et est l'hÃ´tel
+    - L'hôtel X est à 2 km du lieu de tournage et est l'hôtel
       le plus proche.
 
-    - Le refuge Y est Ã  5,2 km du lieu de tournage et est le
+    - Le refuge Y est à 5,2 km du lieu de tournage et est le
       refuge le plus proche.
     """
 
@@ -582,7 +582,7 @@ def phrase_recommandation(
             )
 
     return (
-        f"{categorie_label} {nom} est Ã  {distance_txt} "
+        f"{categorie_label} {nom} est à {distance_txt} "
         f"du lieu de tournage et est "
         f"{categorie_label.lower()} le plus proche."
     )

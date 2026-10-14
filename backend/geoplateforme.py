@@ -1,7 +1,7 @@
 """
 backend/geoplateforme.py
 
-Client centralisÃ© des services de navigation de la GÃ©oplateforme IGN.
+Client centralisé des services de navigation de la Géoplateforme IGN.
 
 Services :
     /navigation/itineraire
@@ -34,7 +34,7 @@ def _profil(mode: str) -> str:
         return MODE_PROFIL[mode]
     except KeyError:
         raise ValueError(
-            "mode doit Ãªtre 'foot-walking' ou 'driving-car'"
+            "mode doit être 'foot-walking' ou 'driving-car'"
         ) from None
 
 
@@ -49,7 +49,7 @@ async def calculer_itineraire(
     avec_etapes: bool = False,
 ) -> dict:
     """
-    Calcule un itinÃ©raire routable avec la GÃ©oplateforme IGN.
+    Calcule un itinéraire routable avec la Géoplateforme IGN.
 
     Service :
         https://data.geopf.fr/navigation/itineraire
@@ -84,7 +84,7 @@ async def calculer_itineraire(
 
     if not mode_ign:
         raise GeoplateformeError(
-            f"Mode de dÃ©placement non supportÃ© : {mode}"
+            f"Mode de déplacement non supporté : {mode}"
         )
 
     url = f"{BASE_URL}/itineraire"
@@ -122,17 +122,17 @@ async def calculer_itineraire(
 
     except httpx.TimeoutException as exc:
         raise GeoplateformeError(
-            "La GÃ©oplateforme IGN a dÃ©passÃ© le dÃ©lai d'attente pour l'isochrone."
+            "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
         ) from exc
 
     except httpx.RequestError as exc:
         raise GeoplateformeError(
-            f"Impossible de contacter la GÃ©oplateforme IGN pour l'isochrone : {exc}"
+            f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
         ) from exc
 
     except ValueError as exc:
         raise GeoplateformeError(
-            "La GÃ©oplateforme IGN a retournÃ© une rÃ©ponse JSON invalide pour l'isochrone."
+            "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
         ) from exc
 
 
@@ -144,49 +144,49 @@ async def calculer_itineraire(
 
         raise GeoplateformeError(
             f"Erreur HTTP {response.status_code} de la "
-            f"GÃ©oplateforme IGN : {detail}"
+            f"Géoplateforme IGN : {detail}"
         )
 
     try:
         data = response.json()
     except ValueError as exc:
         raise GeoplateformeError(
-            "La GÃ©oplateforme IGN a retournÃ© une rÃ©ponse JSON invalide."
+            "La Géoplateforme IGN a retourné une réponse JSON invalide."
         ) from exc
 
     # ---------------------------------------------------------
-    # STRUCTURE DE RÃ‰PONSE
+    # STRUCTURE DE RÉPONSE
     # ---------------------------------------------------------
 
     if not isinstance(data, dict):
         raise GeoplateformeError(
-            "RÃ©ponse inattendue de la GÃ©oplateforme IGN."
+            "Réponse inattendue de la Géoplateforme IGN."
         )
 
-    # L'API peut retourner directement l'itinÃ©raire.
+    # L'API peut retourner directement l'itinéraire.
     route = data
 
-    # CompatibilitÃ© si la rÃ©ponse est enveloppÃ©e.
+    # Compatibilité si la réponse est enveloppée.
     if isinstance(data.get("route"), dict):
         route = data["route"]
 
     elif isinstance(data.get("result"), dict):
         route = data["result"]
 
-    # CompatibilitÃ© GeoJSON FeatureCollection.
+    # Compatibilité GeoJSON FeatureCollection.
     if data.get("type") == "FeatureCollection":
         features = data.get("features") or []
 
         if not features:
             raise GeoplateformeError(
-                "La GÃ©oplateforme IGN n'a retournÃ© aucun itinÃ©raire."
+                "La Géoplateforme IGN n'a retourné aucun itinéraire."
             )
 
         feature = features[0]
 
         if not isinstance(feature, dict):
             raise GeoplateformeError(
-                "La GÃ©oplateforme IGN a retournÃ© une feature invalide."
+                "La Géoplateforme IGN a retourné une feature invalide."
             )
 
         properties = feature.get("properties") or {}
@@ -227,8 +227,8 @@ async def calculer_itineraire(
             or route.get("duree_secondes")
         )
 
-        # Selon les versions du service, les Ã©tapes peuvent Ãªtre
-        # directement dans la rÃ©ponse.
+        # Selon les versions du service, les étapes peuvent être
+        # directement dans la réponse.
         raw_steps = (
             route.get("steps")
             or route.get("etapes")
@@ -238,11 +238,11 @@ async def calculer_itineraire(
 
     if not geometry:
         raise GeoplateformeError(
-            "La GÃ©oplateforme IGN n'a retournÃ© aucune gÃ©omÃ©trie."
+            "La Géoplateforme IGN n'a retourné aucune géométrie."
         )
 
     # ---------------------------------------------------------
-    # DISTANCE / DURÃ‰E
+    # DISTANCE / DURÉE
     # ---------------------------------------------------------
 
     try:
@@ -257,15 +257,15 @@ async def calculer_itineraire(
             duree = None
 
     # ---------------------------------------------------------
-    # Ã‰TAPES DE NAVIGATION IGN
+    # ÉTAPES DE NAVIGATION IGN
     # ---------------------------------------------------------
 
     etapes = []
 
-    # La rÃ©ponse GÃ©oplateforme utilise gÃ©nÃ©ralement :
+    # La réponse Géoplateforme utilise généralement :
     #
     # portions[]
-    #     â””â”€â”€ steps[]
+    #     └── steps[]
     #
     # Chaque step contient notamment :
     # geometry, distance, duration, instruction, attributes.
@@ -274,7 +274,7 @@ async def calculer_itineraire(
 
     def _derniere_coordonnee(geometry_step):
         """
-        Retourne la derniÃ¨re coordonnÃ©e d'une gÃ©omÃ©trie GeoJSON.
+        Retourne la dernière coordonnée d'une géométrie GeoJSON.
         Compatible LineString et MultiLineString.
         """
 
@@ -310,10 +310,10 @@ async def calculer_itineraire(
 
     def _instruction_fr(step):
         """
-        Transforme une instruction IGN en phrase franÃ§aise.
+        Transforme une instruction IGN en phrase française.
 
-        Cette fonction protÃ¨ge notamment contre le cas oÃ¹
-        attributes["name"] est un dictionnaire au lieu d'une chaÃ®ne.
+        Cette fonction protège notamment contre le cas où
+        attributes["name"] est un dictionnaire au lieu d'une chaîne.
         """
 
         instruction = step.get("instruction")
@@ -360,12 +360,12 @@ async def calculer_itineraire(
         # -----------------------------------------------------
 
         modificateurs = {
-            "left": "Ã  gauche",
-            "right": "Ã  droite",
-            "slight left": "lÃ©gÃ¨rement Ã  gauche",
-            "slight right": "lÃ©gÃ¨rement Ã  droite",
-            "sharp left": "fortement Ã  gauche",
-            "sharp right": "fortement Ã  droite",
+            "left": "à gauche",
+            "right": "à droite",
+            "slight left": "légèrement à gauche",
+            "slight right": "légèrement à droite",
+            "sharp left": "fortement à gauche",
+            "sharp right": "fortement à droite",
             "straight": "tout droit",
             "uturn": "faites demi-tour",
             "u-turn": "faites demi-tour",
@@ -384,14 +384,14 @@ async def calculer_itineraire(
             "depart",
             "start",
         ):
-            texte = "DÃ©part"
+            texte = "Départ"
 
         elif type_instruction in (
             "arrive",
             "destination",
             "end",
         ):
-            texte = "Vous Ãªtes arrivÃ© Ã  destination"
+            texte = "Vous êtes arrivé à destination"
 
         elif type_instruction in (
             "turn",
@@ -447,7 +447,7 @@ async def calculer_itineraire(
             texte = "Prendre le rond-point"
 
         else:
-            # On Ã©vite absolument de fabriquer une phrase
+            # On évite absolument de fabriquer une phrase
             # avec un objet/dictionnaire Python.
             texte = "Continuer"
 
@@ -465,7 +465,7 @@ async def calculer_itineraire(
         return texte
 
     # ---------------------------------------------------------
-    # EXTRACTION DES Ã‰TAPES
+    # EXTRACTION DES ÉTAPES
     # ---------------------------------------------------------
 
     index = 0
@@ -527,7 +527,7 @@ async def calculer_itineraire(
                     "instruction"
                 )
 
-                # RÃ©cupÃ©ration propre du nom de voie.
+                # Récupération propre du nom de voie.
                 attributes = step.get("attributes")
 
                 if not isinstance(attributes, dict):
@@ -639,17 +639,17 @@ async def calculer_isochrone(
 
     except httpx.TimeoutException as exc:
             raise GeoplateformeError(
-                "La GÃ©oplateforme IGN a dÃ©passÃ© le dÃ©lai d'attente pour l'isochrone."
+                "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
             ) from exc
 
     except httpx.RequestError as exc:
             raise GeoplateformeError(
-                f"Impossible de contacter la GÃ©oplateforme IGN pour l'isochrone : {exc}"
+                f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
             ) from exc
 
     except ValueError as exc:
             raise GeoplateformeError(
-                "La GÃ©oplateforme IGN a retournÃ© une rÃ©ponse JSON invalide pour l'isochrone."
+                "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
             ) from exc
 
     # GeoJSON direct
@@ -682,7 +682,7 @@ async def calculer_isochrone(
     if geometry is None:
 
         raise GeoplateformeError(
-            "RÃ©ponse GÃ©oplateforme sans gÃ©omÃ©trie d'isochrone."
+            "Réponse Géoplateforme sans géométrie d'isochrone."
         )
 
     return {

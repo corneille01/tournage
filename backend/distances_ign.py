@@ -1,25 +1,25 @@
-﻿"""
+"""
 backend/distances_ign.py
 
-Distances et durÃ©es PAR LA ROUTE (GÃ©oplateforme IGN) pour le parcours.
+Distances et durées PAR LA ROUTE (Géoplateforme IGN) pour le parcours.
 
 Ordre de recherche, du plus fiable au moins fiable :
-  1. la table `distances_routieres` (prÃ©calculÃ©e chaque jour par
+  1. la table `distances_routieres` (précalculée chaque jour par
      precalculer_distances_routieres.py) : aucun appel IGN pour le visiteur ;
   2. un appel IGN en direct, mis en cache 24 h : uniquement pour ce qui n'est pas
-     prÃ©calculÃ© (point de dÃ©part saisi par le visiteur, paires de lieux lointaines) ;
-  3. une estimation, toujours signalÃ©e comme telle.
+     précalculé (point de départ saisi par le visiteur, paires de lieux lointaines) ;
+  3. une estimation, toujours signalée comme telle.
 
 Principes :
-- La distance Â« Ã  vol d'oiseau Â» (haversine) ne sert JAMAIS Ã  afficher ni Ã 
-  classer : uniquement Ã  prÃ©sÃ©lectionner quelques candidats avant d'interroger
+- La distance « à vol d'oiseau » (haversine) ne sert JAMAIS à afficher ni à
+  classer : uniquement à présélectionner quelques candidats avant d'interroger
   l'IGN, pour ne pas multiplier les appels.
-- Chaque trajet est mis en cache 24 h (mÃ©moire du processus + Redis/Upstash si
-  configurÃ©), par tranche de ~10 m.
-- DÃ©bit limitÃ© (4 appels simultanÃ©s + petite pause) : l'API IGN accepte 10 req/s
+- Chaque trajet est mis en cache 24 h (mémoire du processus + Redis/Upstash si
+  configuré), par tranche de ~10 m.
+- Débit limité (4 appels simultanés + petite pause) : l'API IGN accepte 10 req/s
   par IP.
-- Si l'IGN ne rÃ©pond pas, on renvoie None : l'appelant dÃ©cide du repli et doit
-  l'indiquer Ã  l'utilisateur (distance Â« estimÃ©e Â»).
+- Si l'IGN ne répond pas, on renvoie None : l'appelant décide du repli et doit
+  l'indiquer à l'utilisateur (distance « estimée »).
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ PAUSE_ENTRE_APPELS_S = 0.25
 TTL_S = 24 * 60 * 60
 MEMOIRE_MAX = 5000
 
-# UtilisÃ©s UNIQUEMENT pour estimer quand l'IGN est indisponible.
+# Utilisés UNIQUEMENT pour estimer quand l'IGN est indisponible.
 FACTEUR_ROUTE = {"driving-car": 1.30, "foot-walking": 1.15}
 VITESSE_KMH = {"driving-car": 45.0, "foot-walking": 4.5}
 
@@ -64,7 +64,7 @@ def _cle(origine: tuple[float, float], destination: tuple[float, float], mode: s
 
 def _memoriser(cle: str, valeur: dict) -> None:
     if len(_memoire) >= MEMOIRE_MAX:
-        # Purge simple : on retire les entrÃ©es expirÃ©es, puis les plus anciennes.
+        # Purge simple : on retire les entrées expirées, puis les plus anciennes.
         maintenant = time.monotonic()
         for k in [k for k, (exp, _) in _memoire.items() if exp <= maintenant]:
             _memoire.pop(k, None)
@@ -74,7 +74,7 @@ def _memoriser(cle: str, valeur: dict) -> None:
 
 
 def estimation(origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car") -> dict:
-    """Repli quand l'IGN est indisponible. Toujours marquÃ© source = Â« estimee Â»."""
+    """Repli quand l'IGN est indisponible. Toujours marqué source = « estimee »."""
     d = haversine_metres(origine[0], origine[1], destination[0], destination[1]) * FACTEUR_ROUTE.get(mode, 1.3)
     duree = d / 1000.0 / VITESSE_KMH.get(mode, 45.0) * 3600.0
     return {"distance_metres": round(d), "duree_secondes": round(duree), "source": "estimee"}
@@ -83,7 +83,7 @@ def estimation(origine: tuple[float, float], destination: tuple[float, float], m
 async def distance_routiere(
     origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car"
 ) -> dict | None:
-    """{'distance_metres', 'duree_secondes', 'source': 'ign'} ou None si l'IGN Ã©choue."""
+    """{'distance_metres', 'duree_secondes', 'source': 'ign'} ou None si l'IGN échoue."""
     cle = _cle(origine, destination, mode)
     hit = _memoire.get(cle)
     if hit and hit[0] > time.monotonic():
@@ -92,7 +92,7 @@ async def distance_routiere(
     if navigation_cache.enabled:
         try:
             en_cache = await navigation_cache.get(cle)
-        except Exception:  # Redis indisponible : on calcule quand mÃªme
+        except Exception:  # Redis indisponible : on calcule quand même
             en_cache = None
         if en_cache and en_cache.get("distance_metres") is not None:
             _memoriser(cle, en_cache)
@@ -109,7 +109,7 @@ async def distance_routiere(
             logger.warning("Distance IGN indisponible (%s) : %s", mode, exc)
             return None
         except Exception:
-            logger.exception("Erreur imprÃ©vue pendant un calcul de distance IGN")
+            logger.exception("Erreur imprévue pendant un calcul de distance IGN")
             return None
         await asyncio.sleep(PAUSE_ENTRE_APPELS_S)
 
@@ -117,7 +117,7 @@ async def distance_routiere(
         return None
     distance = round(float(res["distance_metres"]))
     duree = res.get("duree_secondes")
-    if duree is None:  # distance IGN conservÃ©e ; seule la durÃ©e est dÃ©duite
+    if duree is None:  # distance IGN conservée ; seule la durée est déduite
         duree = distance / 1000.0 / VITESSE_KMH.get(mode, 45.0) * 3600.0
     out = {"distance_metres": distance, "duree_secondes": round(float(duree)), "source": "ign"}
     _memoriser(cle, out)
@@ -135,7 +135,7 @@ async def distances_routieres(
     mode: str = "driving-car",
     delai_max_s: float = 8.0,
 ) -> list[dict | None]:
-    """Un rÃ©sultat par destination, dans le mÃªme ordre ; None si Ã©chec ou dÃ©lai dÃ©passÃ©."""
+    """Un résultat par destination, dans le même ordre ; None si échec ou délai dépassé."""
     if not destinations:
         return []
     taches = [asyncio.ensure_future(distance_routiere(origine, d, mode)) for d in destinations]
@@ -144,7 +144,7 @@ async def distances_routieres(
         t.cancel()
     if en_attente:
         await asyncio.gather(*en_attente, return_exceptions=True)
-        logger.warning("DÃ©lai dÃ©passÃ© pour %d calcul(s) de distance IGN", len(en_attente))
+        logger.warning("Délai dépassé pour %d calcul(s) de distance IGN", len(en_attente))
     sortie: list[dict | None] = []
     for t in taches:
         if t.cancelled():
@@ -163,7 +163,7 @@ def _coord(x: dict) -> tuple[float, float]:
 async def mesure_ou_estimation(
     origine: tuple[float, float], destination: tuple[float, float], mode: str = "driving-car"
 ) -> dict:
-    """Distance IGN si possible, sinon estimation clairement marquÃ©e."""
+    """Distance IGN si possible, sinon estimation clairement marquée."""
     return (await distance_routiere(origine, destination, mode)) or estimation(origine, destination, mode)
 
 
@@ -171,8 +171,8 @@ MODE_BASE = {"driving-car": "voiture", "foot-walking": "pied"}
 
 
 async def charger_distances_lieux(ids: list, mode: str = "driving-car") -> dict[tuple[int, int], dict]:
-    """Trajets lieu -> lieu prÃ©calculÃ©s entre les lieux donnÃ©s. Le sens inverse sert Ã 
-    dÃ©faut (la distance de route Aâ†’B et Bâ†’A est quasi identique)."""
+    """Trajets lieu -> lieu précalculés entre les lieux donnés. Le sens inverse sert à
+    défaut (la distance de route A→B et B→A est quasi identique)."""
     ids = sorted({int(i) for i in ids if i is not None})
     if len(ids) < 2:
         return {}
@@ -204,7 +204,7 @@ async def charger_distances_lieux(ids: list, mode: str = "driving-car") -> dict[
 
 
 async def charger_distances_guides(guide_ids: list, lieu_ids: list) -> dict[tuple[int, int], dict]:
-    """Trajets guide -> lieu prÃ©calculÃ©s (voiture)."""
+    """Trajets guide -> lieu précalculés (voiture)."""
     guide_ids = sorted({int(i) for i in guide_ids if i is not None})
     lieu_ids = sorted({int(i) for i in lieu_ids if i is not None})
     if not guide_ids or not lieu_ids:
@@ -238,7 +238,7 @@ def _id(x: dict):
 
 
 async def _mesures_vers(origine: dict, candidats: list[dict], mode: str, base: dict) -> list[dict | None]:
-    """Base prÃ©calculÃ©e d'abord ; appel IGN en direct seulement pour les paires absentes."""
+    """Base précalculée d'abord ; appel IGN en direct seulement pour les paires absentes."""
     resultat: list[dict | None] = [None] * len(candidats)
     manquants = []
     for i, c in enumerate(candidats):
@@ -260,8 +260,8 @@ async def _mesure(origine: dict, destination: dict, mode: str, base: dict) -> di
 
 
 def _candidats(courant: dict, restants: list[dict], base: dict, preselection: int) -> list[dict]:
-    """Tous les lieux dont le trajet est dÃ©jÃ  en base (gratuit), complÃ©tÃ©s par les plus
-    proches Ã  vol d'oiseau (prÃ©sÃ©lection seulement) jusqu'Ã  `preselection` candidats."""
+    """Tous les lieux dont le trajet est déjà en base (gratuit), complétés par les plus
+    proches à vol d'oiseau (présélection seulement) jusqu'à `preselection` candidats."""
     o = _id(courant)
     connus = [c for c in restants if o is not None and _id(c) is not None and (o, _id(c)) in base]
     if len(connus) >= preselection:
@@ -275,9 +275,9 @@ def _candidats(courant: dict, restants: list[dict], base: dict, preselection: in
 async def ordre_plus_proche_voisin_ign(
     lieux: list[dict], mode: str = "driving-car", preselection: int = 4
 ) -> list[dict]:
-    """Ordonne les lieux : Ã  chaque pas, on va vers le lieu le plus proche PAR LA ROUTE.
+    """Ordonne les lieux : à chaque pas, on va vers le lieu le plus proche PAR LA ROUTE.
 
-    Distances lues dans `distances_routieres` (prÃ©calcul IGN) ; appel IGN en direct
+    Distances lues dans `distances_routieres` (précalcul IGN) ; appel IGN en direct
     seulement pour les paires absentes. Le premier lieu reste le premier.
     """
     if len(lieux) <= 2:
@@ -304,8 +304,8 @@ async def optimiser_etapes_ign(
     etapes: list[dict], depart: dict | None, mode: str,
     temps_disponible_minutes, temps_visite_minutes, retour_depart: bool,
 ) -> tuple[list[dict], list[dict]]:
-    """Choisit et ordonne les Ã©tapes qui tiennent dans le temps disponible, avec les
-    durÃ©es de route IGN (prÃ©calculÃ©es si possible)."""
+    """Choisit et ordonne les étapes qui tiennent dans le temps disponible, avec les
+    durées de route IGN (précalculées si possible)."""
     if not temps_disponible_minutes or len(etapes) <= 1:
         return list(etapes), []
 

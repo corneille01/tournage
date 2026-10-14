@@ -1,16 +1,16 @@
 """
 backend/navigation_cache.py
 
-Cache Redis/Upstash pour les itinéraires de navigation dynamiques.
+Cache Redis/Upstash pour les itinÃ©raires de navigation dynamiques.
 
 Objectifs :
-- éviter de recalculer plusieurs fois le même trajet IGN ;
+- Ã©viter de recalculer plusieurs fois le mÃªme trajet IGN ;
 - regrouper les positions GPS proches ;
-- empêcher plusieurs requêtes identiques simultanées de frapper IGN ;
-- fonctionner sans Redis si les variables d'environnement ne sont pas configurées.
+- empÃªcher plusieurs requÃªtes identiques simultanÃ©es de frapper IGN ;
+- fonctionner sans Redis si les variables d'environnement ne sont pas configurÃ©es.
 
-Le cache est volontairement séparé du cache PostgreSQL amenity_cache :
-- amenity_cache = données durables et pré-calculées ;
+Le cache est volontairement sÃ©parÃ© du cache PostgreSQL amenity_cache :
+- amenity_cache = donnÃ©es durables et prÃ©-calculÃ©es ;
 - Redis = cache temporaire des navigations utilisateurs.
 """
 
@@ -25,24 +25,24 @@ from typing import Any
 import httpx
 
 
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Configuration
-# ─────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 CACHE_TTL_SECONDS = 24 * 60 * 60
 
-# Les coordonnées GPS sont regroupées par tranche d'environ 100 m.
-# Cela évite de créer une clé différente à chaque mouvement GPS.
+# Les coordonnÃ©es GPS sont regroupÃ©es par tranche d'environ 100 m.
+# Cela Ã©vite de crÃ©er une clÃ© diffÃ©rente Ã  chaque mouvement GPS.
 PRECISION_COORDONNEES = 4
 
-# Durée maximale pendant laquelle une requête attend qu'un autre
+# DurÃ©e maximale pendant laquelle une requÃªte attend qu'un autre
 # utilisateur termine le calcul IGN.
 LOCK_TTL_SECONDS = 30
 
-# Nombre maximal de tentatives d'attente sur un calcul déjà en cours.
+# Nombre maximal de tentatives d'attente sur un calcul dÃ©jÃ  en cours.
 LOCK_ATTEMPTS = 40
 
-# Intervalle entre deux vérifications du cache pendant l'attente.
+# Intervalle entre deux vÃ©rifications du cache pendant l'attente.
 LOCK_POLL_SECONDS = 0.25
 
 
@@ -50,11 +50,11 @@ class NavigationCache:
     """
     Petit client Redis REST compatible Upstash.
 
-    Le cache est désactivé proprement si :
+    Le cache est dÃ©sactivÃ© proprement si :
         UPSTASH_REDIS_REST_URL
         UPSTASH_REDIS_REST_TOKEN
 
-    ne sont pas configurés.
+    ne sont pas configurÃ©s.
     """
 
     def __init__(self) -> None:
@@ -70,18 +70,18 @@ class NavigationCache:
 
         self.enabled = bool(self.url and self.token)
 
-    # ─────────────────────────────────────────────────────────
-    # Clés
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ClÃ©s
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     @staticmethod
     def _normaliser_coordonnee(valeur: float) -> str:
         """
-        Normalise une coordonnée GPS.
+        Normalise une coordonnÃ©e GPS.
 
-        3 décimales ≈ 100 m.
-        Cela permet à plusieurs utilisateurs situés dans la même
-        zone de réutiliser le même itinéraire.
+        3 dÃ©cimales â‰ˆ 100 m.
+        Cela permet Ã  plusieurs utilisateurs situÃ©s dans la mÃªme
+        zone de rÃ©utiliser le mÃªme itinÃ©raire.
         """
         return f"{round(float(valeur), PRECISION_COORDONNEES):.{PRECISION_COORDONNEES}f}"
 
@@ -122,9 +122,9 @@ class NavigationCache:
 
         return f"pelify:navigation:{digest}"
 
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Appel Redis REST
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def _command(
         self,
@@ -153,7 +153,7 @@ class NavigationCache:
 
             if response.status_code >= 400:
                 print(
-                    "⚠️ Redis navigation : "
+                    "âš ï¸ Redis navigation : "
                     f"HTTP {response.status_code}",
                     flush=True,
                 )
@@ -165,14 +165,14 @@ class NavigationCache:
         except Exception as exc:
             # Le cache ne doit jamais casser la navigation.
             print(
-                f"⚠️ Redis navigation indisponible : {exc}",
+                f"âš ï¸ Redis navigation indisponible : {exc}",
                 flush=True,
             )
             return None
 
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Lecture
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def get(
         self,
@@ -198,9 +198,9 @@ class NavigationCache:
 
         return None
 
-    # ─────────────────────────────────────────────────────────
-    # Écriture
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Ã‰criture
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def set(
         self,
@@ -222,9 +222,9 @@ class NavigationCache:
 
         return result == "OK"
 
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Verrou anti-rafale
-    # ─────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     async def acquire_lock(
         self,
@@ -233,10 +233,10 @@ class NavigationCache:
         """
         Tente d'obtenir un verrou exclusif.
 
-        NX = seulement si la clé n'existe pas.
+        NX = seulement si la clÃ© n'existe pas.
 
-        EX = expiration automatique pour éviter un verrou bloqué
-        définitivement si le processus plante.
+        EX = expiration automatique pour Ã©viter un verrou bloquÃ©
+        dÃ©finitivement si le processus plante.
         """
         result = await self._command(
             "SET",

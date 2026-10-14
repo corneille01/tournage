@@ -1,0 +1,10 @@
+
+.wrangler/
+
+python_modules/
+
+backup-avant-reparation-encodage/
+backend/data/
+.venv/
+.venv-workers/
+backend/backup-avant-reparation-encodage.local/

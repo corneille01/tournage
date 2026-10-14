@@ -1,21 +1,21 @@
-"""backend/visites_cinetouristiques.py — Visites cinétouristiques documentées.
+﻿"""backend/visites_cinetouristiques.py â€” Visites cinÃ©touristiques documentÃ©es.
 
-Depuis la migration_v27, TOUTES ces données viennent de la table
-`visites_cinetouristiques` — il n'y a plus une seule valeur en dur dans
-ce fichier. Une visite qui change (nouveau créneau, fermeture, tarif)
-se corrige en base, sans redéploiement.
+Depuis la migration_v27, TOUTES ces donnÃ©es viennent de la table
+`visites_cinetouristiques` â€” il n'y a plus une seule valeur en dur dans
+ce fichier. Une visite qui change (nouveau crÃ©neau, fermeture, tarif)
+se corrige en base, sans redÃ©ploiement.
 
-Les créneaux restent des données éditoriales datées, saisies par un
+Les crÃ©neaux restent des donnÃ©es Ã©ditoriales datÃ©es, saisies par un
 humain (via POST/PATCH /api/visites) : Pelify ne doit jamais
-transformer un horaire ancien en disponibilité actuelle. Quand aucun
-créneau daté n'est connu pour la date demandée, l'interface renvoie
-une liste vide et demande une vérification sur la page de réservation.
+transformer un horaire ancien en disponibilitÃ© actuelle. Quand aucun
+crÃ©neau datÃ© n'est connu pour la date demandÃ©e, l'interface renvoie
+une liste vide et demande une vÃ©rification sur la page de rÃ©servation.
 """
 from __future__ import annotations
 
 from datetime import date
 
-from db import fetch_all
+from .db import fetch_all
 
 
 def _jour(d: date) -> int:
@@ -23,8 +23,8 @@ def _jour(d: date) -> int:
 
 
 def _parser_json_liste(valeur) -> list:
-    """asyncpg renvoie JSONB comme une chaîne brute (pas de codec
-    enregistré) — voir main.py::_parser_json pour la même logique."""
+    """asyncpg renvoie JSONB comme une chaÃ®ne brute (pas de codec
+    enregistrÃ©) â€” voir main.py::_parser_json pour la mÃªme logique."""
     import json
     if not valeur:
         return []
@@ -38,8 +38,8 @@ def _parser_json_liste(valeur) -> list:
 
 async def creneaux_pour_date(date_sortie: str | None, film_ids: list[int] | None = None) -> list[dict]:
     """
-    Retourne les créneaux de visites cinétouristiques disponibles pour
-    `date_sortie` (ISO "AAAA-MM-JJ"), limités aux visites concernant au
+    Retourne les crÃ©neaux de visites cinÃ©touristiques disponibles pour
+    `date_sortie` (ISO "AAAA-MM-JJ"), limitÃ©s aux visites concernant au
     moins un des `film_ids` si cette liste est fournie et non vide.
     """
     if not date_sortie:

@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  "name": "pelify",
+
+  "compatibility_date": "2026-10-05",
+
+  "compatibility_flags": [
+    "python_workers"
+  ],
+
+  "main": "worker.py",
+
+  "assets": {
+    "directory": "./frontend"
+   
+  },
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ce8a89659fd6436e9a5c46d1abe2da83"
+    }
+  ],
+
+  "python_modules": {
+    "exclude": [
+      "**/*.pyc",
+      "**/__pycache__"
+    ]
+  }
+}

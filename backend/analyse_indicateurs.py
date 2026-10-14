@@ -1,7 +1,7 @@
 """
 backend/analyse_indicateurs.py
 
-Indicateurs de l'observatoire ciné-tourisme.
+Indicateurs de l'observatoire cinÃ©-tourisme.
 
 Sources :
     - lieux_tournage
@@ -11,16 +11,16 @@ Sources :
     - isochrones
 
 Principes :
-    - aucune donnée fictive ;
-    - aucun seuil arbitraire pour inventer une accessibilité ;
-    - les minutes d'isochrones sont découvertes dynamiquement dans la DB ;
-    - les distances DATAtourisme sont utilisées telles quelles ;
-    - les durées de trajet ne sont utilisées que lorsqu'elles existent réellement ;
-    - les statistiques descriptives sont calculées sur les observations
+    - aucune donnÃ©e fictive ;
+    - aucun seuil arbitraire pour inventer une accessibilitÃ© ;
+    - les minutes d'isochrones sont dÃ©couvertes dynamiquement dans la DB ;
+    - les distances DATAtourisme sont utilisÃ©es telles quelles ;
+    - les durÃ©es de trajet ne sont utilisÃ©es que lorsqu'elles existent rÃ©ellement ;
+    - les statistiques descriptives sont calculÃ©es sur les observations
       individuelles disponibles ;
     - voiture et marche restent deux modes distincts ;
-    - les indicateurs historiques conservés pour le frontend sont documentés
-      lorsqu'ils correspondent désormais à une sémantique plus précise.
+    - les indicateurs historiques conservÃ©s pour le frontend sont documentÃ©s
+      lorsqu'ils correspondent dÃ©sormais Ã  une sÃ©mantique plus prÃ©cise.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from db import fetch_all
+from .db import fetch_all
 
 
 # ============================================================================
@@ -72,10 +72,10 @@ def _pct(
     denominator: int | float | None,
 ) -> float | None:
     """
-    Pourcentage sécurisé.
+    Pourcentage sÃ©curisÃ©.
 
     Aucun 0 artificiel n'est produit lorsqu'il n'existe pas de
-    dénominateur exploitable.
+    dÃ©nominateur exploitable.
     """
 
     if numerator is None or denominator in (None, 0):
@@ -86,7 +86,7 @@ def _pct(
 
 def _normalise_mode(mode: Any) -> str:
     """
-    Normalise les modes présents éventuellement dans la DB.
+    Normalise les modes prÃ©sents Ã©ventuellement dans la DB.
 
     Valeurs canoniques :
         driving-car
@@ -106,7 +106,7 @@ def _normalise_mode(mode: Any) -> str:
         "walk": "foot-walking",
         "marche": "foot-walking",
         "a_pied": "foot-walking",
-        "à pied": "foot-walking",
+        "Ã  pied": "foot-walking",
         "foot-walking": "foot-walking",
     }
 
@@ -129,9 +129,9 @@ def _format_date(value: Any) -> str | None:
 
 def _median(values: list[float]) -> float | None:
     """
-    Médiane descriptive simple.
+    MÃ©diane descriptive simple.
 
-    Cette fonction est utilisée uniquement pour les distributions
+    Cette fonction est utilisÃ©e uniquement pour les distributions
     reconstruites explicitement en Python.
     """
 
@@ -155,8 +155,8 @@ def _percentile_cont(
     Approximation de percentile_cont PostgreSQL pour les distributions
     reconstruites en Python.
 
-    Utilisée uniquement lorsque l'ensemble des observations individuelles
-    est déjà récupéré.
+    UtilisÃ©e uniquement lorsque l'ensemble des observations individuelles
+    est dÃ©jÃ  rÃ©cupÃ©rÃ©.
     """
 
     if not values:
@@ -185,10 +185,10 @@ def _percentile_cont(
 
 def _stddev_population(values: list[float]) -> float | None:
     """
-    Écart-type population.
+    Ã‰cart-type population.
 
-    L'observatoire décrit les lieux effectivement observés et non
-    un échantillon destiné à estimer une population inconnue.
+    L'observatoire dÃ©crit les lieux effectivement observÃ©s et non
+    un Ã©chantillon destinÃ© Ã  estimer une population inconnue.
     """
 
     if not values:
@@ -206,7 +206,7 @@ def _stddev_population(values: list[float]) -> float | None:
 
 def _stats_python(values: list[float]) -> dict[str, Any]:
     """
-    Produit le même contrat statistique que les agrégats PostgreSQL :
+    Produit le mÃªme contrat statistique que les agrÃ©gats PostgreSQL :
 
         moyenne
         mediane
@@ -275,13 +275,13 @@ def _stats_python(values: list[float]) -> dict[str, Any]:
 
 def _aire_km2_geojson(geometry: Any) -> float | None:
     """
-    Calcule une surface approximative en km² pour un Polygon ou MultiPolygon
+    Calcule une surface approximative en kmÂ² pour un Polygon ou MultiPolygon
     GeoJSON.
 
-    Projection équirectangulaire locale puis formule du lacet.
+    Projection Ã©quirectangulaire locale puis formule du lacet.
 
-    Cette approximation est destinée aux comparaisons de surfaces
-    d'isochrones, pas à une mesure cadastrale ou réglementaire.
+    Cette approximation est destinÃ©e aux comparaisons de surfaces
+    d'isochrones, pas Ã  une mesure cadastrale ou rÃ©glementaire.
     """
 
     if isinstance(geometry, str):
@@ -391,7 +391,7 @@ def _hhi(parts: list[float]) -> float | None:
     """
     Indice de concentration de Herfindahl-Hirschman.
 
-    Les parts sont exprimées entre 0 et 1.
+    Les parts sont exprimÃ©es entre 0 et 1.
     """
 
     if not parts:
@@ -413,11 +413,11 @@ async def _charger_equipements(
     """
     Charge les statistiques DATAtourisme.
 
-    Priorité pour les distances :
+    PrioritÃ© pour les distances :
         1. amenity_stats.distance_min_m
         2. amenity_cache.distance_metres
 
-    Les distances du cache sont triées avant le calcul du top 10.
+    Les distances du cache sont triÃ©es avant le calcul du top 10.
 
     Le champ nombre_total reste issu de amenity_stats.
     """
@@ -525,7 +525,7 @@ async def _charger_equipements(
         ][categorie].append(distance)
 
     # ------------------------------------------------------------------
-    # Compléter uniquement les informations absentes
+    # ComplÃ©ter uniquement les informations absentes
     # ------------------------------------------------------------------
 
     for lieu_id, categories in cache_distances.items():
@@ -618,16 +618,16 @@ async def _charger_durees_routieres(
     lieu_ids: list[int],
 ) -> dict[int, dict[str, int | None]]:
     """
-    Charge les durées réellement disponibles.
+    Charge les durÃ©es rÃ©ellement disponibles.
 
     Deux modes distincts :
         - duree_voiture_secondes
         - duree_pied_secondes
 
-    Aucune durée n'est déduite ou interpolée.
+    Aucune durÃ©e n'est dÃ©duite ou interpolÃ©e.
 
-    Si plusieurs lignes existent pour un lieu, on conserve la durée
-    minimale réellement enregistrée pour chaque mode.
+    Si plusieurs lignes existent pour un lieu, on conserve la durÃ©e
+    minimale rÃ©ellement enregistrÃ©e pour chaque mode.
     """
 
     if not lieu_ids:
@@ -723,14 +723,14 @@ async def _charger_isochrones(
     lieu_ids: list[int],
 ) -> dict[str, Any]:
     """
-    Charge les isochrones réellement présents en DB.
+    Charge les isochrones rÃ©ellement prÃ©sents en DB.
 
-    Les modes sont traités séparément.
+    Les modes sont traitÃ©s sÃ©parÃ©ment.
 
-    Le ratio de surface voiture/marche à 15 minutes est calculé uniquement
+    Le ratio de surface voiture/marche Ã  15 minutes est calculÃ© uniquement
     sur les lieux disposant d'une surface valide pour LES DEUX modes.
 
-    Cela évite de comparer :
+    Cela Ã©vite de comparer :
         moyenne voiture sur N lieux
         avec
         moyenne marche sur M autres lieux.
@@ -782,7 +782,7 @@ async def _charger_isochrones(
     total_lieux = len(lieu_ids)
 
     # ------------------------------------------------------------------
-    # Présence des isochrones
+    # PrÃ©sence des isochrones
     #
     # lieu -> mode -> minutes
     # ------------------------------------------------------------------
@@ -797,7 +797,7 @@ async def _charger_isochrones(
     dates: list[Any] = []
 
     # ------------------------------------------------------------------
-    # Surfaces à 15 minutes
+    # Surfaces Ã  15 minutes
     # ------------------------------------------------------------------
 
     surfaces_15: dict[
@@ -864,9 +864,9 @@ async def _charger_isochrones(
             if aire is None or aire <= 0:
                 continue
 
-            # Si plusieurs géométries existent pour le même lieu/mode,
-            # on conserve la dernière valeur parcourue. La requête
-            # existante est supposée contenir une géométrie par couple
+            # Si plusieurs gÃ©omÃ©tries existent pour le mÃªme lieu/mode,
+            # on conserve la derniÃ¨re valeur parcourue. La requÃªte
+            # existante est supposÃ©e contenir une gÃ©omÃ©trie par couple
             # lieu/mode/minute.
             surfaces_15[
                 lieu_id
@@ -895,7 +895,7 @@ async def _charger_isochrones(
                     ].append(aire)
 
     # ------------------------------------------------------------------
-    # Minutes réellement disponibles
+    # Minutes rÃ©ellement disponibles
     # ------------------------------------------------------------------
 
     minutes_set: set[int] = set()
@@ -956,7 +956,7 @@ async def _charger_isochrones(
         )
 
     # ------------------------------------------------------------------
-    # Couverture générale
+    # Couverture gÃ©nÃ©rale
     # ------------------------------------------------------------------
 
     lieux_avec_isochrone = sum(
@@ -1001,7 +1001,7 @@ async def _charger_isochrones(
     )
 
     # ------------------------------------------------------------------
-    # Date la plus récente
+    # Date la plus rÃ©cente
     # ------------------------------------------------------------------
 
     derniere_date = None
@@ -1013,7 +1013,7 @@ async def _charger_isochrones(
             derniere_date = None
 
     # ------------------------------------------------------------------
-    # Surfaces moyennes à 15 min
+    # Surfaces moyennes Ã  15 min
     # ------------------------------------------------------------------
 
     surfaces_voiture = [
@@ -1051,7 +1051,7 @@ async def _charger_isochrones(
     # ------------------------------------------------------------------
     # Ratio voiture / marche
     #
-    # UNIQUEMENT sur les mêmes lieux.
+    # UNIQUEMENT sur les mÃªmes lieux.
     # ------------------------------------------------------------------
 
     lieux_communs_15 = [
@@ -1108,7 +1108,7 @@ async def _charger_isochrones(
     )
 
     # ------------------------------------------------------------------
-    # Lieux extrêmes — uniquement descriptifs
+    # Lieux extrÃªmes â€” uniquement descriptifs
     # ------------------------------------------------------------------
 
     lieu_plus_enclave = None
@@ -1127,7 +1127,7 @@ async def _charger_isochrones(
         )
 
     # ------------------------------------------------------------------
-    # Surface moyenne voiture 15 min par département
+    # Surface moyenne voiture 15 min par dÃ©partement
     # ------------------------------------------------------------------
 
     surface_voiture_15_par_departement = []
@@ -1320,27 +1320,27 @@ async def _stats_categorie(
     departement: str | None = None,
 ) -> dict[str, Any]:
     """
-    Statistiques descriptives d'une catégorie DATAtourisme.
+    Statistiques descriptives d'une catÃ©gorie DATAtourisme.
 
     Trois familles :
 
         1. nombre_total
-           -> nombre d'équipements retournés dans le périmètre
-              DATAtourisme de la catégorie ;
+           -> nombre d'Ã©quipements retournÃ©s dans le pÃ©rimÃ¨tre
+              DATAtourisme de la catÃ©gorie ;
 
         2. nombre_1000m
-           -> nombre d'équipements dans un rayon FIXE de 1 km ;
-              ce bloc est comparable entre catégories ;
+           -> nombre d'Ã©quipements dans un rayon FIXE de 1 km ;
+              ce bloc est comparable entre catÃ©gories ;
 
         3. distance_min_m
-           -> distance du lieu vers le premier équipement.
+           -> distance du lieu vers le premier Ã©quipement.
 
-    Les dénominateurs des indicateurs de proximité sont séparés :
-        - n_nombre pour les données de nombre ;
-        - n_distance pour les données de distance.
+    Les dÃ©nominateurs des indicateurs de proximitÃ© sont sÃ©parÃ©s :
+        - n_nombre pour les donnÃ©es de nombre ;
+        - n_distance pour les donnÃ©es de distance.
 
-    Cela évite par exemple de calculer un taux de proximité sur les lieux
-    ne possédant aucune distance réellement disponible.
+    Cela Ã©vite par exemple de calculer un taux de proximitÃ© sur les lieux
+    ne possÃ©dant aucune distance rÃ©ellement disponible.
     """
 
     condition_dep = (
@@ -1600,10 +1600,10 @@ async def _stats_categorie(
         ),
 
         # --------------------------------------------------------------
-        # Nombre à rayon standard de 1 km.
+        # Nombre Ã  rayon standard de 1 km.
         #
-        # Contrairement à nombre_total, ce bloc repose sur un rayon
-        # identique pour toutes les catégories.
+        # Contrairement Ã  nombre_total, ce bloc repose sur un rayon
+        # identique pour toutes les catÃ©gories.
         # --------------------------------------------------------------
 
         "nombre_rayon_standard_1km": (
@@ -1729,12 +1729,12 @@ async def _diversite_fonctionnelle(
     departement: str | None = None,
 ) -> dict[str, Any]:
     """
-    Nombre de catégories DATAtourisme ayant au moins un équipement
-    observé par lieu.
+    Nombre de catÃ©gories DATAtourisme ayant au moins un Ã©quipement
+    observÃ© par lieu.
 
-    La distribution est calculée au niveau des lieux.
+    La distribution est calculÃ©e au niveau des lieux.
 
-    Les statistiques utilisent la même convention percentile_cont
+    Les statistiques utilisent la mÃªme convention percentile_cont
     que les autres indicateurs.
     """
 
@@ -1885,11 +1885,11 @@ async def construire_observatoire_statistique(
     region: str = "Occitanie",
 ) -> dict[str, Any]:
     """
-    Construit le dictionnaire statistique destiné à :
+    Construit le dictionnaire statistique destinÃ© Ã  :
 
         /api/analyse/observatoire
 
-    Les catégories sont découvertes dynamiquement dans amenity_stats.
+    Les catÃ©gories sont dÃ©couvertes dynamiquement dans amenity_stats.
     """
 
     categories_rows = await fetch_all(
@@ -1945,7 +1945,7 @@ async def construire_observatoire_statistique(
     ]
 
     # ------------------------------------------------------------------
-    # Statistiques régionales
+    # Statistiques rÃ©gionales
     # ------------------------------------------------------------------
 
     equipements: dict[str, Any] = {}
@@ -1966,18 +1966,18 @@ async def construire_observatoire_statistique(
     )
 
     # ------------------------------------------------------------------
-    # Tableau départemental (comparaison multi-catégories)
+    # Tableau dÃ©partemental (comparaison multi-catÃ©gories)
     # ------------------------------------------------------------------
     #
-    # On ne se limite plus à une seule catégorie de référence : on compare,
-    # pour chaque département, plusieurs catégories d'équipements afin de
-    # pouvoir les représenter côte à côte (hébergement, restauration,
-    # arrêts de bus, gares, parkings, aéroports...).
+    # On ne se limite plus Ã  une seule catÃ©gorie de rÃ©fÃ©rence : on compare,
+    # pour chaque dÃ©partement, plusieurs catÃ©gories d'Ã©quipements afin de
+    # pouvoir les reprÃ©senter cÃ´te Ã  cÃ´te (hÃ©bergement, restauration,
+    # arrÃªts de bus, gares, parkings, aÃ©roports...).
     #
     # L'indicateur pivot est "nombre_rayon_standard_1km" : il repose sur
-    # un rayon fixe de 1 km, identique pour toutes les catégories — donc
-    # comparable entre elles, contrairement à "nombre" qui dépend du
-    # rayon de recherche propre à chaque catégorie DATAtourisme.
+    # un rayon fixe de 1 km, identique pour toutes les catÃ©gories â€” donc
+    # comparable entre elles, contrairement Ã  "nombre" qui dÃ©pend du
+    # rayon de recherche propre Ã  chaque catÃ©gorie DATAtourisme.
 
     CATEGORIES_COMPARAISON_PRIORITAIRES = [
         "hebergement",
@@ -2118,46 +2118,46 @@ async def construire_observatoire_statistique(
 
         "avertissements_methodologiques": [
             (
-                "Les statistiques « distance_moyenne_10_plus_proches_m » "
-                "portent uniquement sur les 10 équipements les plus proches "
-                "de chaque lieu lorsqu'une telle donnée est disponible."
+                "Les statistiques Â« distance_moyenne_10_plus_proches_m Â» "
+                "portent uniquement sur les 10 Ã©quipements les plus proches "
+                "de chaque lieu lorsqu'une telle donnÃ©e est disponible."
             ),
 
             (
-                "Le champ « nombre » utilise le périmètre de recherche "
-                "réel de chaque catégorie DATAtourisme. Il ne doit donc "
-                "pas être utilisé pour comparer directement deux catégories "
-                "dont les rayons de recherche diffèrent."
+                "Le champ Â« nombre Â» utilise le pÃ©rimÃ¨tre de recherche "
+                "rÃ©el de chaque catÃ©gorie DATAtourisme. Il ne doit donc "
+                "pas Ãªtre utilisÃ© pour comparer directement deux catÃ©gories "
+                "dont les rayons de recherche diffÃ¨rent."
             ),
 
             (
-                "Le bloc « nombre_rayon_standard_1km » utilise un rayon "
-                "fixe de 1 km et constitue le bloc privilégié pour comparer "
-                "les volumes observés entre catégories."
+                "Le bloc Â« nombre_rayon_standard_1km Â» utilise un rayon "
+                "fixe de 1 km et constitue le bloc privilÃ©giÃ© pour comparer "
+                "les volumes observÃ©s entre catÃ©gories."
             ),
 
             (
-                "Les pourcentages de proximité (250 m, 500 m, 1 km, 2 km, "
+                "Les pourcentages de proximitÃ© (250 m, 500 m, 1 km, 2 km, "
                 "5 km) utilisent uniquement les lieux pour lesquels une "
-                "distance réelle est disponible."
+                "distance rÃ©elle est disponible."
             ),
 
             (
-                "La position régionale est descriptive. L'écart de ±10 % "
-                "est un repère de lecture et ne constitue pas un seuil "
+                "La position rÃ©gionale est descriptive. L'Ã©cart de Â±10 % "
+                "est un repÃ¨re de lecture et ne constitue pas un seuil "
                 "scientifique universel."
             ),
 
             (
-                "L'écart-type est calculé comme écart-type population "
-                "(stddev_pop) puisque l'observatoire décrit les lieux "
-                "effectivement présents dans sa base."
+                "L'Ã©cart-type est calculÃ© comme Ã©cart-type population "
+                "(stddev_pop) puisque l'observatoire dÃ©crit les lieux "
+                "effectivement prÃ©sents dans sa base."
             ),
 
             (
-                "Les indicateurs de priorité et d'opportunité sont des "
+                "Les indicateurs de prioritÃ© et d'opportunitÃ© sont des "
                 "heuristiques de lecture territoriale. Ils ne constituent "
-                "pas une estimation de l'impact économique du tourisme."
+                "pas une estimation de l'impact Ã©conomique du tourisme."
             ),
         ],
     }
@@ -2457,7 +2457,7 @@ async def construire_indicateurs_cinetourisme(
 
     amenity_lieux = 0
 
-    # Ventilation départementale
+    # Ventilation dÃ©partementale
     dep_equip_acc = defaultdict(
         lambda: {
             "heb": [],
@@ -2501,7 +2501,7 @@ async def construire_indicateurs_cinetourisme(
             amenity_lieux += 1
 
         # ---------------------------------------------------------------------
-        # Hébergement
+        # HÃ©bergement
         # ---------------------------------------------------------------------
 
         if hebergement is not None:
@@ -2669,7 +2669,7 @@ async def construire_indicateurs_cinetourisme(
     }
 
     # =========================================================================
-    # 9. ACCESSIBILITE — MODES SEPARES
+    # 9. ACCESSIBILITE â€” MODES SEPARES
     # =========================================================================
 
     voiture_disponible = 0
@@ -2683,7 +2683,7 @@ async def construire_indicateurs_cinetourisme(
 
     # Pour les indicateurs "pret_*" historiques :
     # ils restent des alias de la voiture lorsque la couverture voiture
-    # est complète. Ils ne mélangent plus voiture et marche.
+    # est complÃ¨te. Ils ne mÃ©langent plus voiture et marche.
     for lieu_id in lieu_ids:
 
         route = durees_routieres.get(
@@ -2773,20 +2773,20 @@ async def construire_indicateurs_cinetourisme(
     )
 
     # -------------------------------------------------------------------------
-    # Compatibilité frontend
+    # CompatibilitÃ© frontend
     #
     # IMPORTANT :
-    # pret_* ne mélange plus les modes.
-    # Ce sont désormais des alias historiques de la couverture voiture
-    # lorsque la donnée voiture est complète.
+    # pret_* ne mÃ©lange plus les modes.
+    # Ce sont dÃ©sormais des alias historiques de la couverture voiture
+    # lorsque la donnÃ©e voiture est complÃ¨te.
     # -------------------------------------------------------------------------
 
     pret_15_pct = voiture_15_pct
     pret_30_pct = voiture_30_pct
 
-    # Impossible de calculer honnêtement >45 min sans connaître la durée
-    # réelle pour tous les lieux ou une donnée explicitement supérieure
-    # à 45 min.
+    # Impossible de calculer honnÃªtement >45 min sans connaÃ®tre la durÃ©e
+    # rÃ©elle pour tous les lieux ou une donnÃ©e explicitement supÃ©rieure
+    # Ã  45 min.
     isoles_45_pct = None
 
     accessibilite = {
@@ -3052,7 +3052,7 @@ async def construire_indicateurs_cinetourisme(
         )
 
         # ---------------------------------------------------------------------
-        # Accessibilité voiture
+        # AccessibilitÃ© voiture
         # ---------------------------------------------------------------------
 
         voiture_coverage_pct = _pct(
@@ -3087,7 +3087,7 @@ async def construire_indicateurs_cinetourisme(
         )
 
         # ---------------------------------------------------------------------
-        # Accessibilité piétonne
+        # AccessibilitÃ© piÃ©tonne
         # ---------------------------------------------------------------------
 
         pied_coverage_pct = _pct(
@@ -3141,20 +3141,20 @@ async def construire_indicateurs_cinetourisme(
         )
 
         # ---------------------------------------------------------------------
-        # Score de priorité
+        # Score de prioritÃ©
         #
         # HEURISTIQUE :
         #
-        #   45 % déficit d'offre
-        #   35 % déficit de mobilité
-        #   20 % présence cinématographique
+        #   45 % dÃ©ficit d'offre
+        #   35 % dÃ©ficit de mobilitÃ©
+        #   20 % prÃ©sence cinÃ©matographique
         #
-        # Ce n'est PAS un indicateur d'impact économique.
+        # Ce n'est PAS un indicateur d'impact Ã©conomique.
         # ---------------------------------------------------------------------
 
         composantes_priorite = []
 
-        # Déficit d'offre
+        # DÃ©ficit d'offre
         if (
             heb_presence_pct is not None
             and rest_presence_pct is not None
@@ -3178,11 +3178,11 @@ async def construire_indicateurs_cinetourisme(
                 )
             )
 
-        # Déficit de mobilité
+        # DÃ©ficit de mobilitÃ©
         #
-        # Une surface 15 min voiture plus élevée signifie davantage
-        # de territoire couvert par le réseau routier depuis les lieux.
-        # La composante de déficit est donc calculée inversement.
+        # Une surface 15 min voiture plus Ã©levÃ©e signifie davantage
+        # de territoire couvert par le rÃ©seau routier depuis les lieux.
+        # La composante de dÃ©ficit est donc calculÃ©e inversement.
         if (
             surface_15 is not None
             and max_surface_15_globale is not None
@@ -3209,7 +3209,7 @@ async def construire_indicateurs_cinetourisme(
                 )
             )
 
-        # Présence cinématographique
+        # PrÃ©sence cinÃ©matographique
         nb_lieux_dep = dep_item[
             "nb_lieux"
         ]
@@ -3256,7 +3256,7 @@ async def construire_indicateurs_cinetourisme(
             score_investissement = None
 
         # ---------------------------------------------------------------------
-        # Benchmark équipement
+        # Benchmark Ã©quipement
         # ---------------------------------------------------------------------
 
         if (
@@ -3266,17 +3266,17 @@ async def construire_indicateurs_cinetourisme(
 
             if moy_heb > ref_moy_hebergement:
                 benchmark_hebergement = (
-                    "au-dessus de la moyenne régionale"
+                    "au-dessus de la moyenne rÃ©gionale"
                 )
 
             elif moy_heb < ref_moy_hebergement:
                 benchmark_hebergement = (
-                    "en-dessous de la moyenne régionale"
+                    "en-dessous de la moyenne rÃ©gionale"
                 )
 
             else:
                 benchmark_hebergement = (
-                    "dans la moyenne régionale"
+                    "dans la moyenne rÃ©gionale"
                 )
 
         else:
@@ -3295,17 +3295,17 @@ async def construire_indicateurs_cinetourisme(
 
             if surface_15 > ref_surface_15:
                 benchmark_enclavement = (
-                    "surface accessible supérieure à la moyenne régionale"
+                    "surface accessible supÃ©rieure Ã  la moyenne rÃ©gionale"
                 )
 
             elif surface_15 < ref_surface_15:
                 benchmark_enclavement = (
-                    "surface accessible inférieure à la moyenne régionale"
+                    "surface accessible infÃ©rieure Ã  la moyenne rÃ©gionale"
                 )
 
             else:
                 benchmark_enclavement = (
-                    "dans la moyenne régionale"
+                    "dans la moyenne rÃ©gionale"
                 )
 
         else:
@@ -3327,9 +3327,9 @@ async def construire_indicateurs_cinetourisme(
                     rest_presence_pct
                 ),
 
-                # Compatibilité historique :
+                # CompatibilitÃ© historique :
                 # ces champs correspondent maintenant explicitement
-                # à la voiture et non à min(voiture, marche).
+                # Ã  la voiture et non Ã  min(voiture, marche).
                 "pret_15_pct": (
                     voiture_15_pct_dep
                 ),
@@ -3608,7 +3608,7 @@ async def construire_indicateurs_cinetourisme(
         )
 
         # ---------------------------------------------------------------------
-        # Maturité touristique observée
+        # MaturitÃ© touristique observÃ©e
         # ---------------------------------------------------------------------
 
         maturite = (
@@ -3625,7 +3625,7 @@ async def construire_indicateurs_cinetourisme(
         )
 
         # ---------------------------------------------------------------------
-        # Score popularité
+        # Score popularitÃ©
         # ---------------------------------------------------------------------
 
         if (
@@ -3644,7 +3644,7 @@ async def construire_indicateurs_cinetourisme(
             popularite_score = None
 
         # ---------------------------------------------------------------------
-        # Score opportunité
+        # Score opportunitÃ©
         #
         # Heuristique descriptive.
         # ---------------------------------------------------------------------
@@ -3735,7 +3735,7 @@ async def construire_indicateurs_cinetourisme(
                     else None
                 ),
 
-                # Compatibilité frontend historique.
+                # CompatibilitÃ© frontend historique.
                 "preparation": (
                     round(
                         maturite,
@@ -3891,9 +3891,9 @@ async def construire_indicateurs_cinetourisme(
             1
             for lieu_id in lieu_ids
             if lieu_id in (
-                # Reconstitution à partir du taux disponible.
-                # Le taux lui-même provient exclusivement des lieux
-                # réellement présents dans isochrones.
+                # Reconstitution Ã  partir du taux disponible.
+                # Le taux lui-mÃªme provient exclusivement des lieux
+                # rÃ©ellement prÃ©sents dans isochrones.
                 set()
             )
         )

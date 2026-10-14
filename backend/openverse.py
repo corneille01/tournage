@@ -1,26 +1,26 @@
 """
-backend/openverse.py — Client pour l'API Openverse (images sous
-licences ouvertes / domaine public), utilisé par le module Landscape
-Studio pour la recherche de paysages de référence.
+backend/openverse.py â€” Client pour l'API Openverse (images sous
+licences ouvertes / domaine public), utilisÃ© par le module Landscape
+Studio pour la recherche de paysages de rÃ©fÃ©rence.
 
-Openverse ne garantit pas lui-même l'exactitude de ses métadonnées de
-licence — on les conserve telles quelles et on affiche toujours le
-lien vers la source d'origine plutôt que de prétendre à une garantie
+Openverse ne garantit pas lui-mÃªme l'exactitude de ses mÃ©tadonnÃ©es de
+licence â€” on les conserve telles quelles et on affiche toujours le
+lien vers la source d'origine plutÃ´t que de prÃ©tendre Ã  une garantie
 qu'on n'a pas.
 
 Passe par openverse_cache (Redis/Upstash) exactement comme
-navigation_cache est utilisé dans main.py pour les itinéraires : une
-recherche déjà vue est servie sans latence, et si un très grand
-nombre d'utilisateurs interrogent le même terme au même instant sur
-un cache froid, un seul appel part réellement vers Openverse — les
-autres attendent son résultat via le verrou anti-rafale.
+navigation_cache est utilisÃ© dans main.py pour les itinÃ©raires : une
+recherche dÃ©jÃ  vue est servie sans latence, et si un trÃ¨s grand
+nombre d'utilisateurs interrogent le mÃªme terme au mÃªme instant sur
+un cache froid, un seul appel part rÃ©ellement vers Openverse â€” les
+autres attendent son rÃ©sultat via le verrou anti-rafale.
 """
 
 import os
 
 import httpx
 
-from openverse_cache import openverse_cache
+from .openverse_cache import openverse_cache
 
 OPENVERSE_API_URL = os.getenv(
     "OPENVERSE_API_URL", "https://api.openverse.org/v1/images/"
@@ -61,9 +61,9 @@ async def _appeler_openverse(query: str, page: int, page_size: int) -> dict:
 async def rechercher_openverse(query: str, page: int = 1, page_size: int = 20) -> dict:
     """Recherche des images Openverse, en passant par le cache Redis.
 
-    Même séquence que navigation_cache dans main.py : cache_key pour la
-    valeur, lock_key = cache_key + ":lock" pour le verrou (deux clés
-    distinctes — sinon le verrou et le résultat s'écrasent l'un
+    MÃªme sÃ©quence que navigation_cache dans main.py : cache_key pour la
+    valeur, lock_key = cache_key + ":lock" pour le verrou (deux clÃ©s
+    distinctes â€” sinon le verrou et le rÃ©sultat s'Ã©crasent l'un
     l'autre). Si Redis est indisponible, on part directement vers
     Openverse sans jamais bloquer l'utilisateur.
     """
@@ -82,15 +82,15 @@ async def rechercher_openverse(query: str, page: int = 1, page_size: int = 20) -
     verrou_obtenu = await openverse_cache.acquire_lock(lock_key)
 
     if not verrou_obtenu:
-        # Un autre appel est déjà en train de récupérer ce même résultat —
-        # on attend le sien plutôt que de dupliquer la requête HTTP.
+        # Un autre appel est dÃ©jÃ  en train de rÃ©cupÃ©rer ce mÃªme rÃ©sultat â€”
+        # on attend le sien plutÃ´t que de dupliquer la requÃªte HTTP.
         resultat = await openverse_cache.wait_for_result(cache_key)
         if resultat:
             resultat["cache_hit"] = True
             resultat["cache_deduplicated"] = True
             return resultat
-        # Personne n'a livré à temps (verrou expiré/plantage) — on
-        # retente d'obtenir le verrou avant de partir nous-mêmes.
+        # Personne n'a livrÃ© Ã  temps (verrou expirÃ©/plantage) â€” on
+        # retente d'obtenir le verrou avant de partir nous-mÃªmes.
         verrou_obtenu = await openverse_cache.acquire_lock(lock_key)
 
     try:

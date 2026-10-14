@@ -1,4 +1,4 @@
-"""backend/guides.py - Annuaire des guides et médiateurs cinétouristiques."""
+﻿"""backend/guides.py - Annuaire des guides et mÃ©diateurs cinÃ©touristiques."""
 from __future__ import annotations
 
 import asyncio
@@ -7,9 +7,9 @@ import os
 
 import httpx
 from fastapi import HTTPException, Request
-from db import execute, fetch_all
-from overpass import haversine_metres
-from distances_ign import distances_routieres, estimation, charger_distances_guides
+from .db import execute, fetch_all
+from .overpass import haversine_metres
+from .distances_ign import distances_routieres, estimation, charger_distances_guides
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +27,15 @@ TYPES_GUIDE_VALIDES = {
 }
 
 FONCTIONS_GUIDE = {
-    "guide_conferencier": "Guide-conférencier",
-    "mediateur_culturel": "Médiateur culturel",
+    "guide_conferencier": "Guide-confÃ©rencier",
+    "mediateur_culturel": "MÃ©diateur culturel",
     "accompagnateur": "Accompagnateur",
     "historien": "Historien",
-    "passionne_cinema": "Passionné de cinéma",
+    "passionne_cinema": "PassionnÃ© de cinÃ©ma",
     "autre": "Guide / agence de visites",
 }
 SPECIALITES_LIBELLES = {
-    "cinema": "Cinéma", "series": "Séries", "histoire": "Histoire", "architecture": "Architecture",
+    "cinema": "CinÃ©ma", "series": "SÃ©ries", "histoire": "Histoire", "architecture": "Architecture",
     "patrimoine": "Patrimoine", "paysage": "Paysage", "culture_populaire": "Culture populaire",
     "production_audiovisuelle": "Production audiovisuelle", "photographie": "Photographie",
     "gastronomie": "Gastronomie",
@@ -44,13 +44,13 @@ GEOCODAGE_INVERSE_URL = "https://data.geopf.fr/geocodage/reverse"
 
 
 def fonction_guide(type_guide: str | None) -> str:
-    return FONCTIONS_GUIDE.get(str(type_guide or ""), "Guide / médiateur")
+    return FONCTIONS_GUIDE.get(str(type_guide or ""), "Guide / mÃ©diateur")
 
 
 async def _localiser(guide: dict) -> tuple[str | None, str | None]:
     """Adresse et commune d'un guide. Lues en base si connues, sinon obtenues
-    une fois par géocodage inverse IGN puis mémorisées (le point est celui
-    déclaré par le guide : c'est son lieu d'activité, pas forcément son domicile)."""
+    une fois par gÃ©ocodage inverse IGN puis mÃ©morisÃ©es (le point est celui
+    dÃ©clarÃ© par le guide : c'est son lieu d'activitÃ©, pas forcÃ©ment son domicile)."""
     if guide.get("adresse") or guide.get("commune"):
         return guide.get("adresse"), guide.get("commune")
     try:
@@ -60,7 +60,7 @@ async def _localiser(guide: dict) -> tuple[str | None, str | None]:
             r.raise_for_status()
             props = ((r.json().get("features") or [{}])[0]).get("properties") or {}
     except Exception:
-        logger.warning("Géocodage inverse indisponible pour le guide %s", guide.get("id"))
+        logger.warning("GÃ©ocodage inverse indisponible pour le guide %s", guide.get("id"))
         return None, None
     commune = props.get("city") or props.get("municipality")
     adresse = props.get("label") or None
@@ -70,7 +70,7 @@ async def _localiser(guide: dict) -> tuple[str | None, str | None]:
                           "code_postal = COALESCE(code_postal, %s) WHERE id = %s",
                           (adresse, commune, props.get("postcode"), guide["id"]))
         except Exception:
-            logger.warning("Mémorisation de l'adresse impossible pour le guide %s", guide.get("id"))
+            logger.warning("MÃ©morisation de l'adresse impossible pour le guide %s", guide.get("id"))
     return adresse, commune
 
 
@@ -84,9 +84,9 @@ _MODE_VERS_MOBILITE = {
 
 def exiger_admin(request: Request) -> None:
     if not ADMIN_TOKEN:
-        raise HTTPException(503, "Administration des guides non configurée (variable ADMIN_TOKEN manquante)")
+        raise HTTPException(503, "Administration des guides non configurÃ©e (variable ADMIN_TOKEN manquante)")
     if request.headers.get("X-Admin-Token") != ADMIN_TOKEN:
-        raise HTTPException(401, "Jeton d'administration invalide ou absent (en-tête X-Admin-Token)")
+        raise HTTPException(401, "Jeton d'administration invalide ou absent (en-tÃªte X-Admin-Token)")
 
 
 def _score_guide(guide: dict, distance_metres: float, mode: str,
@@ -112,15 +112,15 @@ def _score_guide(guide: dict, distance_metres: float, mode: str,
     return score
 
 
-# Rayon maximal du repli « guide le plus proche » quand aucun guide ne couvre le parcours.
+# Rayon maximal du repli Â« guide le plus proche Â» quand aucun guide ne couvre le parcours.
 RAYON_REPLI_M = 250_000
 
 
 def _etiquette(score: int) -> str:
     if score >= 45:
-        return "Très bonne correspondance avec votre parcours"
+        return "TrÃ¨s bonne correspondance avec votre parcours"
     if score >= 25:
-        return "Correspond à vos critères"
+        return "Correspond Ã  vos critÃ¨res"
     return "Correspondance partielle avec votre parcours"
 
 
@@ -141,8 +141,8 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
     try:
         guides = await fetch_all(requete.format(extra=", adresse, commune"))
     except Exception:
-        # Migration v29 pas encore appliquée : on continue sans adresse en base.
-        logger.warning("Colonnes adresse/commune absentes de guides (migration v29 à appliquer)")
+        # Migration v29 pas encore appliquÃ©e : on continue sans adresse en base.
+        logger.warning("Colonnes adresse/commune absentes de guides (migration v29 Ã  appliquer)")
         guides = await fetch_all(requete.format(extra=""))
     if not guides:
         return []
@@ -191,12 +191,12 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
             "hors_zone": hors_zone, "_score": score, "_guide": guide,
         })
 
-    # Distances de ROUTE (Géoplateforme IGN) : le vol d'oiseau ci-dessus ne sert qu'à
-    # présélectionner quelques guides ; les distances affichées, le score et la
-    # comparaison avec la zone d'intervention utilisent ensuite l'itinéraire réel.
+    # Distances de ROUTE (GÃ©oplateforme IGN) : le vol d'oiseau ci-dessus ne sert qu'Ã 
+    # prÃ©sÃ©lectionner quelques guides ; les distances affichÃ©es, le score et la
+    # comparaison avec la zone d'intervention utilisent ensuite l'itinÃ©raire rÃ©el.
     resultats.sort(key=lambda x: (x["hors_zone"], -x["_score"], x["distance_metres"], x["nom"].lower()))
     resultats = resultats[:limite + 2]
-    # 1) Trajets guide -> lieu précalculés chaque jour (precalculer_distances_routieres.py).
+    # 1) Trajets guide -> lieu prÃ©calculÃ©s chaque jour (precalculer_distances_routieres.py).
     base = await charger_distances_guides(
         [r["id"] for r in resultats], [e.get("id") for e in etapes]
     )
@@ -204,7 +204,7 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         origine = (r["latitude"], r["longitude"])
         cibles = [(float(e["latitude"]), float(e["longitude"])) for e in etapes]
         mesures = [base.get((int(r["id"]), int(e["id"]))) if e.get("id") is not None else None for e in etapes]
-        # 2) Repli : appel IGN en direct (mis en cache) pour les seuls trajets non précalculés.
+        # 2) Repli : appel IGN en direct (mis en cache) pour les seuls trajets non prÃ©calculÃ©s.
         manquants = [i for i, m in enumerate(mesures) if m is None]
         if manquants:
             live = await distances_routieres(origine, [cibles[i] for i in manquants], "driving-car", delai_max_s=25.0)
@@ -229,8 +229,8 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
     resultats = [r for r in resultats if not (r["hors_zone"] and r["distance_metres"] > RAYON_REPLI_M)]
 
     # Guides dont la zone couvre le parcours d'abord. S'il n'y en a aucun, on
-    # propose les plus proches (dans RAYON_REPLI_M), clairement signalés
-    # « hors zone » : mieux qu'une section vide, sans faire croire à une
+    # propose les plus proches (dans RAYON_REPLI_M), clairement signalÃ©s
+    # Â« hors zone Â» : mieux qu'une section vide, sans faire croire Ã  une
     # couverture.
     dans_zone = [r for r in resultats if not r["hors_zone"]]
     if dans_zone:
@@ -238,7 +238,7 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
         resultats.sort(key=lambda x: (-x["_score"], x["distance_metres"], x["nom"].lower()))
     else:
         for r in resultats:
-            r["correspondance"] = "Le plus proche de votre parcours - hors de sa zone habituelle, à confirmer avec lui"
+            r["correspondance"] = "Le plus proche de votre parcours - hors de sa zone habituelle, Ã  confirmer avec lui"
         resultats.sort(key=lambda x: (x["distance_metres"], x["nom"].lower()))
     resultats = resultats[:limite]
     for resultat in resultats:
@@ -250,10 +250,10 @@ async def guides_recommandes(etapes: list[dict], mode: str = "driving-car",
 async def completer_localisation(guides: list[dict], max_appels: int = 30) -> None:
     """Renseigne commune et code postal des guides qui n'en ont pas (annuaire public).
 
-    Géocodage inverse IGN, 5 appels en parallèle au plus, résultat mémorisé en base :
-    seules les premières consultations déclenchent des appels. Les guides sont modifiés
-    sur place ; en cas d'échec ils restent simplement sans commune. L'adresse postale
-    complète n'est volontairement pas rendue publique ici (point d'activité déclaré,
+    GÃ©ocodage inverse IGN, 5 appels en parallÃ¨le au plus, rÃ©sultat mÃ©morisÃ© en base :
+    seules les premiÃ¨res consultations dÃ©clenchent des appels. Les guides sont modifiÃ©s
+    sur place ; en cas d'Ã©chec ils restent simplement sans commune. L'adresse postale
+    complÃ¨te n'est volontairement pas rendue publique ici (point d'activitÃ© dÃ©clarÃ©,
     parfois confondu avec un domicile).
     """
     manquants = [g for g in guides
@@ -271,7 +271,7 @@ async def completer_localisation(guides: list[dict], max_appels: int = 30) -> No
                 r.raise_for_status()
                 props = ((r.json().get("features") or [{}])[0]).get("properties") or {}
             except Exception:
-                logger.warning("Géocodage inverse indisponible pour le guide %s", guide.get("id"))
+                logger.warning("GÃ©ocodage inverse indisponible pour le guide %s", guide.get("id"))
                 return
             commune = props.get("city") or props.get("municipality")
             postal = props.get("postcode")
@@ -284,7 +284,7 @@ async def completer_localisation(guides: list[dict], max_appels: int = 30) -> No
                     "UPDATE guides SET commune = COALESCE(commune, %s), code_postal = COALESCE(code_postal, %s) WHERE id = %s",
                     (commune, postal, guide["id"]))
             except Exception:
-                logger.warning("Mémorisation de la localisation impossible pour le guide %s", guide.get("id"))
+                logger.warning("MÃ©morisation de la localisation impossible pour le guide %s", guide.get("id"))
 
     async with httpx.AsyncClient(timeout=6) as client:
         await asyncio.gather(*(un(client, g) for g in manquants))

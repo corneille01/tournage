@@ -1,34 +1,56 @@
 """
-backend/db.py — Pool de connexions PostgreSQL asynchrone (Render Postgres).
+Couche PostgreSQL compatible Render et Cloudflare Workers + Hyperdrive.
 
-Utilise asyncpg. Fournit les mêmes fonctions (fetch_all, fetch_one,
-execute) qu'avant avec MySQL — le reste du code (main.py,
-wikidata_ingest.py, refresh_cache.py) continue d'écrire ses requêtes
-avec des placeholders %s comme avant, _convertir_placeholders() les
-traduit automatiquement au format $1/$2/... attendu par asyncpg.
-
-Variable d'environnement attendue :
-  DATABASE_URL  — fournie automatiquement par Render Postgres
-                  (format: postgres://user:password@host:port/dbname)
-  À défaut, utilise DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.
+- Render : utilise DATABASE_URL / DB_* et un pool asyncpg.
+- Cloudflare Workers : utilise la configuration fournie par Hyperdrive.
 """
 
 import os
 import re
 import asyncpg
-from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# MODE RENDER
+# ---------------------------------------------------------------------------
 
 _pool: asyncpg.Pool | None = None
 
 
+# ---------------------------------------------------------------------------
+# MODE CLOUDFLARE / HYPERDRIVE
+# ---------------------------------------------------------------------------
+
+_hyperdrive = None
+
+
+def configure_hyperdrive(hyperdrive) -> None:
+    """
+    Reçoit le binding env.HYPERDRIVE depuis le Worker Cloudflare.
+
+    Le binding contient notamment :
+      - host
+      - port
+      - user
+      - password
+      - database
+    """
+    global _hyperdrive
+    _hyperdrive = hyperdrive
+
+
 def _dsn() -> str:
     url = os.getenv("DATABASE_URL")
+
     if url:
-        # asyncpg n'accepte pas le préfixe "postgres://" retourné par
-        # certains hébergeurs sous cette forme — on le normalise.
         return url.replace("postgres://", "postgresql://", 1)
+
     return (
         f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
         f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}"
@@ -37,7 +59,9 @@ def _dsn() -> str:
 
 
 def _convertir_placeholders(query: str, params: tuple) -> str:
-    """'%s' (style MySQL) → '$1', '$2', ... (style asyncpg), dans l'ordre."""
+    """
+    Convertit les placeholders %s vers $1, $2, ... pour asyncpg.
+    """
     compteur = [0]
 
     def _remplace(_match):
@@ -47,72 +71,207 @@ def _convertir_placeholders(query: str, params: tuple) -> str:
     return re.sub(r"%s", _remplace, query)
 
 
+# ---------------------------------------------------------------------------
+# INITIALISATION
+# ---------------------------------------------------------------------------
+
 async def init_db_pool() -> None:
+    """
+    Initialise le pool Render.
+
+    Sur Cloudflare, le Worker utilise Hyperdrive et n'a pas besoin
+    d'un pool global ici.
+    """
     global _pool
+
+    # Cloudflare / Hyperdrive :
+    # aucune connexion persistante globale à créer.
+    if _hyperdrive is not None:
+        print("PostgreSQL : mode Cloudflare Hyperdrive", flush=True)
+        return
+
+    # Render / environnement classique :
     dsn = _dsn()
-    # Diagnostic sans exposer le mot de passe : montre juste où on essaie
-    # de se connecter, pour repérer immédiatement un .env vide/mal rempli.
-    host_visible = re.sub(r"://[^@]+@", "://***:***@", dsn)
-    print(f"Connexion à : {host_visible}", flush=True)
+
+    host_visible = re.sub(
+        r"://[^@]+@",
+        "://***:***@",
+        dsn
+    )
+
+    print(f"Connexion PostgreSQL à : {host_visible}", flush=True)
+
     _pool = await asyncpg.create_pool(
-        dsn=dsn, min_size=2, max_size=15, timeout=15,
-        # Neon route les connexions via un pooler façon PgBouncer. Le
-        # cache de requêtes préparées d'asyncpg (par connexion) devient
-        # invalide dès que le schéma change pendant qu'une connexion du
-        # pool est encore vivante — d'où "InvalidCachedStatementError"
-        # qui plantait toutes les fiches film après nos migrations.
-        # statement_cache_size=0 désactive ce cache : légèrement moins
-        # rapide par requête, mais élimine ce plantage définitivement.
+        dsn=dsn,
+        min_size=2,
+        max_size=15,
+        timeout=15,
         statement_cache_size=0,
     )
 
 
 async def close_db_pool() -> None:
+    global _pool
+
     if _pool:
         await _pool.close()
+        _pool = None
 
+
+# ---------------------------------------------------------------------------
+# CONNEXION CLOUDFLARE
+# ---------------------------------------------------------------------------
+
+async def _connect_hyperdrive():
+    """
+    Ouvre une connexion PostgreSQL via Cloudflare Hyperdrive.
+
+    Hyperdrive fournit déjà le pooling côté Cloudflare.
+    """
+
+    if _hyperdrive is None:
+        raise RuntimeError(
+            "HYPERDRIVE n'est pas configuré. "
+            "configure_hyperdrive() doit être appelé par le Worker."
+        )
+
+    return await asyncpg.connect(
+        host=_hyperdrive.host,
+        port=int(_hyperdrive.port),
+        user=_hyperdrive.user,
+        password=_hyperdrive.password,
+        database=_hyperdrive.database,
+        ssl=False,
+        statement_cache_size=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FETCH ALL
+# ---------------------------------------------------------------------------
 
 async def fetch_all(query: str, params: tuple = ()) -> list[dict]:
     query_pg = _convertir_placeholders(query, params)
+
+    # Cloudflare / Hyperdrive
+    if _hyperdrive is not None:
+        conn = await _connect_hyperdrive()
+
+        try:
+            rows = await conn.fetch(query_pg, *params)
+            return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+
+    # Render
+    if _pool is None:
+        raise RuntimeError("Pool PostgreSQL non initialisé.")
+
     async with _pool.acquire() as conn:
         rows = await conn.fetch(query_pg, *params)
         return [dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# FETCH ONE
+# ---------------------------------------------------------------------------
+
 async def fetch_one(query: str, params: tuple = ()) -> dict | None:
     query_pg = _convertir_placeholders(query, params)
+
+    # Cloudflare / Hyperdrive
+    if _hyperdrive is not None:
+        conn = await _connect_hyperdrive()
+
+        try:
+            row = await conn.fetchrow(query_pg, *params)
+            return dict(row) if row else None
+        finally:
+            await conn.close()
+
+    # Render
+    if _pool is None:
+        raise RuntimeError("Pool PostgreSQL non initialisé.")
+
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(query_pg, *params)
         return dict(row) if row else None
 
 
+# ---------------------------------------------------------------------------
+# EXECUTE
+# ---------------------------------------------------------------------------
+
 async def execute(query: str, params: tuple = ()):
     """
-    Pour INSERT/UPDATE/DELETE.
-    Si la requête se termine par "RETURNING <colonne>" (ajoute-le toi-même
-    dans tes INSERT quand tu as besoin de l'id généré — Postgres n'a pas
-    d'équivalent implicite à lastrowid de MySQL), renvoie cette valeur.
-    Sinon renvoie le statut brut de la commande.
+    Pour INSERT / UPDATE / DELETE.
+
+    Si RETURNING est présent, retourne la valeur retournée.
+    Sinon retourne le statut PostgreSQL.
     """
+
     query_pg = _convertir_placeholders(query, params)
+
+    # Cloudflare / Hyperdrive
+    if _hyperdrive is not None:
+        conn = await _connect_hyperdrive()
+
+        try:
+            if "RETURNING" in query.upper():
+                return await conn.fetchval(query_pg, *params)
+
+            return await conn.execute(query_pg, *params)
+        finally:
+            await conn.close()
+
+    # Render
+    if _pool is None:
+        raise RuntimeError("Pool PostgreSQL non initialisé.")
+
     async with _pool.acquire() as conn:
         if "RETURNING" in query.upper():
             return await conn.fetchval(query_pg, *params)
+
         return await conn.execute(query_pg, *params)
 
 
-async def executemany(query: str, liste_params: list[tuple]) -> None:
-    """
-    Pour insérer BEAUCOUP de lignes d'un coup (ex: import DATAtourisme,
-    dizaines de milliers de lignes) — une seule connexion pour tout le
-    lot au lieu d'un aller-retour réseau par ligne avec execute().
-    Bien plus rapide sur de gros volumes.
-    """
+# ---------------------------------------------------------------------------
+# EXECUTEMANY
+# ---------------------------------------------------------------------------
+
+async def executemany(
+    query: str,
+    liste_params: list[tuple]
+) -> None:
+
     if not liste_params:
         return
-    # _convertir_placeholders attend des params pour convertir %s -> $1 etc.
-    # — le premier jeu de paramètres suffit, la requête est identique pour
-    # toutes les lignes du lot.
-    query_pg = _convertir_placeholders(query, liste_params[0])
+
+    query_pg = _convertir_placeholders(
+        query,
+        liste_params[0]
+    )
+
+    # Cloudflare / Hyperdrive
+    if _hyperdrive is not None:
+        conn = await _connect_hyperdrive()
+
+        try:
+            await conn.executemany(
+                query_pg,
+                liste_params
+            )
+        finally:
+            await conn.close()
+
+        return
+
+    # Render
+    if _pool is None:
+        raise RuntimeError("Pool PostgreSQL non initialisé.")
+
     async with _pool.acquire() as conn:
-        await conn.executemany(query_pg, liste_params)
+        await conn.executemany(
+            query_pg,
+            liste_params
+        )

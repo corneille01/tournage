@@ -1,4 +1,4 @@
-"""
+﻿"""
 backend/droits.py — workflow Pelify Landscape "Demander les droits".
 
 V1 :
@@ -26,7 +26,7 @@ from email.message import EmailMessage
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from db import execute, fetch_all, fetch_one
+from .db import execute, fetch_all, fetch_one
 
 
 router = APIRouter(prefix="/api/droits", tags=["Droits Landscape"])
@@ -562,3 +562,6 @@ async def repondre_demande_publique(
     )
 
     return {"id": message_id, "statut": statut}
+
+
+

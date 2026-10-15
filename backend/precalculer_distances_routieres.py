@@ -80,21 +80,30 @@ def _trajets_lieux(lieux: list[dict], seulement: int | None) -> list[tuple]:
     return trajets
 
 
-def _trajets_guides(guides: list[dict], lieux: list[dict], seulement: int | None) -> list[tuple]:
+def _trajets_guides(guides: list[dict], lieux: list[dict], seulement: int | None,
+                    lieux_choisis: dict[int, set[int]] | None = None) -> list[tuple]:
+    """Pour chaque guide : (1) TOUS les lieux des œuvres qu'il a choisies (bouton « Guides » du popup),
+    même très éloignés ; (2) les lieux de sa zone d'intervention (parcours)."""
+    lieux_choisis = lieux_choisis or {}
     trajets = []
     for g in guides:
         if seulement is not None and g["id"] != seulement:
             continue
+        choisis = lieux_choisis.get(g["id"], set())
         rayon_m = max(g["rayon_km"], RAYON_GUIDE_MIN_KM) * 1000
         classes = sorted(
             ((_haversine_m(g["lat"], g["lon"], l["lat"], l["lon"]), l) for l in lieux),
             key=lambda x: x[0],
         )
-        retenus = [(d, l) for d, l in classes if d <= rayon_m][:NB_LIEUX_MAX_GUIDE]
-        if len(retenus) < NB_LIEUX_MIN_GUIDE:
-            retenus = classes[:NB_LIEUX_MIN_GUIDE]
-        for d, l in retenus:
-            trajets.append(("guide", g["id"], (g["lat"], g["lon"]), l["id"], (l["lat"], l["lon"]), "voiture", d))
+        en_zone = [(d, l) for d, l in classes if d <= rayon_m][:NB_LIEUX_MAX_GUIDE]
+        if len(en_zone) < NB_LIEUX_MIN_GUIDE:
+            en_zone = classes[:NB_LIEUX_MIN_GUIDE]
+        retenus = {l["id"]: (d, l, 1) for d, l in en_zone}
+        for d, l in classes:
+            if l["id"] in choisis:
+                retenus[l["id"]] = (d, l, 0)          # priorité 0 : calculé avant tout le reste
+        for d, l, prio in retenus.values():
+            trajets.append(("guide", g["id"], (g["lat"], g["lon"]), l["id"], (l["lat"], l["lon"]), "voiture", d, prio))
     return trajets
 
 
@@ -103,7 +112,7 @@ def _trajets_guides(guides: list[dict], lieux: list[dict], seulement: int | None
 # ─────────────────────────────────────────────────────────────
 
 async def _calculer(trajet: tuple, semaphore: asyncio.Semaphore):
-    type_o, origine_id, origine, dest_id, dest, mode, d_vol = trajet
+    type_o, origine_id, origine, dest_id, dest, mode, d_vol = trajet[:7]
     if d_vol < 5:  # même position : pas la peine d'interroger l'IGN
         return (type_o, origine_id, dest_id, mode, 0, 0)
     async with semaphore:
@@ -174,11 +183,21 @@ async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, 
         ]
         print(f"{len(lieux)} lieu(x), {len(guides)} guide(s) actif(s)", flush=True)
 
+        # Lieux de tournage des œuvres choisies par chaque guide (table guide_films, migration v32).
+        lieux_choisis: dict[int, set[int]] = {}
+        try:
+            for r in await fetch_all(
+                "SELECT gf.guide_id, l.id AS lieu_id FROM guide_films gf JOIN lieux_tournage l ON l.film_id = gf.film_id"
+            ):
+                lieux_choisis.setdefault(int(r["guide_id"]), set()).add(int(r["lieu_id"]))
+        except Exception as exc:
+            print(f"  ℹ️ guide_films indisponible (migration v32 non appliquée ?) : {exc}", flush=True)
+
         souhaites = []
         if guide_id is None:
             souhaites += _trajets_lieux(lieux, lieu_id)
         if lieu_id is None:
-            souhaites += _trajets_guides(guides, lieux, guide_id)
+            souhaites += _trajets_guides(guides, lieux, guide_id, lieux_choisis)
 
         deja = {
             (r["type_origine"], int(r["origine_id"]), int(r["lieu_destination_id"]), r["mode"])
@@ -188,7 +207,7 @@ async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, 
         }
         a_faire = [t for t in souhaites if (t[0], t[1], t[3], t[5]) not in deja]
         # Les plus proches d'abord : ce sont les plus utiles si le budget de temps s'épuise.
-        a_faire.sort(key=lambda t: t[6])
+        a_faire.sort(key=lambda t: (t[7] if len(t) > 7 else 1, t[6]))   # lieux des œuvres choisies d'abord
         print(f"{len(souhaites)} trajet(s) souhaité(s), {len(a_faire)} à calculer", flush=True)
 
         semaphore = asyncio.Semaphore(CONCURRENCE_MAX)

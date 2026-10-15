@@ -56,6 +56,94 @@
         margin: 0 0 24px;
         line-height: 1.5;
       }
+      .dg-oeuvre-liste {
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid #2a2d35;
+        border-radius: 10px;
+        margin-top: 6px;
+        display: none;
+      }
+      .dg-oeuvre-liste.ouverte {
+        display: block;
+      }
+      .dg-oeuvre-liste button {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+        text-align: left;
+        padding: 9px 12px;
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid #2a2d35;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .dg-oeuvre-liste button:hover,
+      .dg-oeuvre-liste button:focus {
+        background: rgba(120, 130, 150, 0.2);
+        outline: none;
+      }
+      .dg-oeuvre-liste small {
+        opacity: 0.7;
+        white-space: nowrap;
+      }
+      .dg-oeuvre-vide {
+        padding: 10px 12px;
+        opacity: 0.75;
+        font-size: 0.9rem;
+      }
+      .dg-oeuvres-choisies {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .dg-puce {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px 4px 10px;
+        border-radius: 99px;
+        background: rgba(120, 130, 150, 0.22);
+        font-size: 0.85rem;
+      }
+      .dg-puce.proposee {
+        outline: 1px dashed #f4a261;
+      }
+      .dg-puce button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+      }
+      .dg-propose {
+        margin-top: 10px;
+        font-size: 0.9rem;
+      }
+      .dg-propose summary {
+        cursor: pointer;
+      }
+      .dg-propose-grille {
+        display: grid;
+        grid-template-columns: 1fr 110px 120px;
+        gap: 8px;
+        margin: 8px 0;
+      }
+      @media (max-width: 520px) {
+        .dg-propose-grille {
+          grid-template-columns: 1fr;
+        }
+      }
+      .dg-compteur {
+        font-size: 0.8rem;
+        opacity: 0.75;
+        margin-top: 4px;
+      }
       .dg-champ {
         margin-bottom: 18px;
       }
@@ -334,6 +422,71 @@
           >
         </div>
 
+        <div class="dg-champ" id="dg-oeuvres-champ">
+          <label for="dg-oeuvre-recherche"
+            >Œuvres (films, séries) pour lesquelles vous acceptez d'accompagner
+            les visiteurs</label
+          >
+          <input
+            type="text"
+            id="dg-oeuvre-recherche"
+            autocomplete="off"
+            placeholder="Tapez un mot du titre… (ex. : boucle, martin, ile)"
+            aria-controls="dg-oeuvre-liste"
+          />
+          <div
+            class="dg-oeuvre-liste"
+            id="dg-oeuvre-liste"
+            role="listbox"
+          ></div>
+          <div
+            class="dg-oeuvres-choisies"
+            id="dg-oeuvres-choisies"
+            aria-live="polite"
+          ></div>
+          <div class="dg-compteur" id="dg-oeuvres-compteur"></div>
+          <small class="dg-aide"
+            >Les visiteurs ne verront votre fiche, sur la carte, que pour les
+            œuvres que vous choisissez ici. Plusieurs choix possibles.</small
+          >
+          <details class="dg-propose" id="dg-propose">
+            <summary>Mon œuvre n'est pas dans la liste</summary>
+            <div class="dg-propose-grille">
+              <input
+                type="text"
+                id="dg-prop-titre"
+                maxlength="255"
+                placeholder="Titre de l'œuvre"
+              />
+              <input
+                type="number"
+                id="dg-prop-annee"
+                min="1888"
+                max="2100"
+                placeholder="Année"
+              />
+              <select id="dg-prop-type" aria-label="Type d'œuvre">
+                <option value="movie">Film</option>
+                <option value="tv">Série</option>
+                <option value="anime">Animé</option>
+              </select>
+            </div>
+            <button
+              type="button"
+              id="dg-prop-ajouter"
+              class="dg-submit"
+              style="width: auto; padding: 8px 16px"
+            >
+              Proposer cette œuvre
+            </button>
+            <small class="dg-aide" style="display: block; margin-top: 6px"
+              >Elle sera enregistrée et vérifiée par Pelify avant d'apparaître
+              sur la carte (jusqu'à 5 propositions).</small
+            >
+            <div id="dg-prop-message" class="dg-aide" role="status"></div>
+          </details>
+        </div>
+
         <div class="dg-champ">
           <label>Mode(s) de déplacement proposés</label>
           <div class="dg-cases" id="dg-mobilite">
@@ -502,6 +655,161 @@
           .filter(Boolean);
       }
 
+      // ── Œuvres : recherche rapide par mot dans toutes les œuvres de la base ──
+      const MAX_OEUVRES = 60;
+      const MAX_PROPOSITIONS = 5;
+      let toutesOeuvres = [];
+      const oeuvresChoisies = new Map(); // id -> {id, titre, annee}
+      let propositions = []; // [{titre, annee, type}]
+      const champOeuvre = document.getElementById("dg-oeuvre-recherche");
+      const listeOeuvre = document.getElementById("dg-oeuvre-liste");
+      const choisiesEl = document.getElementById("dg-oeuvres-choisies");
+      const compteurEl = document.getElementById("dg-oeuvres-compteur");
+
+      function normaliser(t) {
+        return String(t || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim();
+      }
+
+      async function chargerOeuvres() {
+        try {
+          const res = await fetch(`${API_BASE}/api/oeuvres`);
+          const data = await res.json();
+          toutesOeuvres = data.oeuvres || [];
+        } catch (e) {
+          listeOeuvre.innerHTML =
+            '<div class="dg-oeuvre-vide">Liste des œuvres indisponible : vous pouvez proposer vos œuvres ci-dessous.</div>';
+          listeOeuvre.classList.add("ouverte");
+        }
+      }
+
+      function afficherResultatsOeuvres() {
+        const mots = normaliser(champOeuvre.value).split(" ").filter(Boolean);
+        if (!mots.length) {
+          listeOeuvre.classList.remove("ouverte");
+          listeOeuvre.innerHTML = "";
+          return;
+        }
+        const trouvees = toutesOeuvres
+          .filter(
+            (o) =>
+              !oeuvresChoisies.has(o.id) &&
+              mots.every((m) => o.recherche.includes(m)),
+          )
+          .slice(0, 30);
+        listeOeuvre.innerHTML = trouvees.length
+          ? trouvees
+              .map(
+                (o) => `<button type="button" role="option" data-id="${o.id}">
+              <span>${escapeHtml(o.titre)}</span><small>${o.type === "tv" ? "Série" : o.type === "anime" ? "Animé" : "Film"}${o.annee ? " · " + o.annee : ""}</small></button>`,
+              )
+              .join("")
+          : '<div class="dg-oeuvre-vide">Aucune œuvre trouvée. Utilisez « Mon œuvre n\'est pas dans la liste » ci-dessous.</div>';
+        listeOeuvre.classList.add("ouverte");
+      }
+
+      function dessinerChoix() {
+        const puces = [
+          ...Array.from(oeuvresChoisies.values()).map(
+            (o) =>
+              `<span class="dg-puce">${escapeHtml(o.titre)}${o.annee ? " (" + o.annee + ")" : ""}
+              <button type="button" aria-label="Retirer ${escapeHtml(o.titre)}" data-retirer="${o.id}">×</button></span>`,
+          ),
+          ...propositions.map(
+            (p, i) =>
+              `<span class="dg-puce proposee" title="Proposée : sera vérifiée">${escapeHtml(p.titre)}${p.annee ? " (" + p.annee + ")" : ""}
+              <button type="button" aria-label="Retirer ${escapeHtml(p.titre)}" data-retirer-prop="${i}">×</button></span>`,
+          ),
+        ];
+        choisiesEl.innerHTML = puces.join("");
+        const n = oeuvresChoisies.size + propositions.length;
+        compteurEl.textContent = n
+          ? `${n} œuvre${n > 1 ? "s" : ""} sélectionnée${n > 1 ? "s" : ""}`
+          : "";
+      }
+
+      function ajouterOeuvre(id) {
+        if (oeuvresChoisies.size + propositions.length >= MAX_OEUVRES) return;
+        const o = toutesOeuvres.find((x) => x.id === id);
+        if (!o) return;
+        oeuvresChoisies.set(o.id, { id: o.id, titre: o.titre, annee: o.annee });
+        champOeuvre.value = "";
+        listeOeuvre.classList.remove("ouverte");
+        dessinerChoix();
+        champOeuvre.focus();
+      }
+
+      champOeuvre.addEventListener("input", afficherResultatsOeuvres);
+      champOeuvre.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          const premier = listeOeuvre.querySelector("button[data-id]");
+          if (premier) ajouterOeuvre(Number(premier.dataset.id));
+        } else if (e.key === "Escape") {
+          listeOeuvre.classList.remove("ouverte");
+        }
+      });
+      listeOeuvre.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-id]");
+        if (b) ajouterOeuvre(Number(b.dataset.id));
+      });
+      choisiesEl.addEventListener("click", (e) => {
+        const r = e.target.closest("button[data-retirer]");
+        const rp = e.target.closest("button[data-retirer-prop]");
+        if (r) oeuvresChoisies.delete(Number(r.dataset.retirer));
+        if (rp) propositions.splice(Number(rp.dataset.retirerProp), 1);
+        dessinerChoix();
+      });
+
+      document
+        .getElementById("dg-prop-ajouter")
+        .addEventListener("click", () => {
+          const msg = document.getElementById("dg-prop-message");
+          const titre = document
+            .getElementById("dg-prop-titre")
+            .value.replace(/\s+/g, " ")
+            .trim();
+          const annee =
+            Number(document.getElementById("dg-prop-annee").value) || null;
+          const type = document.getElementById("dg-prop-type").value;
+          if (titre.length < 2) {
+            msg.textContent = "Indiquez le titre de l'œuvre.";
+            return;
+          }
+          // Déjà dans la base ? On la sélectionne au lieu de créer un doublon.
+          const existante = toutesOeuvres.find(
+            (o) =>
+              normaliser(o.titre) === normaliser(titre) &&
+              (!annee || !o.annee || o.annee === annee),
+          );
+          if (existante) {
+            ajouterOeuvre(existante.id);
+            msg.textContent = `« ${existante.titre} » existe déjà : elle a été ajoutée à votre sélection.`;
+            return;
+          }
+          if (
+            propositions.some((p) => normaliser(p.titre) === normaliser(titre))
+          ) {
+            msg.textContent = "Vous l'avez déjà proposée.";
+            return;
+          }
+          if (propositions.length >= MAX_PROPOSITIONS) {
+            msg.textContent = `Vous pouvez proposer ${MAX_PROPOSITIONS} œuvres au maximum.`;
+            return;
+          }
+          propositions.push({ titre, annee, type });
+          document.getElementById("dg-prop-titre").value = "";
+          document.getElementById("dg-prop-annee").value = "";
+          msg.textContent =
+            "Œuvre ajoutée à votre sélection (vérifiée par Pelify avant publication).";
+          dessinerChoix();
+        });
+      chargerOeuvres();
+
       document
         .getElementById("dg-form")
         .addEventListener("submit", async (ev) => {
@@ -536,6 +844,8 @@
               : null,
             tarif_indicatif:
               document.getElementById("dg-tarif").value.trim() || null,
+            film_ids: Array.from(oeuvresChoisies.keys()),
+            oeuvres_proposees: propositions,
             site_web_confirmation: document.getElementById("dg-leurre").value, // doit rester vide
           };
 
@@ -555,6 +865,9 @@
               data?.message || "Candidature envoyée. Merci !";
             statutEl.style.display = "block";
             document.getElementById("dg-form").reset();
+            oeuvresChoisies.clear();
+            propositions = [];
+            dessinerChoix();
             zoneChoisie = null;
             zoneConfirmeeEl.textContent = "";
           } catch (e) {

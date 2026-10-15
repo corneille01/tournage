@@ -606,6 +606,7 @@ function afficherResultatMonParcours(data){
   const recs=data.recommandations_par_etape||{};
   const scenario=construireScenarioCinetouristique(data);
   const carburantHtml=construireCarburantsHtml(data);
+  const meteoHtml=construireMeteoHtml(data);
 
   const budgetHtml=budget?`<div class="mp-budget ${data.budget_respecte?'ok':'alerte'}"><b>${data.budget_respecte?'<i class="fa-solid fa-circle-check" aria-hidden="true"></i> Votre parcours tient dans votre créneau':'<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Votre parcours dépasse votre temps disponible'}</b><span>Déplacements : ${duree?formatDuree(duree):'-'} · Visites : ${formatDuree(visite)}${data.duree_visites_guidees_secondes?` · Visites guidées : ${formatDuree(data.duree_visites_guidees_secondes)}`:''}${data.attente_visites_guidees_minutes?` · Attente : ${data.attente_visites_guidees_minutes} min`:''} · Total : ${formatDuree(total)} · Disponible : ${formatDuree(budget*60)}</span>${data.optimiser&&data.etapes_exclues_optimisation?.length?`<small><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> ${data.etapes_exclues_optimisation.length} étape(s) ont été écartées automatiquement pour respecter vos contraintes.</small>`:''}</div>`:'';
 
@@ -674,7 +675,7 @@ function afficherResultatMonParcours(data){
     <button type="button" data-export="geojson"><i class="fa-solid fa-code" aria-hidden="true"></i> GeoJSON</button>
   </div><div id="mp-export-statut" class="mp-aide" role="status"></div></section>`;
 
-  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'-'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'-'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${exportHtml}${planning?`<section class="mp-planning"><h3><i class="fa-solid fa-clock" aria-hidden="true"></i> Votre journée cinéma</h3>${planning}</section>`:''}${carburantHtml}${conseil}${visitesGuideesHtml}${guidesHtml}${etapeRecos?`<div class="mp-recommandations"><h3><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Mes suggestions étape par étape</h3><p class="mp-legende"><span class="mp-pastille reco" style="background:${COULEUR_RECOMMANDATION};"></span> Repérées en turquoise sur la carte. Les tarifs affichés sont ceux relevés dans les fiches officielles (DATAtourisme) : ils indiquent une fourchette, pas le prix d'un repas ou d'une nuit type.</p>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3><i class="fa-solid fa-ticket" aria-hidden="true"></i> Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
+  c.innerHTML=`${budgetHtml}${budgetInfo}<div class="mon-parcours-stats"><div><b>${data.nb_etapes||0}</b><span>étapes</span></div><div><b>${distance?formatDistance(distance):'-'}</b><span>trajet</span></div><div><b>${duree?formatDuree(duree):'-'}</b><span>déplacement</span></div><div><b>${nb}</b><span>offres</span></div></div>${exportHtml}${planning?`<section class="mp-planning"><h3><i class="fa-solid fa-clock" aria-hidden="true"></i> Votre journée cinéma</h3>${planning}</section>`:''}${meteoHtml}${carburantHtml}${conseil}${visitesGuideesHtml}${guidesHtml}${etapeRecos?`<div class="mp-recommandations"><h3><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Mes suggestions étape par étape</h3><p class="mp-legende"><span class="mp-pastille reco" style="background:${COULEUR_RECOMMANDATION};"></span> Repérées en turquoise sur la carte. Les tarifs affichés sont ceux relevés dans les fiches officielles (DATAtourisme) : ils indiquent une fourchette, pas le prix d'un repas ou d'une nuit type.</p>${etapeRecos}</div>`:''}<div class="mon-parcours-offres"><h3><i class="fa-solid fa-ticket" aria-hidden="true"></i> Toutes les offres à proximité</h3>${blocs||`<p class="mon-parcours-note">Aucune offre correspondant à vos critères n'est actuellement en cache.</p>`}</div>`;
 
   c.querySelectorAll("[data-export]").forEach((b)=>b.addEventListener("click",()=>exporterParcours(b.dataset.export,data)));
   afficherAmenitiesParcoursV4(cats,data);
@@ -1208,6 +1209,174 @@ function _rendreVideo(media, nomLieu) {
 let dernierLieuOuvertId = null;
 let derniereCategorieAffichee = null;
 
+// ═════════════════════════════════════════════════════════════
+// Guides par œuvre + météo & risques (popup d'un lieu, parcours)
+// ═════════════════════════════════════════════════════════════
+const ICONE_GUIDE = { emoji: "<i class='fa-solid fa-person-walking-luggage' aria-hidden='true'></i>", couleur: "#7b2cbf", label: "Guides" };
+
+(function injecterStylesGuidesMeteo() {
+  if (document.getElementById("styles-guides-meteo")) return;
+  const st = document.createElement("style");
+  st.id = "styles-guides-meteo";
+  st.textContent = `
+  .gm-guide{border:1px solid #d9c7f0;border-radius:12px;padding:10px 12px;margin:8px 0;background:rgba(123,44,191,.05)}
+  .gm-guide.plus-proche{border-color:#7b2cbf;box-shadow:0 0 0 1px #7b2cbf inset}
+  .gm-guide h4{margin:0 0 2px;font-size:1rem}
+  .gm-badge{display:inline-block;font-size:.72rem;padding:1px 8px;border-radius:99px;background:#7b2cbf;color:#fff;margin-left:6px;vertical-align:middle}
+  .gm-badge.zone{background:#b45309}
+  .gm-dist{font-weight:600;margin:4px 0}
+  .gm-puces{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+  .gm-puces span{font-size:.75rem;padding:1px 8px;border-radius:99px;background:rgba(123,44,191,.12)}
+  .gm-contact{display:inline-block;margin-top:6px;padding:5px 12px;border-radius:8px;background:#7b2cbf;color:#fff!important;text-decoration:none;font-size:.85rem}
+  .gm-note{font-size:.8rem;color:#9a9ea8;margin:2px 0}
+  .meteo-bloc{margin:10px 0;padding:10px 12px;border:1px solid rgba(120,130,150,.35);border-radius:12px}
+  .meteo-tete{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .meteo-tete .gros{font-size:1.9rem}
+  .meteo-temp{font-size:1.35rem;font-weight:700}
+  .meteo-detail{font-size:.85rem;opacity:.85}
+  .meteo-risque{margin:6px 0;padding:6px 10px;border-radius:8px;border-left:4px solid #8d99ae;background:rgba(141,153,174,.12);font-size:.88rem}
+  .meteo-risque.attention{border-left-color:#f4a261;background:rgba(244,162,97,.14)}
+  .meteo-risque.danger{border-left-color:#e63946;background:rgba(230,57,70,.14)}
+  .meteo-risque b{display:block}
+  .meteo-origine{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;opacity:.7}
+  .meteo-jours{display:flex;gap:6px;overflow-x:auto;margin-top:8px}
+  .meteo-jour{min-width:64px;text-align:center;font-size:.78rem;padding:4px;border-radius:8px;background:rgba(141,153,174,.12)}
+  .meteo-jour i{display:block;font-size:1.1rem;margin:2px 0}
+  .meteo-sources{font-size:.7rem;opacity:.65;margin-top:6px}
+  .meteo-sources a{color:inherit}
+  .pm-meteo li{margin:6px 0;list-style:none}
+  .pm-meteo ul{padding:0;margin:6px 0}
+  .pm-pastille{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:#2a9d8f}
+  .pm-pastille.info{background:#8d99ae}.pm-pastille.attention{background:#f4a261}.pm-pastille.danger{background:#e63946}
+  `;
+  document.head.appendChild(st);
+})();
+
+function _lienContactGuide(contact) {
+  const c = String(contact || "").trim();
+  if (!c) return "";
+  let href = null;
+  if (/^https?:\/\//i.test(c)) href = c;
+  else if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) href = `mailto:${c}`;
+  else if (/^[+\d][\d .-]{6,}$/.test(c)) href = `tel:${c.replace(/[^\d+]/g, "")}`;
+  return href
+    ? `<a class="gm-contact" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope" aria-hidden="true"></i> Contacter</a>`
+    : `<div class="gm-note">Contact : ${escapeHtml(c)}</div>`;
+}
+
+function _distanceGuideTxt(g) {
+  if (g.distance_source === "ign") {
+    const duree = g.duree_secondes ? ` · ${Math.max(1, Math.round(g.duree_secondes / 60))} min en voiture` : "";
+    return `${formatDistance(g.distance_metres)} du lieu par la route${duree} · itinéraire IGN`;
+  }
+  return `environ ${formatDistance(g.distance_metres)} du lieu (estimation, itinéraire non calculé)`;
+}
+
+// Bouton « Guides » : uniquement les guides qui ont choisi cette œuvre, avec leur distance jusqu'à CE lieu.
+async function afficherGuidesDuLieu(conteneur, lieuId, filmId) {
+  let data = null;
+  try {
+    const res = await fetch(`${API_BASE}/api/films/${encodeURIComponent(filmId)}/guides?lieu_id=${encodeURIComponent(lieuId)}`);
+    if (res.ok) data = await res.json();
+  } catch (e) { /* message ci-dessous */ }
+  if (derniereCategorieAffichee !== "guide") return;   // un autre bouton a été cliqué entre-temps
+  if (!data) { conteneur.innerHTML = `<p style="color:#9a9ea8;">Guides momentanément indisponibles.</p>`; return; }
+  if (!data.guides.length) {
+    conteneur.innerHTML = `<p style="color:#9a9ea8;">Aucun guide n'a encore choisi d'accompagner les visiteurs pour cette œuvre.
+      <a href="/devenir-guide.html">Vous êtes guide ? Inscrivez-vous</a></p>`;
+    return;
+  }
+  const cartes = data.guides.map((g) => `
+    <div class="gm-guide ${g.plus_proche ? "plus-proche" : ""}">
+      <h4>${escapeHtml(g.nom)}${g.plus_proche ? ' <span class="gm-badge">Le plus proche</span>' : ""}</h4>
+      <div class="gm-note">${escapeHtml(g.fonction || "Guide")}${g.commune ? " · " + escapeHtml(g.commune) : ""}</div>
+      <div class="gm-dist"><i class="fa-solid fa-route" aria-hidden="true"></i> ${escapeHtml(_distanceGuideTxt(g))}</div>
+      ${g.hors_zone ? '<div class="gm-note"><span class="gm-badge zone">Hors zone habituelle</span> à confirmer avec le guide</div>' : ""}
+      ${(g.langues || []).length ? `<div class="gm-puces">${g.langues.map((l) => `<span>${escapeHtml(String(l).toUpperCase())}</span>`).join("")}</div>` : ""}
+      ${(g.specialites_libelles || []).length ? `<div class="gm-puces">${g.specialites_libelles.map((x) => `<span>${escapeHtml(x)}</span>`).join("")}</div>` : ""}
+      ${g.bio ? `<div class="gm-note" style="color:inherit;opacity:.85">${escapeHtml(g.bio)}</div>` : ""}
+      ${g.tarif_indicatif ? `<div class="gm-note"><i class="fa-solid fa-coins" aria-hidden="true"></i> ${escapeHtml(g.tarif_indicatif)}</div>` : ""}
+      ${_lienContactGuide(g.lien_contact)}
+      ${g.site_web ? ` <a href="${escapeAttr(g.site_web)}" target="_blank" rel="noopener noreferrer" class="gm-note">Site</a>` : ""}
+    </div>`).join("");
+  conteneur.innerHTML = `<p class="gm-note">${data.total} guide${data.total > 1 ? "s" : ""} accompagne${data.total > 1 ? "nt" : ""} les visiteurs pour « ${escapeHtml(data.film_titre || "cette œuvre")} » :</p>${cartes}`;
+}
+
+// ── Météo & risques ──
+function _htmlRisques(risques) {
+  return (risques || []).map((r) => `
+    <div class="meteo-risque ${escapeAttr(r.niveau)}">
+      <span class="meteo-origine">${r.source === "vigilance" ? "Vigilance officielle Météo-France" : r.source === "saison" ? "Saison" : "Indicatif (prévision)"}</span>
+      <b>${escapeHtml(r.titre)}</b>${escapeHtml(r.texte)}
+    </div>`).join("");
+}
+
+function _htmlSourcesMeteo(vig) {
+  return `<div class="meteo-sources">Prévisions : <a href="https://open-meteo.com" target="_blank" rel="noopener noreferrer">Open-Meteo.com</a> (modèles Météo-France et autres) ·
+    Vigilance : <a href="https://vigilance.meteofrance.fr" target="_blank" rel="noopener noreferrer">Météo-France</a>${vig && !vig.disponible ? " <b>(vigilance officielle momentanément indisponible : consultez le site)</b>" : ""}.
+    Avertissements « indicatifs » calculés par Pelify : ne remplacent pas la vigilance officielle.</div>`;
+}
+
+function htmlMeteoLieu(d) {
+  if (!d.previsions_disponibles) {
+    return `<div class="meteo-bloc"><b><i class="fa-solid fa-cloud-sun" aria-hidden="true"></i> Météo</b>
+      <p class="meteo-detail">Prévisions momentanément indisponibles.</p>${_htmlRisques(d.risques)}${_htmlSourcesMeteo(d.vigilance)}</div>`;
+  }
+  const a = d.actuel, j = d.jour;
+  const tete = a
+    ? `<i class="fa-solid ${escapeAttr(a.icone)} gros" aria-hidden="true"></i><span class="meteo-temp">${Math.round(a.temperature)}°C</span>
+       <span class="meteo-detail">${escapeHtml(a.libelle)} · ressenti ${Math.round(a.ressenti)}° · vent ${Math.round(a.vent_kmh)} km/h (rafales ${Math.round(a.rafales_kmh)})</span>`
+    : (j ? `<i class="fa-solid ${escapeAttr(j.icone)} gros" aria-hidden="true"></i><span class="meteo-temp">${Math.round(j.tmin)}° / ${Math.round(j.tmax)}°</span>
+       <span class="meteo-detail">${escapeHtml(j.libelle)}</span>` : "");
+  const jours = (d.prochains_jours || []).map((x) => {
+    const nom = new Date(x.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric" });
+    return `<div class="meteo-jour"><b>${escapeHtml(nom)}</b><i class="fa-solid ${escapeAttr(x.icone)}" aria-hidden="true"></i>${Math.round(x.tmax)}° / ${Math.round(x.tmin)}°<br>${x.pluie_mm >= 1 ? Math.round(x.pluie_mm) + " mm" : "sec"}</div>`;
+  }).join("");
+  const sansRisque = d.risques.length ? "" : `<p class="meteo-detail"><i class="fa-solid fa-circle-check" style="color:#2a9d8f" aria-hidden="true"></i> Aucun danger météo particulier signalé aujourd'hui.</p>`;
+  return `<div class="meteo-bloc"><div class="meteo-tete">${tete}</div>${_htmlRisques(d.risques)}${sansRisque}
+    ${jours ? `<div class="meteo-jours">${jours}</div>` : ""}${_htmlSourcesMeteo(d.vigilance)}</div>`;
+}
+
+async function chargerMeteoLieu(lieu) {
+  let bloc = document.getElementById("popup-meteo");
+  if (!bloc) {
+    bloc = document.createElement("div");
+    bloc.id = "popup-meteo";
+    document.getElementById("popup-adresse")?.insertAdjacentElement("afterend", bloc);
+  }
+  bloc.innerHTML = `<p class="meteo-detail">Météo en cours de chargement…</p>`;
+  let data = null;
+  try {
+    const res = await fetch(`${API_BASE}/api/lieux/${encodeURIComponent(lieu.id)}/meteo`);
+    if (res.ok) data = await res.json();
+  } catch (e) { /* silencieux */ }
+  if (dernierLieuOuvertId !== lieu.id) return;   // un autre lieu a été ouvert entre-temps
+  bloc.innerHTML = data ? htmlMeteoLieu(data) : `<p class="meteo-detail">Météo momentanément indisponible.</p>`;
+}
+
+// Parcours : météo de chaque étape à l'heure de passage prévue
+function construireMeteoHtml(data) {
+  const m = data?.meteo;
+  if (!m || !m.points?.length) return "";
+  const dateTxt = new Date(m.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const alertes = (m.alertes || []).map((r) => `
+    <div class="meteo-risque ${escapeAttr(r.niveau)}">
+      <span class="meteo-origine">${r.source === "vigilance" ? "Vigilance officielle Météo-France" : r.source === "saison" ? "Saison" : "Indicatif (prévision)"}${r.etapes?.length ? " · étape" + (r.etapes.length > 1 ? "s " : " ") + r.etapes.join(", ") : ""}</span>
+      <b>${escapeHtml(r.titre)}</b>${escapeHtml(r.texte)}
+    </div>`).join("");
+  const lignes = m.points.map((p) => {
+    const mt = p.meteo || {};
+    const h = mt.a_l_heure, j = mt.jour;
+    let resume = "Prévision indisponible";
+    if (h) resume = `<i class="fa-solid ${escapeAttr(h.icone)}" aria-hidden="true"></i> ${escapeHtml(h.libelle)} · ${Math.round(h.temperature)}°C${h.proba_pluie != null ? ` · pluie ${Math.round(h.proba_pluie)} %` : ""}`;
+    else if (j) resume = `<i class="fa-solid ${escapeAttr(j.icone)}" aria-hidden="true"></i> ${escapeHtml(j.libelle)} · ${Math.round(j.tmin)}° / ${Math.round(j.tmax)}°`;
+    return `<li><span class="pm-pastille ${escapeAttr(mt.niveau || "ok")}"></span><b>Étape ${p.ordre} - ${escapeHtml(p.nom || "")}</b>${p.passage ? ` <small>(vers ${escapeHtml(p.passage)})</small>` : ""}<br><small>${resume}</small></li>`;
+  }).join("");
+  const sansAlerte = (m.alertes || []).length ? "" : `<p class="meteo-detail"><i class="fa-solid fa-circle-check" style="color:#2a9d8f" aria-hidden="true"></i> Aucun danger météo particulier signalé pour ce parcours.</p>`;
+  return `<section class="pm-meteo"><h3><i class="fa-solid fa-cloud-sun-rain" aria-hidden="true"></i> Météo et risques - ${escapeHtml(dateTxt)}</h3>
+    ${alertes}${sansAlerte}<ul>${lignes}</ul>${_htmlSourcesMeteo({ disponible: m.vigilance_disponible })}</section>`;
+}
+
 function ouvrirPopupLieu(film, lieu) {
    const overlay =
     document.getElementById("popup-overlay");
@@ -1318,7 +1487,7 @@ function ouvrirPopupLieu(film, lieu) {
   // autres (liste, plus proche en évidence, total dans le rayon) ; en
   // plus de la liste, elle affiche aussi les points sur la carte.
     const conteneurBoutons = document.getElementById("popup-boutons");
-  conteneurBoutons.innerHTML = Object.entries(ICONES_CATEGORIE)
+  conteneurBoutons.innerHTML = Object.entries({ guide: ICONE_GUIDE, ...ICONES_CATEGORIE })
     .map(([cle, info]) => `
       <button type="button" data-categorie="${cle}" aria-pressed="false" style="border-color:${info.couleur}">
         <span class="icone-btn">${info.emoji}</span> ${info.label}
@@ -1333,6 +1502,7 @@ function ouvrirPopupLieu(film, lieu) {
   });
 
   document.getElementById("popup-overlay").classList.remove("hidden");
+  chargerMeteoLieu(lieu);   // météo et risques du lieu (asynchrone, ne bloque pas l'ouverture)
   mettreAJourCompteurMonParcours();
   // Affichage automatique de l'isochrone par défaut :
     // voiture + 10 minutes.
@@ -1413,6 +1583,12 @@ async function afficherCategorie(categorie) {
 
   const conteneur = document.getElementById("popup-resultats");
   conteneur.innerHTML = `<p style="color:#9a9ea8;">Chargement…</p>`;
+
+  if (categorie === "guide") {   // guides de CETTE œuvre, pas des commodités
+    await afficherGuidesDuLieu(conteneur, lieuId, popupOverlay.dataset.filmId);
+    _allerAuPremierResultat(".gm-guide");
+    return;
+  }
 
   let data = null;
   try {

@@ -47,6 +47,8 @@ from guides import (guides_recommandes, exiger_admin, completer_localisation, fo
                     SPECIALITES_VALIDES, SPECIALITES_LIBELLES, MOBILITES_VALIDES, TYPES_GUIDE_VALIDES)
 from paysages import router as paysages_router
 from droits import router as droits_router
+from guides_oeuvres import router as guides_oeuvres_router, enregistrer_oeuvres_guide
+from meteo import router as meteo_router, meteo_pour_parcours
 
 templates = Jinja2Templates(directory="templates")
 BASE_URL = "https://tournage.pelify.app"  # à remplacer par le vrai domaine en prod
@@ -197,6 +199,8 @@ app.add_middleware(
 
 app.include_router(paysages_router)
 app.include_router(droits_router)
+app.include_router(guides_oeuvres_router)
+app.include_router(meteo_router)
 
 @app.get("/api/analyse/indicateurs")
 async def api_analyse_indicateurs(
@@ -2442,6 +2446,13 @@ async def parcours_enrichi(request: Request, response: Response):
             logging.getLogger(__name__).exception("Volet carburant indisponible")
             carburants = None
 
+    # Météo et risques à chaque étape, à l'heure de passage prévue (jamais bloquant).
+    meteo_parcours = None
+    try:
+        meteo_parcours = await meteo_pour_parcours(etapes, depart_effectif, date_sortie, heure_depart, planning_horaire)
+    except Exception:
+        logging.getLogger(__name__).exception("Volet météo indisponible")
+
     # Budget indicatif : offre la moins chère parmi celles dont le tarif est
     # jugé fiable (voir _tarif_fiable), plus le carburant estimé. Pelify ne
     # transforme jamais une absence de tarif en prix inventé.
@@ -2501,6 +2512,7 @@ async def parcours_enrichi(request: Request, response: Response):
         "amenities_par_etape": par_etape,
         "recommandations_par_etape": recommandations_par_etape,
         "carburants": carburants,
+        "meteo": meteo_parcours,
         "labels_categories": _LABELS_CATEGORIE,
         "icones_categories": ICONES_CATEGORIE,
     }
@@ -2648,7 +2660,8 @@ async def creer_guide(request: Request):
             body.get("photo_url"), statut,
         ),
     )
-    return {"id": guide_id, "message": "Guide créé"}
+    oeuvres = await enregistrer_oeuvres_guide(guide_id, body.get("film_ids"), body.get("oeuvres_proposees"))
+    return {"id": guide_id, **oeuvres, "message": "Guide créé"}
 
 
 @app.post("/api/guides/candidature")
@@ -2731,7 +2744,15 @@ async def candidature_guide(request: Request):
             None, "en_attente",
         ),
     )
-    return {"id": guide_id, "message": "Merci ! Votre candidature a été enregistrée et sera vérifiée avant publication."}
+    # Œuvres pour lesquelles ce guide accepte d'accompagner (liste de la base + propositions libres).
+    # Une erreur ici ne doit pas faire perdre la candidature, déjà enregistrée.
+    oeuvres = {"oeuvres_liees": 0, "oeuvres_creees": []}
+    try:
+        oeuvres = await enregistrer_oeuvres_guide(guide_id, body.get("film_ids"), body.get("oeuvres_proposees"))
+    except Exception:
+        logging.getLogger(__name__).exception("Candidature guide %s : œuvres non enregistrées", guide_id)
+    return {"id": guide_id, **oeuvres,
+            "message": "Merci ! Votre candidature a été enregistrée et sera vérifiée avant publication."}
 
 
 @app.patch("/api/guides/{guide_id}/statut")

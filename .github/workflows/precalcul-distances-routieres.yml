@@ -2,7 +2,8 @@ name: Précalcul distances de route (lieu→lieu, guide→lieu) — Géoplatefor
 
 # Alimente la table distances_routieres, lue par le parcours pour :
 #   - l'ordre des étapes et la sélection sous contrainte de temps (lieu → lieu) ;
-#   - les distances affichées pour les guides recommandés (guide → lieu).
+#   - les distances affichées pour les guides recommandés (guide → lieu) ;
+#   - la distance de chaque guide jusqu'aux lieux des œuvres qu'il a choisies (bouton « Guides »).
 # Incrémental : seuls les trajets manquants sont calculés (nouveaux lieux / guides).
 # Si le travail dépasse le budget de temps, le script s'arrête proprement et
 # reprend le lendemain là où il s'est arrêté.
@@ -50,7 +51,7 @@ jobs:
       - name: Installer les dépendances
         run: pip install asyncpg httpx python-dotenv
 
-      - name: Migration (table distances_routieres)
+      - name: Migrations (distances_routieres, guide_films)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -59,8 +60,10 @@ jobs:
           async def main():
               dsn = os.environ["DATABASE_URL"].replace("postgres://", "postgresql://", 1)
               conn = await asyncpg.connect(dsn)
-              with open("migration_v31.sql", encoding="utf-8") as f:
-                  await conn.execute(f.read())
+              for fichier in ("migration_v31.sql", "migration_v32.sql"):
+                  with open(fichier, encoding="utf-8") as f:
+                      await conn.execute(f.read())
+                  print("OK", fichier)
               await conn.close()
           asyncio.run(main())
           PY

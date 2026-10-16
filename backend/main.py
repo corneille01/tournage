@@ -3360,6 +3360,7 @@ async def sitemap():
 
 
 
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
     contenu = f"""User-agent: *
@@ -3378,6 +3379,14 @@ Allow: /
 Disallow: /api/
 
 User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+
+User-agent: Perplexity-User
 Allow: /
 Disallow: /api/
 

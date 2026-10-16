@@ -3316,6 +3316,19 @@ async def sitemap():
     <priority>1.0</priority>
   </url>"""
     )
+    
+    # Pages éditoriales publiques à indexer
+    pages_statiques = [
+        "/analyse.html",
+        "/devenir-guide.html",
+    ]
+
+    for chemin in pages_statiques:
+        urls.append(
+            f"""  <url>
+    <loc>{BASE_URL}{chemin}</loc>
+  </url>"""
+        )
 
     # Pages films
     for film in films:
@@ -3346,13 +3359,34 @@ async def sitemap():
     )
 
 
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
-    return f"""User-agent: *
+    contenu = f"""User-agent: *
+Disallow: /
+
+User-agent: Googlebot
 Allow: /
 Disallow: /api/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+
 Sitemap: {BASE_URL}/sitemap.xml
 """
+    return PlainTextResponse(
+        content=contenu,
+        media_type="text/plain",
+    )
 
 
 # Doit rester la DERNIÈRE route déclarée : sert index.html, style.css,

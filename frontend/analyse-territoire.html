@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analyse territoriale du ciné-tourisme en Occitanie – Pelify</title>
+    <meta
+      name="description"
+      content="Comprendre le ciné-tourisme en Occitanie : où tourne-t-on, quels territoires sont équipés, où agir en priorité. Une analyse commentée, du global au précis."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/vendor/fontawesome/all.min.css" />
+    <link rel="stylesheet" href="analyse-territoire.css" />
+  </head>
+  <body>
+    <header class="at-entete">
+      <div>
+        <p class="at-surtitre">Observatoire du ciné-tourisme · Occitanie</p>
+        <h1>Analyse territoriale</h1>
+        <p class="at-soustitre">
+          Du regard d'ensemble au détail de chaque lieu, expliqué simplement.
+        </p>
+      </div>
+      <nav class="at-actions" aria-label="Actions">
+        <a class="at-btn" href="/"
+          ><i class="fa-solid fa-map" aria-hidden="true"></i> Retour à la
+          carte</a
+        >
+        <button class="at-btn" id="at-expert" type="button" aria-pressed="true">
+          <i class="fa-solid fa-flask" aria-hidden="true"></i> Détails
+          statistiques
+        </button>
+        <button class="at-btn" id="at-imprimer" type="button">
+          <i class="fa-solid fa-print" aria-hidden="true"></i> Imprimer / PDF
+        </button>
+        <a class="at-btn" href="/analyse-detaillee.html"
+          ><i class="fa-solid fa-table-columns" aria-hidden="true"></i> Tableau
+          de bord expert</a
+        >
+      </nav>
+    </header>
+
+    <main id="at-contenu" class="at-contenu" aria-live="polite">
+      <p class="at-chargement">Calcul de l'analyse en cours…</p>
+    </main>
+
+    <script src="/vendor/chartjs/chart.umd.js"></script>
+    <script src="analyse-territoire.js"></script>
+  </body>
+</html>

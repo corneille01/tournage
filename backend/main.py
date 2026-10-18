@@ -3288,14 +3288,12 @@ async def page_film(request: Request, slug_id: str):
     )
 
 
-@app.get("/sitemap.xml", response_class=PlainTextResponse)
-async def sitemap():
-    """
-    Sitemap XML dynamique pour Google.
-    Inclut uniquement les contenus publiés en Occitanie.
-    Les URLs des films sont générées avec la même logique canonique
-    que les pages /films/{slug}-{id}.
-    """
+
+_SITEMAP_CACHE = {"xml": None, "ts": 0.0}
+_SITEMAP_TTL_S = 6 * 3600  # 6 heures
+
+
+async def _construire_sitemap_xml() -> str:
     films = await fetch_all(
         """
         SELECT id, titre, date_maj
@@ -3306,39 +3304,30 @@ async def sitemap():
         """
     )
 
-    urls = []
-
-    # Page d'accueil
-    urls.append(
+    urls = [
         f"""  <url>
     <loc>{BASE_URL}/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>"""
-    )
-    
-    # Pages éditoriales publiques à indexer
-    pages_statiques = [
-        "/analyse.html",
-        "/devenir-guide.html",
     ]
 
-    for chemin in pages_statiques:
+    # Pages éditoriales publiques à indexer
+    for chemin in ("/analyse.html", "/devenir-guide.html"):
         urls.append(
             f"""  <url>
     <loc>{BASE_URL}{chemin}</loc>
   </url>"""
         )
 
-    # Pages films
+    # Pages films (même logique canonique que /films/{slug}-{id})
     for film in films:
         lastmod = ""
-        if film.get("date_maj"):
-            date_maj = film["date_maj"]
+        date_maj = film.get("date_maj")
+        if date_maj:
             if hasattr(date_maj, "date"):
                 date_maj = date_maj.date()
             lastmod = f"\n    <lastmod>{date_maj.isoformat()}</lastmod>"
-
         urls.append(
             f"""  <url>
     <loc>{BASE_URL}{url_film(film)}</loc>{lastmod}
@@ -3347,35 +3336,69 @@ async def sitemap():
   </url>"""
         )
 
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-{chr(10).join(urls)}
-</urlset>
-"""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "\n".join(urls)
+        + "\n</urlset>\n"
+    )
 
-    return PlainTextResponse(
-        content=xml,
+
+@app.get("/sitemap.xml")
+async def sitemap():
+    """
+    Sitemap XML dynamique pour Google, avec cache mémoire de 6 h.
+    Si la base est indisponible, on resert la dernière version connue
+    plutôt que de renvoyer une erreur à Google.
+    """
+    import time as _time
+
+    maintenant = _time.monotonic()
+    cache_valide = (
+        _SITEMAP_CACHE["xml"] is not None
+        and (maintenant - _SITEMAP_CACHE["ts"]) < _SITEMAP_TTL_S
+    )
+
+    if not cache_valide:
+        try:
+            _SITEMAP_CACHE["xml"] = await _construire_sitemap_xml()
+            _SITEMAP_CACHE["ts"] = maintenant
+        except Exception:
+            if _SITEMAP_CACHE["xml"] is None:
+                raise HTTPException(503, "Sitemap temporairement indisponible")
+
+    return Response(
+        content=_SITEMAP_CACHE["xml"],
         media_type="application/xml",
     )
 
 
-
-
-
-
 @app.get("/robots.txt", response_class=PlainTextResponse)
 async def robots():
+    """
+    Le contenu de la page d'accueil (liste des films, carte, filtres) est
+    chargé en JavaScript depuis /api/. Si /api/ est interdit à Googlebot,
+    Google voit une page vide (« Chargement… ») et ne l'indexe pas.
+    On ouvre donc uniquement les routes de LECTURE publiques nécessaires
+    à l'affichage ; tout le reste de /api/ reste fermé.
+    (Google applique la règle la plus précise : Allow /api/films l'emporte
+    sur Disallow /api/.)
+    """
+    regles_api = """Allow: /
+Disallow: /api/
+Allow: /api/films
+Allow: /api/filtres
+Allow: /api/stats
+Allow: /api/lieux/tous-points
+Allow: /api/analyse
+"""
     contenu = f"""User-agent: *
 Disallow: /
 
 User-agent: Googlebot
-Allow: /
-Disallow: /api/
-
+{regles_api}
 User-agent: Bingbot
-Allow: /
-Disallow: /api/
-
+{regles_api}
 User-agent: OAI-SearchBot
 Allow: /
 Disallow: /api/
@@ -3394,14 +3417,4 @@ Disallow: /api/
 
 Sitemap: {BASE_URL}/sitemap.xml
 """
-    return PlainTextResponse(
-        content=contenu,
-        media_type="text/plain",
-    )
-
-
-# Doit rester la DERNIÈRE route déclarée : sert index.html, style.css,
-# app.js, manifest.json, sw.js… Si elle était déclarée plus haut, elle
-# intercepterait toutes les requêtes avant que /films/{slug_id},
-# /sitemap.xml etc. n'aient une chance de matcher.
-app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")
+    return PlainTextResponse(content=contenu, media_type="text/plain")

@@ -3,30 +3,46 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ film.titre }} — Lieux de tournage en Occitanie | CinéTour</title>
+<title>{{ film.titre }} — Lieux de tournage en Occitanie | Pelify</title>
 <meta name="description" content="{{ meta_desc }}">
 <link rel="canonical" href="{{ base_url }}{{ url_film }}">
 
-<!-- Open Graph : partage réseaux sociaux (cohérent avec l'origine pelify) -->
-<meta property="og:type" content="video.movie">
+<!-- Open Graph : partage réseaux sociaux -->
+<meta property="og:type" content="{{ 'video.tv_show' if film.media_type == 'tv' else 'video.movie' }}">
+<meta property="og:site_name" content="Pelify">
+<meta property="og:locale" content="fr_FR">
 <meta property="og:title" content="{{ film.titre }} — Lieux de tournage en Occitanie">
 <meta property="og:description" content="{{ meta_desc }}">
 {% if film.poster_url %}<meta property="og:image" content="{{ film.poster_url }}">{% endif %}
 <meta property="og:url" content="{{ base_url }}{{ url_film }}">
+<meta name="twitter:card" content="{{ 'summary_large_image' if film.poster_url else 'summary' }}">
 
 <script type="application/ld+json">{{ json_ld | tojson }}</script>
+<script type="application/ld+json">{{ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {"@type": "ListItem", "position": 1, "name": "Carte des lieux de tournage", "item": base_url ~ "/"},
+    {"@type": "ListItem", "position": 2, "name": "Films, séries et animés", "item": base_url ~ "/films"},
+    {"@type": "ListItem", "position": 3, "name": film.titre, "item": base_url ~ url_film}
+  ]
+} | tojson }}</script>
 
-<link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css" />
+<link rel="stylesheet" href="/vendor/fontawesome/all.min.css" />
 
 <link rel="stylesheet" href="/style.css">
 </head>
 <body class="page-film-ssr">
 
 <header class="ssr-header">
-  <a href="/" class="ssr-logo">CinéTour</a>
+  <a href="/" class="ssr-logo">Pelify</a>
 </header>
 
 <main class="ssr-film">
+  <nav class="ssr-meta" aria-label="Fil d'Ariane" style="padding:0 16px;">
+    <a href="/">Carte</a> › <a href="/films">Films, séries et animés</a> › {{ film.titre }}
+  </nav>
+
   <div class="ssr-hero">
     {% if film.poster_url %}
     <img src="{{ film.poster_url }}" alt="Affiche de {{ film.titre }}" width="300" height="450">
@@ -59,6 +75,9 @@
   </section>
 
   <section class="ssr-lien-retour">
+    <p>
+      <a href="/films">Voir tous les films, séries et animés tournés en Occitanie →</a>
+    </p>
     <p>
       Vous avez identifié une scène de film grâce à un extrait réseaux sociaux ?
       <a href="https://pelify.app">Essayez Pelify</a> pour retrouver le titre d'un film

@@ -3289,8 +3289,8 @@ async def page_film(request: Request, slug_id: str):
     )
 
 
-
-
+@app.get("/robots.txt", response_class=PlainTextResponse)
+async def robots_txt():
     """
     Le contenu de la page d'accueil (liste des films, carte, filtres) est
     chargé en JavaScript depuis /api/. Si /api/ est interdit à Googlebot,
@@ -3334,3 +3334,15 @@ Disallow: /api/
 Sitemap: {BASE_URL}/sitemap.xml
 """
     return PlainTextResponse(content=contenu, media_type="text/plain")
+
+
+# ══════════════════════════════════════════════════════════════
+# FRONTEND STATIQUE — doit rester TOUT À LA FIN du fichier
+# ══════════════════════════════════════════════════════════════
+# Monté en dernier pour que toutes les routes /api/..., /films/...,
+# /sitemap.xml, etc. soient évaluées avant. Sans ce montage, la racine
+# du site renvoie {"detail":"Not Found"}.
+FRONTEND_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "frontend")
+)
+app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

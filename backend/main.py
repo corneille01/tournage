@@ -12,6 +12,7 @@ from geoplateforme import (
     GeoplateformeError,
     RESOURCE_ITINERAIRE,
 )
+from seo_routes import router as seo_router
 import logging
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,7 @@ app.include_router(paysages_router)
 app.include_router(droits_router)
 app.include_router(guides_oeuvres_router)
 app.include_router(meteo_router)
-
+app.include_router(seo_router)
 @app.get("/api/analyse/indicateurs")
 async def api_analyse_indicateurs(
     region: str = Query("Occitanie")
@@ -3289,92 +3290,7 @@ async def page_film(request: Request, slug_id: str):
 
 
 
-_SITEMAP_CACHE = {"xml": None, "ts": 0.0}
-_SITEMAP_TTL_S = 6 * 3600  # 6 heures
 
-
-async def _construire_sitemap_xml() -> str:
-    films = await fetch_all(
-        """
-        SELECT id, titre, date_maj
-        FROM films
-        WHERE statut = 'publie'
-          AND region = 'Occitanie'
-        ORDER BY id
-        """
-    )
-
-    urls = [
-        f"""  <url>
-    <loc>{BASE_URL}/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>"""
-    ]
-
-    # Pages éditoriales publiques à indexer
-    for chemin in ("/analyse.html", "/devenir-guide.html"):
-        urls.append(
-            f"""  <url>
-    <loc>{BASE_URL}{chemin}</loc>
-  </url>"""
-        )
-
-    # Pages films (même logique canonique que /films/{slug}-{id})
-    for film in films:
-        lastmod = ""
-        date_maj = film.get("date_maj")
-        if date_maj:
-            if hasattr(date_maj, "date"):
-                date_maj = date_maj.date()
-            lastmod = f"\n    <lastmod>{date_maj.isoformat()}</lastmod>"
-        urls.append(
-            f"""  <url>
-    <loc>{BASE_URL}{url_film(film)}</loc>{lastmod}
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>"""
-        )
-
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        + "\n".join(urls)
-        + "\n</urlset>\n"
-    )
-
-
-@app.get("/sitemap.xml")
-async def sitemap():
-    """
-    Sitemap XML dynamique pour Google, avec cache mémoire de 6 h.
-    Si la base est indisponible, on resert la dernière version connue
-    plutôt que de renvoyer une erreur à Google.
-    """
-    import time as _time
-
-    maintenant = _time.monotonic()
-    cache_valide = (
-        _SITEMAP_CACHE["xml"] is not None
-        and (maintenant - _SITEMAP_CACHE["ts"]) < _SITEMAP_TTL_S
-    )
-
-    if not cache_valide:
-        try:
-            _SITEMAP_CACHE["xml"] = await _construire_sitemap_xml()
-            _SITEMAP_CACHE["ts"] = maintenant
-        except Exception:
-            if _SITEMAP_CACHE["xml"] is None:
-                raise HTTPException(503, "Sitemap temporairement indisponible")
-
-    return Response(
-        content=_SITEMAP_CACHE["xml"],
-        media_type="application/xml",
-    )
-
-
-@app.get("/robots.txt", response_class=PlainTextResponse)
-async def robots():
     """
     Le contenu de la page d'accueil (liste des films, carte, filtres) est
     chargé en JavaScript depuis /api/. Si /api/ est interdit à Googlebot,

@@ -3289,53 +3289,6 @@ async def page_film(request: Request, slug_id: str):
     )
 
 
-@app.get("/robots.txt", response_class=PlainTextResponse)
-async def robots_txt():
-    """
-    Le contenu de la page d'accueil (liste des films, carte, filtres) est
-    chargé en JavaScript depuis /api/. Si /api/ est interdit à Googlebot,
-    Google voit une page vide (« Chargement… ») et ne l'indexe pas.
-    On ouvre donc uniquement les routes de LECTURE publiques nécessaires
-    à l'affichage ; tout le reste de /api/ reste fermé.
-    (Google applique la règle la plus précise : Allow /api/films l'emporte
-    sur Disallow /api/.)
-    """
-    regles_api = """Allow: /
-Disallow: /api/
-Allow: /api/films
-Allow: /api/filtres
-Allow: /api/stats
-Allow: /api/lieux/tous-points
-Allow: /api/analyse
-"""
-    contenu = f"""User-agent: *
-Disallow: /
-
-User-agent: Googlebot
-{regles_api}
-User-agent: Bingbot
-{regles_api}
-User-agent: OAI-SearchBot
-Allow: /
-Disallow: /api/
-
-User-agent: ChatGPT-User
-Allow: /
-Disallow: /api/
-
-User-agent: PerplexityBot
-Allow: /
-Disallow: /api/
-
-User-agent: Perplexity-User
-Allow: /
-Disallow: /api/
-
-Sitemap: {BASE_URL}/sitemap.xml
-"""
-    return PlainTextResponse(content=contenu, media_type="text/plain")
-
-
 # ══════════════════════════════════════════════════════════════
 # FRONTEND STATIQUE — doit rester TOUT À LA FIN du fichier
 # ══════════════════════════════════════════════════════════════

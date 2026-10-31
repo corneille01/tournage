@@ -204,12 +204,16 @@ app.include_router(droits_router)
 app.include_router(guides_oeuvres_router)
 app.include_router(meteo_router)
 app.include_router(seo_router)
-from analyse_territoire import router as analyse_territoire_router
-from communaute import router as communaute_router
-from ar_iot import router as ar_iot_router
-app.include_router(analyse_territoire_router)
-app.include_router(communaute_router)
-app.include_router(ar_iot_router)
+# Modules « optionnels » : si l'un d'eux est absent ou en erreur (fichier non déployé, dépendance manquante…),
+# le site continue de fonctionner et l'incident est écrit en rouge dans les journaux de démarrage,
+# au lieu de faire tomber toute l'application.
+import importlib as _importlib
+
+for _nom_module in ("analyse_territoire", "communaute", "ar_iot"):
+    try:
+        app.include_router(_importlib.import_module(_nom_module).router)
+    except Exception:
+        logging.getLogger(__name__).exception("MODULE OPTIONNEL NON CHARGÉ : %s (le reste du site fonctionne)", _nom_module)
 @app.get("/api/analyse/indicateurs")
 async def api_analyse_indicateurs(
     region: str = Query("Occitanie")

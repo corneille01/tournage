@@ -870,7 +870,17 @@ async function afficherIsochronePourLieu(
       <span>
         Géoplateforme IGN
       </span>
+      <button type="button" class="btn-voir-sur-carte iso-voir-carte" style="margin-top:6px">
+        <i class="fa-solid fa-map" aria-hidden="true"></i> Voir sur la carte
+      </button>
     `;
+    // Comme pour un itinéraire : on ferme le grand popup, la zone reste affichée et la carte se cadre
+    // dessus. Un clic sur l'icône du lieu rouvre le popup.
+    conteneur.querySelector(".iso-voir-carte")?.addEventListener("click", () => {
+      fermerPopup();
+      const limites = coucheIsochrone?.getBounds?.();
+      if (limites && limites.isValid()) map.fitBounds(limites, { padding: [40, 40], maxZoom: 15 });
+    });
 
   } catch (error) {
 
@@ -1780,6 +1790,32 @@ function _htmlPhrasesPiedVoiture(items, phrases) {
   }</div>`;
 }
 
+// Contenu d'une station : IDENTIQUE dans le grand popup (liste) et dans le petit popup de la carte.
+// ctx = { cle (carburant choisi), plusProche, prixMin, nbAffiches }
+function _corpsStation(item, ctx) {
+  const cle = ctx.cle;
+  const libelleCarburant = (CARBURANTS_STATION.find((c) => c[0] === cle) || [])[1] || "";
+  const st = item.station || null;
+  const c = cle ? _carburantStation(item, cle) : null;
+  const moinsCher = c && c.prix === ctx.prixMin && ctx.nbAffiches > 1;
+  const statut = _statutOuvertureStation(st);
+  const badges = [
+    ctx.plusProche ? BADGE_PLUS_PROCHE : "",
+    moinsCher ? `<span class="station-badge prix"><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Le moins cher de la liste</span>` : "",
+    _aBorneElectrique(item) ? `<span class="station-badge"><i class="fa-solid fa-charging-station" aria-hidden="true"></i> Borne électrique</span>` : "",
+    st?.autoroute ? `<span class="station-badge">Autoroute</span>` : "",
+    st?.automate_24_24 === true ? `<span class="station-badge"><i class="fa-solid fa-credit-card" aria-hidden="true"></i> Automate CB 24h/24</span>` : "",
+    statut ? `<span class="station-badge ${statut.etat}">${escapeHtml(statut.texte)}</span>` : "",
+  ].join("");
+  const age = c ? _agePrixStation(c.maj) : null;
+  const prixGros = c ? `<div class="station-prix-choisi"><b>${_prixStation(c.prix)} €/L</b><span>${escapeHtml(libelleCarburant)}</span><small class="${age.ancien ? "station-ancien" : ""}">${escapeHtml(age.texte)}${age.ancien ? " · à vérifier" : ""}</small></div>` : "";
+  const adresse = st?.adresse_complete || item.adresse || "";
+  const detail = st
+    ? `<details class="station-details" ${cle ? "" : "open"}><summary>Carburants et prix</summary>${_htmlCarburantsStation(st, cle)}</details>${_htmlHorairesStation(st)}${_htmlServicesStation(st)}`
+    : `<p class="station-note">Détails de la station indisponibles pour le moment.</p>`;
+  return { badges, prixGros, adresse, detail };
+}
+
 function _rendreStations() {
   if (!dernieresDonneesAmenities) return;
   const { items, phrases } = dernieresDonneesAmenities;
@@ -1835,25 +1871,8 @@ function _rendreStations() {
     
 
   const cartes = affiches.map((item, index) => {
-    const st = item.station || null;
     const plusProche = triStation !== "prix" && index === 0;
-    const c = cle ? _carburantStation(item, cle) : null;
-    const moinsCher = c && c.prix === prixMin && affiches.length > 1;
-    const statut = _statutOuvertureStation(st);
-    const badges = [
-      plusProche ? BADGE_PLUS_PROCHE : "",
-      moinsCher ? `<span class="station-badge prix"><i class="fa-solid fa-euro-sign" aria-hidden="true"></i> Le moins cher de la liste</span>` : "",
-      _aBorneElectrique(item) ? `<span class="station-badge"><i class="fa-solid fa-charging-station" aria-hidden="true"></i> Borne électrique</span>` : "",
-      st?.autoroute ? `<span class="station-badge">Autoroute</span>` : "",
-      st?.automate_24_24 === true ? `<span class="station-badge"><i class="fa-solid fa-credit-card" aria-hidden="true"></i> Automate CB 24h/24</span>` : "",
-      statut ? `<span class="station-badge ${statut.etat}">${escapeHtml(statut.texte)}</span>` : "",
-    ].join("");
-    const age = c ? _agePrixStation(c.maj) : null;
-    const prixGros = c ? `<div class="station-prix-choisi"><b>${_prixStation(c.prix)} €/L</b><span>${escapeHtml(libelleCarburant)}</span><small class="${age.ancien ? "station-ancien" : ""}">${escapeHtml(age.texte)}${age.ancien ? " · à vérifier" : ""}</small></div>` : "";
-    const adresse = st?.adresse_complete || item.adresse || "";
-    const detail = st
-      ? `<details class="station-details" ${cle ? "" : "open"}><summary>Carburants et prix</summary>${_htmlCarburantsStation(st, cle)}</details>${_htmlHorairesStation(st)}${_htmlServicesStation(st)}`
-      : `<p class="station-note">Détails de la station indisponibles pour le moment.</p>`;
+    const { badges, prixGros, adresse, detail } = _corpsStation(item, { cle, plusProche, prixMin, nbAffiches: affiches.length });
     return `
       <div class="resultat-item station-card ${plusProche ? "plus-proche" : ""}" style="${plusProche ? `border-color:${couleur};` : ""}">
         <div class="nom"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(item.nom)}</div>
@@ -2579,7 +2598,28 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
     });
     const idPopupItineraire = `itin-carte-${categorie}-${index}`;
     const texteDistance = _texteDistanceDynamique(item, modeTri);
-    const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(`
+    let contenuPopup;
+    let optionsPopup = { maxHeight: 340, autoPanPadding: [20, 20] };
+    if (categorie === "station_service") {
+      const cleCarb = carburantStationChoisi;
+      const prixMinCarte = cleCarb && itemsTries.length ? Math.min(...itemsTries.map((it) => _carburantStation(it, cleCarb).prix)) : null;
+      const { badges, prixGros, adresse, detail } = _corpsStation(item, {
+        cle: cleCarb, plusProche: triStation !== "prix" && index === 0, prixMin: prixMinCarte, nbAffiches: itemsTries.length });
+      contenuPopup = `<div class="station-card" style="min-width:250px">
+        <div class="nom"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i> ${escapeHtml(item.nom)}</div>
+        <div class="station-badges">${badges}</div>
+        <div class="distance">${texteDistance} du lieu de tournage</div>
+        ${adresse ? `<div class="adresse">${escapeHtml(adresse)}</div>` : ""}
+        ${prixGros}${detail}
+        <div class="boutons-itineraire" style="margin-top:6px;">
+          <button class="btn-itineraire" data-mode="foot-walking" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
+          <button class="btn-itineraire" data-mode="driving-car" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+        </div>
+        <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
+      </div>`;
+      optionsPopup = { maxWidth: 380, minWidth: 260, maxHeight: 400, autoPanPadding: [20, 20] };
+    }
+    const marker = L.marker([item.latitude, item.longitude], { icon: icone }).bindPopup(contenuPopup ?? `
       ${item.photo_url ? `<img class="resultat-photo" src="${item.photo_url}" alt="${item.nom}" loading="lazy" style="margin-bottom:6px;">` : ""}
       <b>${estPlusProche ? "<i class='fa-solid fa-star' aria-hidden='true'></i> " : ""}${item.nom}${item.note_etoiles ? ` ${"<i class='fa-solid fa-star' aria-hidden='true'></i>".repeat(Math.round(item.note_etoiles))}` : ""}</b><br>
       ${texteDistance} du lieu de tournage
@@ -2597,7 +2637,7 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
         <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
       </div>
       <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
-    `, { maxHeight: 340, autoPanPadding: [20, 20] });
+    `, optionsPopup);
 
     marker.on("popupopen", (e) => {
       if (coucheItineraireCommodite) { map.removeLayer(coucheItineraireCommodite); coucheItineraireCommodite = null; }
@@ -3311,14 +3351,30 @@ async function demarrerNavigation(destLat, destLon, mode) {
       depart_lat: departLat, depart_lon: departLon,
       arrivee_lat: destLat, arrivee_lon: destLon, mode, etapes: "true",
     });
-    const res = await fetch(`${API_BASE}/api/itineraire?${params}`);
-    const data = await res.json();
-
-  if (!data.etapes_navigation || !data.etapes_navigation.length) {
-    panneau.querySelector(".nav-instruction").textContent =
-        "<i class='fa-solid fa-triangle-exclamation' aria-hidden='true'></i> Itinéraire calculé par la Géoplateforme IGN, mais les instructions détaillées ne sont pas disponibles.";
-    return;
-}
+    const instruction = panneau.querySelector(".nav-instruction");
+    const avertir = (texte) => {
+      instruction.innerHTML = `<i class='fa-solid fa-triangle-exclamation' aria-hidden='true'></i> ${escapeHtml(texte)}`;
+    };
+    let res, data = null;
+    try {
+      res = await fetch(`${API_BASE}/api/itineraire?${params}`);
+      data = await res.json();
+    } catch (e) {
+      avertir("Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.");
+      return;
+    }
+    // Une erreur du serveur (ex. : service IGN momentanément saturé) n'est PAS « pas d'instructions » :
+    // on affiche le vrai motif, avec invitation à réessayer.
+    if (!res.ok) {
+      const d = data?.detail;
+      const message = typeof d === "string" ? d : d?.message || "Le calcul d'itinéraire a échoué.";
+      avertir(`${message} Réessayez dans quelques secondes.`);
+      return;
+    }
+    if (!data.etapes_navigation || !data.etapes_navigation.length) {
+      avertir("Itinéraire calculé par la Géoplateforme IGN, mais les instructions détaillées ne sont pas disponibles pour ce trajet.");
+      return;
+    }
 
 etapesNavigationCourantes = data.etapes_navigation;
 indexEtapeCourante = 0;

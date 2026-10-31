@@ -71,6 +71,8 @@ jobs:
       - name: Précalculer les distances de route
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Le runner GitHub a sa propre adresse IP : 4 requêtes/s restent sous la limite de 5/s de l'IGN.
+          IGN_DEBIT_FOND: "4"
         run: |
           ARGS="--duree-max-minutes 330"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then

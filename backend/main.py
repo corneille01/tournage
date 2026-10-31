@@ -9,6 +9,7 @@ pour le remplissage du cache.
 
 from geoplateforme import (
     calculer_itineraire as calculer_itineraire_geoplateforme,
+    diagnostic as diagnostic_geoplateforme,
     GeoplateformeError,
     RESOURCE_ITINERAIRE,
 )
@@ -203,6 +204,12 @@ app.include_router(droits_router)
 app.include_router(guides_oeuvres_router)
 app.include_router(meteo_router)
 app.include_router(seo_router)
+from analyse_territoire import router as analyse_territoire_router
+from communaute import router as communaute_router
+from ar_iot import router as ar_iot_router
+app.include_router(analyse_territoire_router)
+app.include_router(communaute_router)
+app.include_router(ar_iot_router)
 @app.get("/api/analyse/indicateurs")
 async def api_analyse_indicateurs(
     region: str = Query("Occitanie")
@@ -3289,13 +3296,17 @@ async def page_film(request: Request, slug_id: str):
     )
 
 
-# ══════════════════════════════════════════════════════════════
-# FRONTEND STATIQUE — doit rester TOUT À LA FIN du fichier
-# ══════════════════════════════════════════════════════════════
-# Monté en dernier pour que toutes les routes /api/..., /films/...,
-# /sitemap.xml, etc. soient évaluées avant. Sans ce montage, la racine
-# du site renvoie {"detail":"Not Found"}.
-FRONTEND_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "frontend")
-)
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+@app.get("/api/diagnostic/ign")
+async def diagnostic_ign(request: Request):
+    """Ce que répond RÉELLEMENT l'IGN depuis ce serveur (statut HTTP, délai, en-têtes de limitation, structure
+    de la réponse). À ouvrir quand « Le service d'itinéraire IGN est temporairement indisponible » s'affiche :
+    curl -H "X-Admin-Token: …" https://tournage.pelify.app/api/diagnostic/ign"""
+    exiger_admin(request)
+    return await diagnostic_geoplateforme()
+
+
+# ── Site web (fichiers du dossier frontend/) ─────────────────────────────────
+# DOIT rester la toute dernière déclaration : monté sur « / », il intercepterait toutes les
+# requêtes avant les routes /api/…, /films/{slug_id}, /sitemap.xml, /robots.txt déclarées plus bas.
+# Son absence donne {"detail":"Not Found"} sur la page d'accueil.
+app.mount("/", StaticFiles(directory="../frontend", html=True), name="static")

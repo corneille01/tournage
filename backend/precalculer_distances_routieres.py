@@ -33,9 +33,9 @@ import time
 from db import init_db_pool, close_db_pool, fetch_all, execute, executemany
 from geoplateforme import calculer_itineraire, GeoplateformeError
 
-# L'API itinéraire accepte 10 req/s par IP : on reste très en dessous.
+# L'IGN limite chaque IP à 5 requêtes/s : le limiteur de geoplateforme.py (IGN_DEBIT_FOND) fixe le rythme.
 CONCURRENCE_MAX = 4
-DELAI_APRES_APPEL = 0.35
+DELAI_APRES_APPEL = 0.0   # débit réglé par IGN_DEBIT_FOND (voir le workflow)
 
 VOISINS_PAR_LIEU = 12              # lieux les plus proches calculés pour chaque lieu
 RAYON_MAX_VOISINS_KM = 150         # au-delà, on ne précalcule pas (repli géré par l'API)
@@ -120,7 +120,7 @@ async def _calculer(trajet: tuple, semaphore: asyncio.Semaphore):
             res = await calculer_itineraire(
                 depart_lat=origine[0], depart_lon=origine[1],
                 arrivee_lat=dest[0], arrivee_lon=dest[1],
-                mode=MODE_API[mode], avec_etapes=False,
+                mode=MODE_API[mode], avec_etapes=False, priorite="fond",
             )
         except GeoplateformeError as exc:
             print(f"  ⚠️ IGN indisponible ({type_o} {origine_id} → {dest_id}, {mode}) : {exc}", flush=True)

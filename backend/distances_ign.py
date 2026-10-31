@@ -34,8 +34,8 @@ from overpass import haversine_metres
 
 logger = logging.getLogger(__name__)
 
-CONCURRENCE_MAX = 4
-PAUSE_ENTRE_APPELS_S = 0.25
+CONCURRENCE_MAX = 3
+PAUSE_ENTRE_APPELS_S = 0.0   # le débit est désormais réglé par geoplateforme._LIMITEURS (≤ 5 requêtes/s par IP côté IGN)
 TTL_S = 24 * 60 * 60
 MEMOIRE_MAX = 5000
 

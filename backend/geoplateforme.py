@@ -10,7 +10,14 @@ Services :
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import os
+import time
+
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 BASE_URL = "https://data.geopf.fr/navigation"
@@ -27,6 +34,73 @@ MODE_PROFIL = {
 
 class GeoplateformeError(Exception):
     pass
+
+
+# ─────────────────────────────────────────────────────────────
+# Débit et reprises
+# ─────────────────────────────────────────────────────────────
+# L'IGN limite chaque adresse IP à 5 requêtes par seconde (documentation du service, data.gouv.fr).
+# Sur un hébergeur, l'adresse est PARTAGÉE avec d'autres clients : on reste nettement en dessous.
+# Deux files d'attente : « interactif » (le visiteur attend : navigation, parcours) est prioritaire
+# sur « fond » (précalculs, distances de confort), pour qu'un calcul de masse ne bloque jamais un clic.
+# Total par défaut : 4,5 requêtes/s. Réglable : IGN_DEBIT_INTERACTIF, IGN_DEBIT_FOND (requêtes/s).
+
+class _Limiteur:
+    """Espace les départs d'appels : au plus `debit` appels par seconde, servis dans l'ordre d'arrivée."""
+
+    def __init__(self, debit: float):
+        self.intervalle = 1.0 / max(0.1, debit)
+        self._prochain = 0.0
+        self._verrou: asyncio.Lock | None = None
+
+    async def attendre(self) -> None:
+        if self._verrou is None:
+            self._verrou = asyncio.Lock()
+        async with self._verrou:
+            attente = self._prochain - time.monotonic()
+            if attente > 0:
+                await asyncio.sleep(attente)
+            self._prochain = max(time.monotonic(), self._prochain) + self.intervalle
+
+
+_LIMITEURS = {
+    "interactif": _Limiteur(float(os.getenv("IGN_DEBIT_INTERACTIF", "3.0"))),
+    "fond": _Limiteur(float(os.getenv("IGN_DEBIT_FOND", "1.5"))),
+}
+_TIMEOUT = httpx.Timeout(connect=8.0, read=25.0, write=8.0, pool=8.0)
+_CODES_A_REESSAYER = (429, 502, 503, 504)
+
+
+async def _requete_ign(url: str, params: dict, priorite: str = "interactif", tentatives: int = 3) -> httpx.Response:
+    """GET vers l'IGN avec limitation de débit et reprises (429, 502, 503, 504, délais dépassés).
+    Renvoie la dernière réponse si elle reste en erreur HTTP (l'appelant la traduit) ; lève l'exception
+    réseau si aucun essai n'a abouti."""
+    limiteur = _LIMITEURS.get(priorite, _LIMITEURS["interactif"])
+    derniere = None
+    for essai in range(tentatives):
+        await limiteur.attendre()
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                r = await client.get(url, params=params, headers={"Accept": "application/json"})
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            derniere = exc
+            logger.warning("IGN %s : %s (essai %d/%d)", url.rsplit("/", 1)[-1], type(exc).__name__, essai + 1, tentatives)
+            await asyncio.sleep(0.4 * (2 ** essai))
+            continue
+        if r.status_code in _CODES_A_REESSAYER and essai < tentatives - 1:
+            try:
+                attente = float(r.headers.get("Retry-After", ""))
+            except ValueError:
+                attente = 0.6 * (2 ** essai)
+            logger.warning("IGN %s : HTTP %s (essai %d/%d), nouvel essai dans %.1f s",
+                           url.rsplit("/", 1)[-1], r.status_code, essai + 1, tentatives, min(attente, 3.0))
+            derniere = r
+            await asyncio.sleep(min(attente, 3.0))
+            continue
+        return r
+    if isinstance(derniere, httpx.Response):
+        return derniere
+    raise derniere
 
 
 def _profil(mode: str) -> str:
@@ -47,6 +121,7 @@ async def calculer_itineraire(
     arrivee_lon: float,
     mode: str = "driving-car",
     avec_etapes: bool = False,
+    priorite: str = "interactif",
 ) -> dict:
     """
     Calcule un itinéraire routable avec la Géoplateforme IGN.
@@ -104,37 +179,17 @@ async def calculer_itineraire(
     }
 
     try:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=10.0,
-                read=60.0,
-                write=10.0,
-                pool=10.0,
-            )
-        ) as client:
-            response = await client.get(
-                url,
-                params=params,
-                headers={
-                    "Accept": "application/json",
-                },
-            )
+        response = await _requete_ign(url, params, priorite)
 
     except httpx.TimeoutException as exc:
         raise GeoplateformeError(
-            "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
+            "La Géoplateforme IGN a dépassé le délai d'attente pour l'itinéraire."
         ) from exc
 
     except httpx.RequestError as exc:
         raise GeoplateformeError(
-            f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
+            f"Impossible de contacter la Géoplateforme IGN pour l'itinéraire : {exc}"
         ) from exc
-
-    except ValueError as exc:
-        raise GeoplateformeError(
-            "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
-        ) from exc
-
 
     if response.status_code >= 400:
         try:
@@ -625,32 +680,27 @@ async def calculer_isochrone(
     }
 
     try:
-
-        async with httpx.AsyncClient(timeout=30) as client:
-
-            response = await client.get(
-                f"{BASE_URL}/isochrone",
-                params=params,
+        response = await _requete_ign(f"{BASE_URL}/isochrone", params, "interactif")
+        if response.status_code >= 400:
+            raise GeoplateformeError(
+                f"Erreur HTTP {response.status_code} de la Géoplateforme IGN pour l'isochrone : {response.text[:300]}"
             )
-
-            response.raise_for_status()
-
-            data = response.json()
+        data = response.json()
 
     except httpx.TimeoutException as exc:
-            raise GeoplateformeError(
-                "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
-            ) from exc
+        raise GeoplateformeError(
+            "La Géoplateforme IGN a dépassé le délai d'attente pour l'isochrone."
+        ) from exc
 
     except httpx.RequestError as exc:
-            raise GeoplateformeError(
-                f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
-            ) from exc
+        raise GeoplateformeError(
+            f"Impossible de contacter la Géoplateforme IGN pour l'isochrone : {exc}"
+        ) from exc
 
     except ValueError as exc:
-            raise GeoplateformeError(
-                "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
-            ) from exc
+        raise GeoplateformeError(
+            "La Géoplateforme IGN a retourné une réponse JSON invalide pour l'isochrone."
+        ) from exc
 
     # GeoJSON direct
     if data.get("type") in (
@@ -693,3 +743,32 @@ async def calculer_isochrone(
         "minutes": minutes,
         "geometry": geometry,
     }
+
+
+async def diagnostic() -> dict:
+    """Appel de test (Foix → Pamiers, avec instructions) : ce que répond réellement l'IGN depuis CE serveur."""
+    params = {"resource": RESOURCE_ITINERAIRE, "start": "1.6054,42.9639", "end": "1.6076,43.1161", "profile": "car",
+              "optimization": "fastest", "geometryFormat": "geojson", "distanceUnit": "meter", "timeUnit": "second",
+              "crs": "EPSG:4326", "getSteps": "true", "getBbox": "false"}
+    debut = time.monotonic()
+    out: dict = {"url": f"{BASE_URL}/itineraire", "debit_interactif_par_s": round(1 / _LIMITEURS["interactif"].intervalle, 2),
+                 "debit_fond_par_s": round(1 / _LIMITEURS["fond"].intervalle, 2)}
+    try:
+        r = await _requete_ign(f"{BASE_URL}/itineraire", params, "interactif", tentatives=1)
+    except Exception as exc:
+        return {**out, "ok": False, "erreur": f"{type(exc).__name__}: {exc}", "duree_ms": round((time.monotonic() - debut) * 1000)}
+    out.update(statut_http=r.status_code, duree_ms=round((time.monotonic() - debut) * 1000),
+               en_tetes_utiles={k: v for k, v in r.headers.items() if k.lower().startswith(("retry-after", "x-ratelimit", "ratelimit", "server", "via"))})
+    try:
+        j = r.json()
+    except ValueError:
+        return {**out, "ok": False, "corps_debut": r.text[:300]}
+    if r.status_code >= 400:
+        return {**out, "ok": False, "reponse": j}
+    portions = j.get("portions") or []
+    out.update(ok=True, cles_reponse=sorted(j.keys()), nb_portions=len(portions),
+               nb_etapes=sum(len(p.get("steps") or []) for p in portions if isinstance(p, dict)),
+               distance=j.get("distance"), duree=j.get("duration"))
+    if not out["nb_etapes"]:
+        out["avertissement"] = "Itinéraire reçu mais SANS instructions : la structure de réponse a peut-être changé (cles_reponse)."
+    return out

@@ -1436,6 +1436,10 @@ function ouvrirPopupLieu(film, lieu) {
   if (btnNavDirecteVoiture) {
     btnNavDirecteVoiture.onclick = () => demarrerNavigation(lieuLat, lieuLon, "car");
   }
+  const btnNavDirecteVelo = document.getElementById("btn-nav-directe-velo");
+  if (btnNavDirecteVelo) {
+    btnNavDirecteVelo.onclick = () => demarrerNavigation(lieuLat, lieuLon, "bicycle");
+  }
 
   const motType = film.media_type === "movie" ? "ce film" : film.media_type === "tv" ? "cette série" : "cet animé";
   document.getElementById("btn-trace").querySelector("span").textContent = `Sur les traces de ${motType}…`;
@@ -1884,6 +1888,7 @@ function _rendreStations() {
         <div class="boutons-itineraire">
           <button class="btn-itineraire" data-mode="foot-walking" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
           <button class="btn-itineraire" data-mode="driving-car" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+          <button class="btn-itineraire" data-mode="bicycle" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-biking" aria-hidden="true"></i> À vélo</button>
         </div>
         <div class="itineraire-resultat"></div>
       </div>`;
@@ -1980,6 +1985,7 @@ function _rendreCategorie() {
           <div class="boutons-itineraire">
             <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
             <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+            <button class="btn-itineraire" data-mode="bicycle" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-biking" aria-hidden="true"></i> À vélo</button>
           </div>
           <div class="itineraire-resultat"></div>
         </div>
@@ -2076,6 +2082,13 @@ async function afficherItineraireVersCommodite(
       modeFrontend === "car"
     ) {
       mode = "car";
+    } else if (
+      modeFrontend === "bicycle" ||
+      modeFrontend === "cycling" ||
+      modeFrontend === "velo" ||
+      modeFrontend === "vélo"
+    ) {
+      mode = "bicycle";
     } else {
       throw new Error(
         `Mode d'itinéraire inconnu : ${modeFrontend}`
@@ -2142,7 +2155,9 @@ async function afficherItineraireVersCommodite(
           <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> Calcul de l’itinéraire
           ${mode === "pedestrian"
             ? "à pied"
-            : "en voiture"}…
+            : mode === "bicycle"
+              ? "à vélo"
+              : "en voiture"}…
         </div>
       `;
     }
@@ -2204,7 +2219,7 @@ async function afficherItineraireVersCommodite(
 
     if (!data?.geometry) {
       throw new Error(
-        "La Géoplateforme IGN n'a retourné aucun tracé."
+        "Aucun tracé n'a été retourné pour cet itinéraire."
       );
     }
 
@@ -2297,7 +2312,9 @@ async function afficherItineraireVersCommodite(
               ${
                 mode === "pedestrian"
                   ? "<i class='fa-solid fa-person-walking' aria-hidden='true'></i> Itinéraire à pied"
-                  : "<i class='fa-solid fa-car' aria-hidden='true'></i> Itinéraire en voiture"
+                  : mode === "bicycle"
+                    ? "<i class='fa-solid fa-person-biking' aria-hidden='true'></i> Itinéraire à vélo"
+                    : "<i class='fa-solid fa-car' aria-hidden='true'></i> Itinéraire en voiture"
               }
             </strong>
 
@@ -2309,11 +2326,28 @@ async function afficherItineraireVersCommodite(
               <i class="fa-solid fa-stopwatch" aria-hidden="true"></i> ${duree}
             </span>
 
+            ${
+              data.denivele_positif_m != null && Number.isFinite(Number(data.denivele_positif_m))
+                ? `<span title="Dénivelé positif / négatif">
+                    <i class="fa-solid fa-mountain" aria-hidden="true"></i>
+                    +${Math.round(Number(data.denivele_positif_m))} m
+                    ${data.denivele_negatif_m != null && Number.isFinite(Number(data.denivele_negatif_m))
+                      ? ` / −${Math.round(Number(data.denivele_negatif_m))} m` : ""}
+                  </span>`
+                : ""
+            }
+
           </div>
 
           <div class="itineraire-source">
-            <i class="fa-solid fa-map" aria-hidden="true"></i> Géoplateforme IGN
+            <i class="fa-solid fa-map" aria-hidden="true"></i>
+            ${data.provider === "openrouteservice" ? "openrouteservice · OpenStreetMap" : "Géoplateforme IGN"}
           </div>
+          ${
+            data.attribution
+              ? `<div class="itineraire-source-attribution">${escapeHtml(String(data.attribution))}</div>`
+              : ""
+          }
 
           ${
             etapes.length
@@ -2614,6 +2648,7 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
         <div class="boutons-itineraire" style="margin-top:6px;">
           <button class="btn-itineraire" data-mode="foot-walking" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
           <button class="btn-itineraire" data-mode="driving-car" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+          <button class="btn-itineraire" data-mode="bicycle" data-lat="${Number(item.latitude)}" data-lon="${Number(item.longitude)}"><i class="fa-solid fa-person-biking" aria-hidden="true"></i> À vélo</button>
         </div>
         <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
       </div>`;
@@ -2635,6 +2670,7 @@ function afficherCommoditesSurCarte(categorie, itemsTries, stats, modeTri) {
       <div class="boutons-itineraire" style="margin-top:6px;">
         <button class="btn-itineraire" data-mode="foot-walking" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-walking" aria-hidden="true"></i> À pied</button>
         <button class="btn-itineraire" data-mode="driving-car" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-car" aria-hidden="true"></i> En voiture</button>
+        <button class="btn-itineraire" data-mode="bicycle" data-lat="${item.latitude}" data-lon="${item.longitude}"><i class="fa-solid fa-person-biking" aria-hidden="true"></i> À vélo</button>
       </div>
       <div class="itineraire-resultat" id="${idPopupItineraire}"></div>
     `, optionsPopup);
@@ -3372,7 +3408,7 @@ async function demarrerNavigation(destLat, destLon, mode) {
       return;
     }
     if (!data.etapes_navigation || !data.etapes_navigation.length) {
-      avertir("Itinéraire calculé par la Géoplateforme IGN, mais les instructions détaillées ne sont pas disponibles pour ce trajet.");
+      avertir("Itinéraire calculé, mais les instructions détaillées ne sont pas disponibles pour ce trajet.");
       return;
     }
 
@@ -3470,6 +3506,18 @@ function arreterNavigation() {
   nettoyerNavigation();
   setTimeout(() => document.getElementById("panneau-navigation").classList.add("hidden"), 3000);
 }
+
+// Vélo : proposé seulement si le serveur l'a activé (clé ORS_API_KEY). Sinon les boutons restent masqués (CSS).
+(async () => {
+  try {
+    const r = await fetch(`${API_BASE}/api/itineraire/modes`, { headers: { Accept: "application/json" } });
+    if (!r.ok) return;
+    const d = await r.json();
+    document.body.classList.toggle("velo-actif", Boolean(d?.modes?.bicycle));
+  } catch (_) {
+    /* vélo reste masqué */
+  }
+})();
 
 // ── Choroplèthe départements + carte de chaleur ──────────────────
 let coucheChoroplethe = null;

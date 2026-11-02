@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 
 from db import init_db_pool, close_db_pool, fetch_all, execute
 
@@ -46,6 +47,11 @@ DELAI_ENTRE_LOTS = 0.35
 # ─────────────────────────────────────────────────────────────
 # Géoplateforme : un trajet
 # ─────────────────────────────────────────────────────────────
+
+# Compteurs d'appels IGN : si l'IGN rejette (presque) tout, le script doit ÉCHOUER
+# (code de sortie 1) pour que GitHub Actions affiche une exécution rouge, pas verte.
+_STATS = {"ok": 0, "echecs": 0}
+
 
 async def _itineraire_geoplateforme(
     depart: tuple[float, float],
@@ -77,16 +83,19 @@ async def _itineraire_geoplateforme(
             avec_etapes=False,
         )
 
+        _STATS["ok"] += 1
         return resultat
 
     except GeoplateformeError as exc:
+        _STATS["echecs"] += 1
         print(
-            f"  ⚠️ Géoplateforme indisponible ({mode}) : {exc}",
+            f"  ⚠️ Géoplateforme indisponible ({mode}, {getattr(exc, 'code', '?')}) : {exc}",
             flush=True,
         )
         return None
 
     except Exception as exc:
+        _STATS["echecs"] += 1
         print(
             f"  ⚠️ Erreur itinéraire ({mode}) : {exc}",
             flush=True,
@@ -367,3 +376,9 @@ if __name__ == "__main__":
             args.departement,
         )
     )
+
+    total = _STATS["ok"] + _STATS["echecs"]
+    print(f"Bilan IGN : {_STATS['ok']} réussi(s), {_STATS['echecs']} échec(s) sur {total} appel(s).", flush=True)
+    if _STATS["echecs"] and (_STATS["ok"] == 0 or _STATS["echecs"] > _STATS["ok"]):
+        print("❌ La majorité des appels IGN a échoué : exécution marquée en échec.", flush=True)
+        sys.exit(1)

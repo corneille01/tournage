@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import time
 
@@ -22,8 +23,38 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://data.geopf.fr/navigation"
 
-RESOURCE_ITINERAIRE = "bdtopo-osrm"
-RESOURCE_ISOCHRONE = "bdtopo-valhalla"
+# ─────────────────────────────────────────────────────────────
+# Ressources IGN (liste officielle : https://data.geopf.fr/navigation/getcapabilities)
+# ─────────────────────────────────────────────────────────────
+# « bdtopo-osrm » a été retirée du service par l'IGN (HTTP 400 « Parameter 'resource' is invalid »).
+# Les ressources de la Géoplateforme peuvent changer : elles se règlent donc SANS nouveau push,
+# par variables d'environnement Render (liste séparée par des virgules, essayées dans l'ordre) :
+#     IGN_RESSOURCES_VOITURE   (défaut : bdtopo-valhalla)
+#     IGN_RESSOURCES_PIETON    (défaut : bdtopo-pgr,bdtopo-valhalla)
+#     IGN_RESSOURCE_ISOCHRONE  (défaut : bdtopo-valhalla)
+# Toutes restent des ressources de la Géoplateforme IGN : aucun moteur extérieur n'est utilisé.
+# Une ressource n'est suivie d'une autre que si elle échoue OU renvoie un tracé jugé incohérent
+# (voir _verifier_route).
+
+def _liste_env(nom: str, defaut: str) -> list[str]:
+    brut = os.getenv(nom)
+    if brut is None:
+        brut = defaut
+    return [r.strip() for r in brut.split(",") if r.strip()]
+
+
+RESSOURCES_ITINERAIRE = {
+    "car": _liste_env("IGN_RESSOURCES_VOITURE", "bdtopo-valhalla"),
+    "pedestrian": _liste_env("IGN_RESSOURCES_PIETON", "bdtopo-pgr,bdtopo-valhalla"),
+}
+
+# Conservée pour main.py (messages d'erreur) : ressource principale pour la voiture.
+RESOURCE_ITINERAIRE = (RESSOURCES_ITINERAIRE["car"] or ["bdtopo-valhalla"])[0]
+RESOURCE_ISOCHRONE = (_liste_env("IGN_RESSOURCE_ISOCHRONE", "bdtopo-valhalla") or ["bdtopo-valhalla"])[0]
+
+# Écart maximal (mètres) accepté entre le point demandé et l'extrémité du tracé renvoyé
+# (le routeur « accroche » le point au réseau routier le plus proche).
+TOLERANCE_EXTREMITES_M = float(os.getenv("IGN_TOLERANCE_EXTREMITES_M", "1500"))
 
 
 MODE_PROFIL = {
@@ -31,9 +62,29 @@ MODE_PROFIL = {
     "driving-car": "car",
 }
 
+# Tous les noms de mode acceptés par l'application → profil IGN.
+_MODES_ITINERAIRE = {
+    "driving-car": "car",
+    "car": "car",
+    "foot-walking": "pedestrian",
+    "walking": "pedestrian",
+    "pedestrian": "pedestrian",
+}
+
+
+# Modes vélo : l'IGN n'a pas de profil vélo → routage_velo.py (openrouteservice), activé par ORS_API_KEY.
+MODES_VELO = {"bicycle", "cycling", "cycling-regular", "velo", "vélo"}
+
 
 class GeoplateformeError(Exception):
-    pass
+    """Erreur du service IGN. `code` précise la cause :
+    INDISPONIBLE (réseau, délai, 5xx, limite de débit), RESSOURCE_INTROUVABLE (la ressource n'existe plus
+    ou n'est pas configurée : vérifier getcapabilities), GEOMETRIE_INCOHERENTE (tracé refusé par nos contrôles),
+    et pour le vélo : VELO_NON_CONFIGURE, VELO_CLE_INVALIDE, AUCUN_ITINERAIRE."""
+
+    def __init__(self, message: str = "", code: str = "INDISPONIBLE"):
+        super().__init__(message)
+        self.code = code
 
 
 # ─────────────────────────────────────────────────────────────
@@ -114,23 +165,22 @@ def _profil(mode: str) -> str:
 
 
 
-async def calculer_itineraire(
+async def _itineraire_ressource(
     depart_lat: float,
     depart_lon: float,
     arrivee_lat: float,
     arrivee_lon: float,
-    mode: str = "driving-car",
-    avec_etapes: bool = False,
-    priorite: str = "interactif",
+    mode: str,
+    avec_etapes: bool,
+    priorite: str,
+    resource: str,
 ) -> dict:
     """
-    Calcule un itinéraire routable avec la Géoplateforme IGN.
+    Calcule un itinéraire avec UNE ressource précise de la Géoplateforme IGN
+    (la sélection de la ressource et les contrôles sont faits par calculer_itineraire).
 
     Service :
         https://data.geopf.fr/navigation/itineraire
-
-    Ressource :
-        bdtopo-osrm
 
     Retour :
         {
@@ -140,22 +190,14 @@ async def calculer_itineraire(
             "duree_secondes": float | None,
             "etapes": list,
             "provider": "geoplateforme",
-            "resource": "bdtopo-osrm",
+            "resource": resource,
             "mode": str,
         }
 
-    Aucun fallback vers un autre moteur de routage.
+    Aucun fallback vers un moteur extérieur à la Géoplateforme.
     """
 
-    mode_mapping = {
-        "driving-car": "car",
-        "car": "car",
-        "foot-walking": "pedestrian",
-        "walking": "pedestrian",
-        "pedestrian": "pedestrian",
-    }
-
-    mode_ign = mode_mapping.get(mode)
+    mode_ign = _MODES_ITINERAIRE.get(mode)
 
     if not mode_ign:
         raise GeoplateformeError(
@@ -165,7 +207,7 @@ async def calculer_itineraire(
     url = f"{BASE_URL}/itineraire"
 
     params = {
-        "resource": RESOURCE_ITINERAIRE,
+        "resource": resource,
         "start": f"{depart_lon},{depart_lat}",
         "end": f"{arrivee_lon},{arrivee_lat}",
         "profile": mode_ign,
@@ -197,9 +239,20 @@ async def calculer_itineraire(
         except Exception:
             detail = response.text[:1000]
 
+        # HTTP 400 « Parameter 'resource' is invalid: it does not exist on this service » :
+        # la ressource n'existe plus côté IGN → ce n'est PAS une panne temporaire.
+        texte_detail = str(detail).lower()
+        code_erreur = (
+            "RESSOURCE_INTROUVABLE"
+            if response.status_code in (400, 404) and "resource" in texte_detail
+            and ("invalid" in texte_detail or "does not exist" in texte_detail or "not found" in texte_detail)
+            else "INDISPONIBLE"
+        )
+
         raise GeoplateformeError(
             f"Erreur HTTP {response.status_code} de la "
-            f"Géoplateforme IGN : {detail}"
+            f"Géoplateforme IGN (ressource {resource}) : {detail}",
+            code_erreur,
         )
 
     try:
@@ -652,9 +705,131 @@ async def calculer_itineraire(
         "duree_secondes": duree,
         "etapes": etapes,
         "provider": "geoplateforme",
-        "resource": RESOURCE_ITINERAIRE,
+        "resource": resource,
         "mode": mode,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# Contrôle des tracés et choix de la ressource
+# ─────────────────────────────────────────────────────────────
+
+def _distance_vol_oiseau_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = p2 - p1
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _extremites_geometrie(geometry) -> tuple | None:
+    """Premier et dernier point (lon, lat) d'une LineString ou MultiLineString GeoJSON."""
+    if not isinstance(geometry, dict):
+        return None
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, list) or not coords:
+        return None
+    if isinstance(coords[0], (list, tuple)) and coords[0] and isinstance(coords[0][0], (int, float)):
+        premier, dernier = coords[0], coords[-1]
+    else:
+        lignes = [ligne for ligne in coords if isinstance(ligne, list) and ligne]
+        if not lignes:
+            return None
+        premier, dernier = lignes[0][0], lignes[-1][-1]
+    if len(premier) < 2 or len(dernier) < 2:
+        return None
+    return premier, dernier
+
+
+def _verifier_route(res: dict, depart_lat: float, depart_lon: float, arrivee_lat: float, arrivee_lon: float) -> dict:
+    """Refuse un tracé manifestement faux avant de le montrer ou de l'enregistrer en base :
+    extrémités éloignées des points demandés, distance impossible (plus courte que la ligne droite
+    ou démesurément longue). Renvoie les écarts mesurés (utile au diagnostic)."""
+    ext = _extremites_geometrie(res.get("geometry"))
+    if not ext:
+        raise GeoplateformeError("Tracé IGN sans coordonnées exploitables.", "GEOMETRIE_INCOHERENTE")
+
+    ecart_depart = _distance_vol_oiseau_m(depart_lat, depart_lon, float(ext[0][1]), float(ext[0][0]))
+    ecart_arrivee = _distance_vol_oiseau_m(arrivee_lat, arrivee_lon, float(ext[1][1]), float(ext[1][0]))
+    if ecart_depart > TOLERANCE_EXTREMITES_M or ecart_arrivee > TOLERANCE_EXTREMITES_M:
+        raise GeoplateformeError(
+            f"Tracé IGN incohérent : extrémités à {ecart_depart:.0f} m (départ) et {ecart_arrivee:.0f} m "
+            f"(arrivée) des points demandés (tolérance {TOLERANCE_EXTREMITES_M:.0f} m).",
+            "GEOMETRIE_INCOHERENTE",
+        )
+
+    vol = _distance_vol_oiseau_m(depart_lat, depart_lon, arrivee_lat, arrivee_lon)
+    distance = float(res.get("distance_metres") or 0)
+    if vol > 100:
+        if distance <= 0 or distance < 0.8 * vol - 2 * TOLERANCE_EXTREMITES_M:
+            raise GeoplateformeError(
+                f"Tracé IGN incohérent : {distance:.0f} m annoncés pour {vol:.0f} m à vol d'oiseau.",
+                "GEOMETRIE_INCOHERENTE",
+            )
+        if distance > 8 * vol + 5000:
+            raise GeoplateformeError(
+                f"Tracé IGN incohérent : {distance:.0f} m annoncés pour {vol:.0f} m à vol d'oiseau (détour démesuré).",
+                "GEOMETRIE_INCOHERENTE",
+            )
+    return {"ecart_depart_m": round(ecart_depart), "ecart_arrivee_m": round(ecart_arrivee), "vol_oiseau_m": round(vol)}
+
+
+async def calculer_itineraire(
+    depart_lat: float,
+    depart_lon: float,
+    arrivee_lat: float,
+    arrivee_lon: float,
+    mode: str = "driving-car",
+    avec_etapes: bool = False,
+    priorite: str = "interactif",
+) -> dict:
+    """
+    Calcule un itinéraire avec la Géoplateforme IGN.
+
+    Les ressources sont essayées dans l'ordre configuré pour le mode (voir RESSOURCES_ITINERAIRE).
+    Une ressource est écartée si elle échoue ou si son tracé est incohérent. Si toutes échouent,
+    la dernière erreur est levée : aucun itinéraire inventé, aucun moteur extérieur à l'IGN.
+    La clé « resource » du résultat indique la ressource réellement utilisée.
+    """
+    if mode in MODES_VELO:
+        # Import différé : routage_velo importe lui-même ce module.
+        from routage_velo import calculer_itineraire_velo
+
+        res = await calculer_itineraire_velo(
+            depart_lat, depart_lon, arrivee_lat, arrivee_lon, avec_etapes, priorite
+        )
+        _verifier_route(res, depart_lat, depart_lon, arrivee_lat, arrivee_lon)
+        return res
+
+    profil = _MODES_ITINERAIRE.get(mode)
+    if not profil:
+        raise GeoplateformeError(f"Mode de déplacement non supporté : {mode}")
+
+    ressources = RESSOURCES_ITINERAIRE.get(profil) or []
+    if not ressources:
+        raise GeoplateformeError(
+            f"Aucune ressource IGN configurée pour le profil « {profil} » "
+            "(variables IGN_RESSOURCES_VOITURE / IGN_RESSOURCES_PIETON).",
+            "RESSOURCE_INTROUVABLE",
+        )
+
+    derniere: GeoplateformeError | None = None
+    for ressource in ressources:
+        try:
+            res = await _itineraire_ressource(
+                depart_lat, depart_lon, arrivee_lat, arrivee_lon, mode, avec_etapes, priorite, ressource
+            )
+            _verifier_route(res, depart_lat, depart_lon, arrivee_lat, arrivee_lon)
+            return res
+        except GeoplateformeError as exc:
+            derniere = exc
+            logger.warning("IGN itinéraire : ressource %s écartée (%s) : %s", ressource, exc.code, exc)
+            if len(ressources) > 1:
+                print(f"⚠️ IGN ressource {ressource} écartée ({exc.code}) : {exc}", flush=True)
+
+    assert derniere is not None
+    raise derniere
 
 
 async def calculer_isochrone(
@@ -746,29 +921,39 @@ async def calculer_isochrone(
 
 
 async def diagnostic() -> dict:
-    """Appel de test (Foix → Pamiers, avec instructions) : ce que répond réellement l'IGN depuis CE serveur."""
-    params = {"resource": RESOURCE_ITINERAIRE, "start": "1.6054,42.9639", "end": "1.6076,43.1161", "profile": "car",
-              "optimization": "fastest", "geometryFormat": "geojson", "distanceUnit": "meter", "timeUnit": "second",
-              "crs": "EPSG:4326", "getSteps": "true", "getBbox": "false"}
-    debut = time.monotonic()
-    out: dict = {"url": f"{BASE_URL}/itineraire", "debit_interactif_par_s": round(1 / _LIMITEURS["interactif"].intervalle, 2),
-                 "debit_fond_par_s": round(1 / _LIMITEURS["fond"].intervalle, 2)}
-    try:
-        r = await _requete_ign(f"{BASE_URL}/itineraire", params, "interactif", tentatives=1)
-    except Exception as exc:
-        return {**out, "ok": False, "erreur": f"{type(exc).__name__}: {exc}", "duree_ms": round((time.monotonic() - debut) * 1000)}
-    out.update(statut_http=r.status_code, duree_ms=round((time.monotonic() - debut) * 1000),
-               en_tetes_utiles={k: v for k, v in r.headers.items() if k.lower().startswith(("retry-after", "x-ratelimit", "ratelimit", "server", "via"))})
-    try:
-        j = r.json()
-    except ValueError:
-        return {**out, "ok": False, "corps_debut": r.text[:300]}
-    if r.status_code >= 400:
-        return {**out, "ok": False, "reponse": j}
-    portions = j.get("portions") or []
-    out.update(ok=True, cles_reponse=sorted(j.keys()), nb_portions=len(portions),
-               nb_etapes=sum(len(p.get("steps") or []) for p in portions if isinstance(p, dict)),
-               distance=j.get("distance"), duree=j.get("duration"))
-    if not out["nb_etapes"]:
-        out["avertissement"] = "Itinéraire reçu mais SANS instructions : la structure de réponse a peut-être changé (cles_reponse)."
+    """Teste CHAQUE ressource configurée, en voiture et à pied (Foix → Pamiers, avec instructions) :
+    ce que répond réellement l'IGN depuis CE serveur, et si le tracé passe nos contrôles.
+    Liste officielle des ressources : https://data.geopf.fr/navigation/getcapabilities"""
+    dep_lat, dep_lon, arr_lat, arr_lon = 42.9639, 1.6054, 43.1161, 1.6076
+    out: dict = {
+        "url": f"{BASE_URL}/itineraire",
+        "debit_interactif_par_s": round(1 / _LIMITEURS["interactif"].intervalle, 2),
+        "debit_fond_par_s": round(1 / _LIMITEURS["fond"].intervalle, 2),
+        "ressources_configurees": RESSOURCES_ITINERAIRE,
+        "ressource_isochrone": RESOURCE_ISOCHRONE,
+        "tolerance_extremites_m": TOLERANCE_EXTREMITES_M,
+        "essais": [],
+    }
+    for profil, mode in (("car", "driving-car"), ("pedestrian", "foot-walking")):
+        for ressource in RESSOURCES_ITINERAIRE.get(profil, []):
+            essai: dict = {"profil": profil, "ressource": ressource}
+            debut = time.monotonic()
+            try:
+                res = await _itineraire_ressource(dep_lat, dep_lon, arr_lat, arr_lon, mode, True, "interactif", ressource)
+                essai.update(ok=True, distance_m=round(res["distance_metres"]), duree_s=res["duree_secondes"],
+                             nb_etapes=len(res["etapes"]))
+                try:
+                    essai["controles"] = _verifier_route(res, dep_lat, dep_lon, arr_lat, arr_lon)
+                except GeoplateformeError as exc:
+                    essai.update(ok=False, code=exc.code, erreur=str(exc))
+                if essai.get("ok") and not essai["nb_etapes"]:
+                    essai["avertissement"] = "Itinéraire reçu mais SANS instructions : la structure de réponse a peut-être changé."
+            except Exception as exc:
+                essai.update(ok=False, code=getattr(exc, "code", type(exc).__name__), erreur=str(exc)[:400])
+            essai["duree_ms"] = round((time.monotonic() - debut) * 1000)
+            out["essais"].append(essai)
+    out["ok"] = all(
+        any(e["ok"] for e in out["essais"] if e["profil"] == profil)
+        for profil in ("car", "pedestrian")
+    )
     return out

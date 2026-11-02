@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import math
+import sys
 import time
 
 from db import init_db_pool, close_db_pool, fetch_all, execute, executemany
@@ -156,7 +157,9 @@ async def _enregistrer(lignes: list[tuple]) -> None:
 # Programme principal
 # ─────────────────────────────────────────────────────────────
 
-async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, recalculer: bool) -> None:
+async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, recalculer: bool) -> bool:
+    """Renvoie False si l'IGN a rejeté (presque) tous les trajets : le workflow doit alors passer en rouge."""
+    reussi = True
     await init_db_pool()
     debut = time.monotonic()
     try:
@@ -227,6 +230,10 @@ async def main(lieu_id: int | None, guide_id: int | None, duree_max_min: float, 
 
         reste = len(a_faire) - ok
         print(f"Terminé : {ok} trajet(s) enregistré(s), {reste} restant(s) (repris au prochain lancement).", flush=True)
+        if echecs and (ok == 0 or echecs > ok):
+            print(f"❌ {echecs} échec(s) IGN contre {ok} réussite(s) : exécution marquée en échec.", flush=True)
+            reussi = False
+        return reussi
     finally:
         await close_db_pool()
 
@@ -239,4 +246,4 @@ if __name__ == "__main__":
                     help="Arrêt propre après cette durée (reprise au lancement suivant)")
     ap.add_argument("--recalculer", action="store_true", help="Vider la table et tout recalculer")
     a = ap.parse_args()
-    asyncio.run(main(a.lieu_id, a.guide_id, a.duree_max_minutes, a.recalculer))
+    sys.exit(0 if asyncio.run(main(a.lieu_id, a.guide_id, a.duree_max_minutes, a.recalculer)) else 1)

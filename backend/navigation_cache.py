@@ -106,7 +106,7 @@ class NavigationCache:
 
         brut = "|".join(
             [
-                "navigation-v2",
+                "navigation-v3",
                 mode,
                 "steps" if etapes else "route",
                 depart[0],

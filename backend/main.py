@@ -7,6 +7,10 @@ pour le remplissage du cache.
 """
 
 
+from routage_velo import (
+    est_configure as velo_configure,
+    diagnostic as diagnostic_velo,
+)
 from geoplateforme import (
     calculer_itineraire as calculer_itineraire_geoplateforme,
     diagnostic as diagnostic_geoplateforme,
@@ -1155,6 +1159,7 @@ async def api_itineraire(
     modes_acceptes = {
         "pedestrian",
         "car",
+        "bicycle",
     }
 
     if mode not in modes_acceptes:
@@ -1163,8 +1168,8 @@ async def api_itineraire(
             detail={
                 "code": "INVALID_MODE",
                 "message": (
-                    "Le mode doit être 'pedestrian' "
-                    "ou 'car'."
+                    "Le mode doit être 'pedestrian', "
+                    "'car' ou 'bicycle'."
                 ),
             },
         )
@@ -1305,15 +1310,53 @@ async def api_itineraire(
             flush=True,
         )
 
+        cause = getattr(exc, "code", "INDISPONIBLE")
+
+        if cause == "RESSOURCE_INTROUVABLE":
+            message_ign = (
+                "Le service d'itinéraire IGN a changé de configuration "
+                "(ressource introuvable). Aucun itinéraire de "
+                "substitution n'a été utilisé."
+            )
+        elif cause == "VELO_NON_CONFIGURE":
+            message_ign = (
+                "L'itinéraire à vélo n'est pas activé sur ce serveur."
+            )
+        elif cause == "VELO_CLE_INVALIDE":
+            message_ign = (
+                "L'itinéraire à vélo est momentanément indisponible "
+                "(configuration du service à vérifier)."
+            )
+        elif cause == "AUCUN_ITINERAIRE":
+            message_ign = (
+                "Aucun itinéraire trouvé pour ce trajet en "
+                "mode choisi (point hors réseau ou trajet trop long)."
+            )
+        elif mode == "bicycle":
+            message_ign = (
+                "Le service d'itinéraire à vélo est temporairement "
+                "indisponible. Aucun itinéraire de substitution "
+                "n'a été utilisé."
+            )
+        elif cause == "GEOMETRIE_INCOHERENTE":
+            message_ign = (
+                "Le service d'itinéraire IGN a renvoyé un tracé "
+                "incohérent, refusé par contrôle. Aucun itinéraire "
+                "de substitution n'a été utilisé."
+            )
+        else:
+            message_ign = (
+                "Le service d'itinéraire IGN est "
+                "temporairement indisponible. Aucun "
+                "itinéraire de substitution n'a été utilisé."
+            )
+
         raise HTTPException(
             status_code=503,
             detail={
                 "code": "GEOPLATEFORME_UNAVAILABLE",
-                "message": (
-                    "Le service d'itinéraire IGN est "
-                    "temporairement indisponible. Aucun "
-                    "itinéraire de substitution n'a été utilisé."
-                ),
+                "cause": cause,
+                "message": message_ign,
                 "provider": "geoplateforme",
                 "resource": RESOURCE_ITINERAIRE,
             },
@@ -1382,9 +1425,9 @@ async def api_itineraire(
 
     resultat["type"] = "route_reelle"
 
-    resultat["provider"] = "geoplateforme"
+    resultat["provider"] = resultat.get("provider") or "geoplateforme"
 
-    resultat["resource"] = RESOURCE_ITINERAIRE
+    resultat["resource"] = resultat.get("resource") or RESOURCE_ITINERAIRE
 
     resultat["mode"] = mode
 
@@ -1744,7 +1787,8 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
         except GeoplateformeError as exc:
             raise GeoplateformeError(
                 f"Échec du tronçon {i + 1}/{nb_troncons} "
-                f"avec la Géoplateforme IGN : {exc}"
+                f"avec la Géoplateforme IGN : {exc}",
+                getattr(exc, "code", "INDISPONIBLE"),
             ) from exc
 
         except Exception as exc:
@@ -1813,9 +1857,7 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
             ),
             "geometry": geometry,
             "provider": "geoplateforme",
-            "resource": RESOURCE_ITINERAIRE
-                if "RESOURCE_ITINERAIRE" in globals()
-                else "bdtopo-osrm",
+            "resource": resultat.get("resource") or RESOURCE_ITINERAIRE,
         })
 
     # ---------------------------------------------------------
@@ -1874,7 +1916,7 @@ async def _itineraire_multi_etapes(lieux_ordonnes, mode):
     return {
         "type": "route_reelle",
         "provider": "geoplateforme",
-        "resource": "bdtopo-osrm",
+        "resource": ", ".join(sorted({t["resource"] for t in trajets if t.get("resource")})) or RESOURCE_ITINERAIRE,
         "mode": mode,
         "distance_metres": round(distance_totale),
         "duree_secondes": (
@@ -1998,6 +2040,7 @@ async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=Fals
             "distance_metres": round(distance),
             "duree_secondes": round(float(duree)) if duree is not None else None,
             "geometry": resultat["geometry"],
+            "resource": resultat.get("resource") or RESOURCE_ITINERAIRE,
         })
 
     coords=[]
@@ -2015,7 +2058,7 @@ async def _itineraire_depuis_point(lieu_depart, etapes, mode, retour_depart=Fals
     return {
         "type":"route_reelle",
         "provider":"geoplateforme",
-        "resource":RESOURCE_ITINERAIRE,
+        "resource":", ".join(sorted({sg["resource"] for sg in segments})) or RESOURCE_ITINERAIRE,
         "mode":mode,
         "distance_metres":round(distance_totale),
         "duree_secondes":round(duree_totale) if duree_disponible else None,
@@ -3306,7 +3349,14 @@ async def diagnostic_ign(request: Request):
     de la réponse). À ouvrir quand « Le service d'itinéraire IGN est temporairement indisponible » s'affiche :
     curl -H "X-Admin-Token: …" https://tournage.pelify.app/api/diagnostic/ign"""
     exiger_admin(request)
-    return await diagnostic_geoplateforme()
+    return {**await diagnostic_geoplateforme(), "velo": await diagnostic_velo()}
+
+
+@app.get("/api/itineraire/modes")
+async def modes_itineraire():
+    """Modes d'itinéraire proposés aux visiteurs. Le vélo n'apparaît que si le service est configuré
+    (ORS_API_KEY) : le frontend masque sinon tous les boutons « À vélo »."""
+    return {"modes": {"pedestrian": True, "car": True, "bicycle": velo_configure()}}
 
 
 # ── Site web (fichiers du dossier frontend/) ─────────────────────────────────

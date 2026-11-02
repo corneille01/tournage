@@ -1568,3 +1568,11 @@ i.fa-solid, i.fa-regular { line-height: 1; }
 .mp-export-boutons button{padding:8px 12px;border-radius:8px;border:1px solid #e63946;background:transparent;color:inherit;cursor:pointer}
 .mp-export-boutons button:hover{background:#e63946;color:#fff}
 .mp-pastille.reco{background:#00b4d8}
+
+/* ── Vélo : boutons masqués tant que le service n'est pas activé sur le serveur
+   (app.js ajoute la classe « velo-actif » au <body> d'après /api/itineraire/modes) ── */
+body:not(.velo-actif) [data-mode="bicycle"],
+body:not(.velo-actif) #btn-nav-directe-velo {
+  display: none !important;
+}
+.itineraire-source-attribution { font-size: 0.72rem; opacity: 0.75; margin-top: 2px; }

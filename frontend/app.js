@@ -1364,6 +1364,13 @@ async function chargerMeteoLieu(lieu) {
   bloc.innerHTML = data ? htmlMeteoLieu(data) : `<p class="meteo-detail">Météo momentanément indisponible.</p>`;
 }
 
+// La vigilance officielle ne couvre qu'aujourd'hui et demain : pour toute autre date, son absence est normale.
+function _vigilanceApplicable(dateIso) {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const ecart = Math.round((new Date(dateIso + "T00:00:00") - t) / 86400000);
+  return ecart === 0 || ecart === 1;
+}
+
 // Parcours : météo de chaque étape à l'heure de passage prévue
 function construireMeteoHtml(data) {
   const m = data?.meteo;
@@ -1377,14 +1384,23 @@ function construireMeteoHtml(data) {
   const lignes = m.points.map((p) => {
     const mt = p.meteo || {};
     const h = mt.a_l_heure, j = mt.jour;
-    let resume = "Prévision indisponible";
+    const RAISONS_METEO = {
+      date_trop_lointaine: "date trop lointaine : prévisions disponibles jusqu'à 16 jours",
+      date_trop_ancienne: "date trop ancienne : historique limité à 3 mois",
+      service_indisponible: "service météo momentanément injoignable, réessayez dans un instant",
+      date_absente: "pas de donnée pour cette date",
+    };
+    let resume = `Prévision indisponible${mt.raison_indisponible && RAISONS_METEO[mt.raison_indisponible] ? " (" + RAISONS_METEO[mt.raison_indisponible] + ")" : ""}`;
     if (h) resume = `<i class="fa-solid ${escapeAttr(h.icone)}" aria-hidden="true"></i> ${escapeHtml(h.libelle)} · ${Math.round(h.temperature)}°C${h.proba_pluie != null ? ` · pluie ${Math.round(h.proba_pluie)} %` : ""}`;
     else if (j) resume = `<i class="fa-solid ${escapeAttr(j.icone)}" aria-hidden="true"></i> ${escapeHtml(j.libelle)} · ${Math.round(j.tmin)}° / ${Math.round(j.tmax)}°`;
     return `<li><span class="pm-pastille ${escapeAttr(mt.niveau || "ok")}"></span><b>Étape ${p.ordre} - ${escapeHtml(p.nom || "")}</b>${p.passage ? ` <small>(vers ${escapeHtml(p.passage)})</small>` : ""}<br><small>${resume}</small></li>`;
   }).join("");
-  const sansAlerte = (m.alertes || []).length ? "" : `<p class="meteo-detail"><i class="fa-solid fa-circle-check" style="color:#2a9d8f" aria-hidden="true"></i> Aucun danger météo particulier signalé pour ce parcours.</p>`;
+  const aucunePrevision = m.points.every((p) => !(p.meteo && (p.meteo.jour || p.meteo.a_l_heure)));
+  const sansAlerte = (m.alertes || []).length ? "" : aucunePrevision
+    ? `<p class="meteo-detail"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Aucune prévision n'est disponible pour cette date : nous ne pouvons pas évaluer les risques météo.</p>`
+    : `<p class="meteo-detail"><i class="fa-solid fa-circle-check" style="color:#2a9d8f" aria-hidden="true"></i> Aucun danger météo particulier signalé pour ce parcours.</p>`;
   return `<section class="pm-meteo"><h3><i class="fa-solid fa-cloud-sun-rain" aria-hidden="true"></i> Météo et risques - ${escapeHtml(dateTxt)}</h3>
-    ${alertes}${sansAlerte}<ul>${lignes}</ul>${_htmlSourcesMeteo({ disponible: m.vigilance_disponible })}</section>`;
+    ${alertes}${sansAlerte}<ul>${lignes}</ul>${_htmlSourcesMeteo({ disponible: m.vigilance_disponible || !_vigilanceApplicable(m.date) })}</section>`;
 }
 
 function ouvrirPopupLieu(film, lieu) {
@@ -1503,7 +1519,7 @@ function ouvrirPopupLieu(film, lieu) {
     const conteneurBoutons = document.getElementById("popup-boutons");
   conteneurBoutons.innerHTML = Object.entries({ guide: ICONE_GUIDE, ...ICONES_CATEGORIE })
     .map(([cle, info]) => `
-      <button type="button" data-categorie="${cle}" aria-pressed="false" style="border-color:${info.couleur}">
+      <button type="button" data-categorie="${cle}" aria-pressed="false" style="--cat:${info.couleur};border-color:${info.couleur}">
         <span class="icone-btn">${info.emoji}</span> ${info.label}
       </button>
     `).join("");
@@ -1960,8 +1976,10 @@ function _rendreCategorie() {
 
     const cleDistance = modeTriCourant === "pied" ? "distance_pied_metres" : "distance_voiture_metres";
     const itemsTries = [...items].sort((a, b) => {
-      const da = a[cleDistance] ?? Infinity;
-      const db = b[cleDistance] ?? Infinity;
+      const ka = a[cleDistance] != null, kb = b[cleDistance] != null;
+      if (ka !== kb) return ka ? -1 : 1;                       // distance routière connue d'abord
+      const da = ka ? a[cleDistance] : (a.distance_metres ?? Infinity);
+      const db = kb ? b[cleDistance] : (b.distance_metres ?? Infinity);
       return da - db;
     });
 
@@ -2296,6 +2314,16 @@ async function afficherItineraireVersCommodite(
       Array.isArray(data.etapes_navigation)
         ? data.etapes_navigation
         : [];
+
+    // La ligne « ≈ X à vol d'oiseau » est remplacée par la vraie distance dès qu'un trajet est calculé.
+    {
+      const carte = bouton.closest(".resultat-item, .station-card");
+      const zone = carte?.querySelector(".distance");
+      if (zone && zone.querySelector(".distance-estimee") && mode !== "bicycle") {
+        zone.textContent = `${distance} ${mode === "pedestrian" ? "à pied" : "en voiture"} (${duree})` +
+          (carte.classList.contains("station-card") ? " du lieu de tournage" : "");
+      }
+    }
 
     // ---------------------------------------------------------
     // AFFICHAGE COMPLET DU RÉSULTAT
@@ -2740,6 +2768,8 @@ function _texteDistanceDynamique(item, modeTri) {
   // Repli sur l'AUTRE mode plutôt que le vol d'oiseau, si disponible
   if (item.distance_pied_metres != null) return `${formatDistance(item.distance_pied_metres)} à pied (${formatDuree(item.duree_pied_secondes)})`;
   if (item.distance_voiture_metres != null) return `${formatDistance(item.distance_voiture_metres)} en voiture (${formatDuree(item.duree_voiture_secondes)})`;
+  // Dernier repli : le vol d'oiseau (toujours en base) plutôt qu'un message vide. Le trajet réel se calcule au clic.
+  if (item.distance_metres != null) return `<span class="distance-estimee" title="Ligne droite. Touchez À pied ou En voiture pour le trajet réel.">≈ ${formatDistance(item.distance_metres)} à vol d'oiseau</span>`;
   return "Distance non disponible pour le moment";
 }
 
@@ -3978,6 +4008,26 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-ajouter-parcours")?.addEventListener("click", () => { const id=Number(document.getElementById("popup-overlay")?.dataset?.lieuId); const lieu=state.lieuxCourants.find(x=>Number(x.id)===id); if(lieu) basculerLieuDansMonParcours(state.filmSelectionne,lieu); });
 
   document.getElementById("popup-fermer").addEventListener("click", fermerPopup);
+
+  // Flèche « Catégories » : apparaît dès que la liste des boutons est sortie de l'écran, ramène en haut de cette liste.
+  {
+    const fenetre = document.getElementById("popup-lieu");
+    const fleche = document.getElementById("popup-haut");
+    if (fenetre && fleche) {
+      const majFleche = () => {
+        const zone = document.getElementById("popup-boutons");
+        const dejaDefile = zone && fenetre.scrollTop > zone.offsetTop + zone.offsetHeight;
+        fleche.classList.toggle("hidden", !dejaDefile);
+      };
+      fenetre.addEventListener("scroll", majFleche, { passive: true });
+      fleche.addEventListener("click", () => {
+        const zone = document.getElementById("popup-boutons");
+        const reduit = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        fenetre.scrollTo({ top: Math.max(0, (zone?.offsetTop || 0) - 12), behavior: reduit ? "auto" : "smooth" });
+      });
+      document.getElementById("popup-fermer").addEventListener("click", () => fleche.classList.add("hidden"));
+    }
+  }
   document.getElementById("popup-overlay").addEventListener("click", (e) => {
     if (e.target.id === "popup-overlay") fermerPopup();
   });

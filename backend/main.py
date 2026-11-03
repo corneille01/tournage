@@ -213,7 +213,7 @@ app.include_router(seo_router)
 # au lieu de faire tomber toute l'application.
 import importlib as _importlib
 
-for _nom_module in ("analyse_territoire", "communaute", "ar_iot"):
+for _nom_module in ("analyse_entonnoir", "communaute", "ar_iot"):
     try:
         app.include_router(_importlib.import_module(_nom_module).router)
     except Exception:

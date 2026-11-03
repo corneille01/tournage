@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      Tableau de bord expert – Analyse des lieux de tournage en Occitanie
+    </title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/vendor/fontawesome/all.min.css" />
+    <link rel="stylesheet" href="analyse.css" />
+  </head>
+  <body>
+    <header class="dashboard-header">
+      <h1>Analyse territoriale des lieux de tournage</h1>
+      <div class="dashboard-actions">
+        <a href="/analyse.html" class="btn" style="text-decoration: none"
+          >← Analyse commentée</a
+        >
+        <span id="etat-donnees">Chargement…</span>
+        <span id="date-maj"></span>
+        <button id="btn-refresh" class="btn">Actualiser</button>
+      </div>
+    </header>
+
+    <main id="analyse-contenu" class="analyse-contenu">
+      <!-- Section 1 : Concentration géographique -->
+      <section class="analyse-section" id="section-concentration">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">RÉPARTITION SPATIALE</span>
+            <h2>Où se concentre l’activité de tournage ?</h2>
+          </div>
+        </div>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Nombre de lieux par département</h3>
+            <div class="chart-wrap"><canvas id="graphe-lieux"></canvas></div>
+          </article>
+          <article class="panel">
+            <h3>Concentration des 3 premiers départements</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-concentration"></canvas>
+            </div>
+            <p>
+              Top 3 : <strong id="top3-value">N/D</strong> · HHI :
+              <strong id="hhi-value">N/D</strong>
+            </p>
+          </article>
+        </div>
+        <p class="interpretation-graphe" id="interpretation-lieux"></p>
+      </section>
+
+      <!-- Section 2 : Offre touristique (réorganisée) -->
+      <section class="analyse-section" id="section-offre">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">ÉQUIPEMENTS TOURISTIQUES</span>
+            <h2>Offre touristique autour des lieux</h2>
+          </div>
+        </div>
+        <div id="offre-categories" class="offre-grid"></div>
+        <div id="offre-synthese"></div>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Médiane du nombre d'équipements (rayon DATAtourisme)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-nombre"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3>Distance au plus proche (médiane & P90, en km)</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-offre-distance"></canvas>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Section 3 : Préparation des lieux (radiales) -->
+      <section class="analyse-section" id="section-pret">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">PRÉPARATION DES LIEUX</span>
+            <h2>Les lieux sont-ils prêts à être valorisés ?</h2>
+          </div>
+        </div>
+        <div class="dashboard-grid three">
+          <article class="panel radial-panel">
+            <h3>Accessibles à 15 min</h3>
+            <div class="chart-wrap"><canvas id="graphe-pret15"></canvas></div>
+            <p></p>
+          </article>
+          <article class="panel radial-panel">
+            <h3>Accessibles à 30 min</h3>
+            <div class="chart-wrap"><canvas id="graphe-pret30"></canvas></div>
+            <p></p>
+          </article>
+          <article class="panel radial-panel">
+            <h3>Isolés (plus de 45 min)</h3>
+            <div class="chart-wrap"><canvas id="graphe-isoles"></canvas></div>
+            <p></p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Section 4 : Accessibilité et mobilité -->
+      <section class="analyse-section" id="section-mobilite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">ACCESSIBILITÉ</span>
+            <h2>Quel rôle joue la mobilité ?</h2>
+          </div>
+        </div>
+        <article class="panel">
+          <h3>Couverture des isochrones</h3>
+          <div class="chart-wrap"><canvas id="graphe-isochrones"></canvas></div>
+          <p>
+            Rapport surface voiture / marche à 15 min :
+            <strong id="ratio-mobilite">N/D</strong>
+          </p>
+          <p class="analyse-note" id="fraicheur-isochrones"></p>
+        </article>
+      </section>
+
+      <!-- Section 5 : Comparaison départementale de l'accès aux équipements -->
+      <section class="analyse-section" id="section-departements">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">COMPARAISON DÉPARTEMENTALE</span>
+            <h2>Accès aux équipements autour des lieux, par département</h2>
+          </div>
+        </div>
+        <div id="cartes-departements"></div>
+      </section>
+
+      <!-- Section 6 : Filmographie (quadrants) -->
+      <section class="analyse-section" id="section-films">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">FILMOGRAPHIE</span>
+            <h2>Potentiel de valorisation ciné-touristique</h2>
+          </div>
+        </div>
+        <article class="panel">
+          <div class="chart-wrap scatter-wrap">
+            <canvas id="graphe-films-quadrants"></canvas>
+          </div>
+          <p class="analyse-note">
+            Chaque point représente une œuvre. La taille du point indique le
+            nombre de départements associés. Survolez pour plus de détails.
+          </p>
+        </article>
+        <div id="films-interpretation"></div>
+      </section>
+
+      <!-- Section 7 : Qualité des données -->
+      <section class="analyse-section" id="section-qualite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">QUALITÉ DES DONNÉES</span>
+            <h2>Qualité et couverture</h2>
+          </div>
+        </div>
+        <div id="completude-contenu" class="panel"></div>
+        <article class="panel" id="methodologie"></article>
+      </section>
+
+      <!-- Section 8 : Popularité × préparation (potentiel) -->
+      <section class="analyse-section" id="section-potentiel">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">POTENTIEL</span>
+            <h2>Popularité cinématographique × préparation touristique</h2>
+          </div>
+        </div>
+        <p class="analyse-note">
+          Ce croisement n'est utilisé que lorsque les deux variables sont
+          réellement disponibles.
+        </p>
+      </section>
+
+      <!-- Section 9 : Priorisation -->
+      <section class="analyse-section" id="section-priorite">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">AIDE À LA DÉCISION</span>
+            <h2>Où un élu devrait-il agir en priorité ?</h2>
+          </div>
+        </div>
+        <p class="analyse-note"></p>
+        <div class="dashboard-grid two">
+          <article class="panel">
+            <h3>Score de besoin d'action</h3>
+            <div class="chart-wrap">
+              <canvas id="graphe-priorisation"></canvas>
+            </div>
+          </article>
+          <article class="panel">
+            <h3>Classement des départements</h3>
+            <div id="liste-priorisation"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Synthèse décisionnelle (ajoutée par JS) -->
+      <section class="analyse-section" id="synthese-decision"></section>
+      <section class="analyse-section" id="stat-glossaire"></section>
+    </main>
+
+    <!-- Chargement de Chart.js AVANT analyse.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="analyse.js"></script>
+  </body>
+</html>

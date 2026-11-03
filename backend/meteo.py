@@ -137,7 +137,7 @@ def code_departement(lat: float, lon: float, nom: str | None = None) -> str | No
 
 async def _telecharger_previsions(lat: float, lon: float) -> dict | None:
     params = {
-        "latitude": lat, "longitude": lon, "timezone": "Europe/Paris", "forecast_days": 8,
+        "latitude": lat, "longitude": lon, "timezone": "Europe/Paris", "forecast_days": 16,
         "current": "temperature_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m",
         "daily": ("weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,"
                   "wind_gusts_10m_max,uv_index_max,sunrise,sunset"),
@@ -197,6 +197,35 @@ def _normaliser_previsions(brut: dict) -> dict:
 async def previsions(lat: float, lon: float) -> dict | None:
     cle = (round(lat, 2), round(lon, 2))      # maille d'environ 1 km
     return await _cache_previsions.obtenir(cle, lambda: _telecharger_previsions(round(lat, 2), round(lon, 2)), ttl_echec_s=90)
+
+
+async def _telecharger_passe(lat: float, lon: float, ecart_jours: int) -> dict | None:
+    """Journée déjà passée (jusqu'à 92 jours en arrière) : même source, mêmes champs que les prévisions."""
+    params = {
+        "latitude": lat, "longitude": lon, "timezone": "Europe/Paris",
+        "past_days": min(92, max(1, -ecart_jours)), "forecast_days": 1,
+        "daily": ("weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,"
+                  "wind_gusts_10m_max,uv_index_max,sunrise,sunset"),
+        "hourly": "temperature_2m,precipitation,precipitation_probability,weather_code,wind_gusts_10m",
+    }
+    if OPEN_METEO_CLE:
+        params["apikey"] = OPEN_METEO_CLE
+    try:
+        async with httpx.AsyncClient(timeout=7.0, headers={"User-Agent": "Pelify/1.0 (reservations@pelify.app)"}) as client:
+            r = await client.get(OPEN_METEO_URL, params=params)
+        if r.status_code != 200:
+            logger.warning("Open-Meteo (passé) : HTTP %s", r.status_code)
+            return None
+        return _normaliser_previsions(r.json())
+    except Exception as exc:
+        logger.warning("Open-Meteo (passé) indisponible : %s", exc)
+        return None
+
+
+async def previsions_passees(lat: float, lon: float, date: Date) -> dict | None:
+    ecart = (date - _aujourdhui()).days
+    cle = ("passe", round(lat, 2), round(lon, 2), ecart)
+    return await _cache_previsions.obtenir(cle, lambda: _telecharger_passe(round(lat, 2), round(lon, 2), ecart), ttl_echec_s=90)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -314,7 +343,12 @@ async def meteo_point(lat: float, lon: float, date: Date | None = None, heure: s
     date = date or _aujourdhui()
     aujourdhui = _aujourdhui()
     dept = code_departement(lat, lon, nom_departement)
-    prev, vig = await asyncio.gather(previsions(lat, lon), vigilance_departement(dept))
+    ecart_j = (date - aujourdhui).days
+    if ecart_j < 0:
+        prev_t = previsions_passees(lat, lon, date) if ecart_j >= -92 else asyncio.sleep(0, result=None)
+    else:
+        prev_t = previsions(lat, lon)
+    prev, vig = await asyncio.gather(prev_t, vigilance_departement(dept))
 
     iso = date.isoformat()
     jour = next((j for j in (prev or {}).get("jours", []) if j["date"] == iso), None)
@@ -333,8 +367,19 @@ async def meteo_point(lat: float, lon: float, date: Date | None = None, heure: s
         "phenomenes": ((vig or {}).get(echeance) or {}).get("phenomenes", []) if echeance else [],
         "niveau_max": (((vig or {}).get(echeance) or {}).get("max", 1)) if echeance else None,
     }
+    # Pourquoi n'y a-t-il pas de prévision ? (le message affiché dépend de la vraie raison)
+    if jour is not None:
+        raison = None
+    elif ecart_j < -92:
+        raison = "date_trop_ancienne"
+    elif ecart_j > 15:
+        raison = "date_trop_lointaine"
+    elif prev is None:
+        raison = "service_indisponible"
+    else:
+        raison = "date_absente"
     sortie = {
-        "date": iso, "departement": dept, "altitude_m": (prev or {}).get("altitude_m"),
+        "raison_indisponible": raison, "date": iso, "departement": dept, "altitude_m": (prev or {}).get("altitude_m"),
         "previsions_disponibles": prev is not None,
         "jour": jour, "a_l_heure": a_heure, "vigilance": vigilance, "risques": risques, "niveau": niveau,
         "hors_horizon": prev is not None and jour is None,
